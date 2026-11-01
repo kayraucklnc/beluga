@@ -63,7 +63,8 @@ describe('run_on_peer gating', () => {
 
 describe('runShell', () => {
   const dir = realpathSync(os.tmpdir());
-  it('returns output and the exit code, with no input', async () => {
+  // Not on Windows: sh syntax: Windows runs these in cmd.
+  it.skipIf(process.platform === 'win32')('returns output and the exit code, with no input', async () => {
     const res = await runShell('echo hi; echo err >&2; cat; exit 3', dir, 5000);
     expect(res.exitCode).toBe(3);
     expect(res.output).toContain('hi');
@@ -77,7 +78,8 @@ describe('runShell', () => {
     expect(res.ms).toBeLessThan(3000);
   });
 
-  it('caps output, keeping the end', async () => {
+  // Not on Windows: sh syntax: Windows runs these in cmd.
+  it.skipIf(process.platform === 'win32')('caps output, keeping the end', async () => {
     const res = await runShell("yes x | head -c 200000; echo END", dir, 5000);
     expect(res.truncated).toBe(true);
     expect(res.output.length).toBeLessThanOrEqual(64 * 1024 + 10);
@@ -177,7 +179,8 @@ describe('running a command on a friend', () => {
     expect(bob.state().inbox[0]?.title).toContain('kay ran');
   });
 
-  it('shows "running" once they approve, before the output arrives', async () => {
+  // Not on Windows: sh syntax (sleep): Windows runs these in cmd.
+  it.skipIf(process.platform === 'win32')('shows "running" once they approve, before the output arrives', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
     const bob = peer('bob');

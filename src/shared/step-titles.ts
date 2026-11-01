@@ -1,4 +1,5 @@
 import { editDiff } from './line-diff.js';
+import { underPart } from './path-inside.js';
 
 /**
  * A step in words people use, never a tool's name or an id: "Read src/auth.ts", "Ran npm test",
@@ -27,8 +28,8 @@ const clip = (s: string, max = 72): string => {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
 };
 const firstLine = (s: string, max = 72): string => clip(s.split('\n').find((l) => l.trim()) ?? '', max);
-const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p;
-const rel = (p: string, cwd?: string): string => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : p);
+const base = (p: string): string => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
+const rel = (p: string, cwd?: string): string => (cwd ? underPart(cwd, p) : undefined) ?? p;
 const both = (done: string, doing: string, extra: Omit<HumanStep, 'done' | 'doing'> = {}): HumanStep => ({ done, doing, ...extra });
 const same = (text: string, extra: Omit<HumanStep, 'done' | 'doing'> = {}): HumanStep => both(text, text, extra);
 const possessive = (name: string): string => `${name}’s`;

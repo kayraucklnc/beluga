@@ -200,7 +200,8 @@ describe('files between computers', () => {
     expect(kay.state().inbox.some((n) => n.title.startsWith('bob sent you'))).toBe(true);
   });
 
-  it('expands ~ and relative paths to the home folder', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('expands ~ and relative paths to the home folder', () => {
     expect(expandPath('~/Desktop/a.pdf', '/Users/x')).toBe('/Users/x/Desktop/a.pdf');
     expect(expandPath('~', '/Users/x')).toBe('/Users/x');
     expect(expandPath('Desktop/a.pdf', '/Users/x')).toBe('/Users/x/Desktop/a.pdf');

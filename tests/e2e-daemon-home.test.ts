@@ -25,7 +25,9 @@ const waitFor = async (ok: () => boolean): Promise<void> => {
   for (let i = 0; i < 50 && !ok(); i++) await new Promise((r) => setTimeout(r, 50));
 };
 
-describe('a stale demo home', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('a stale demo home', () => {
   it('stops the daemon an interrupted run left and empties the home', async () => {
     const home = tmp();
     writeFileSync(path.join(home, MARK), '');
@@ -76,7 +78,9 @@ describe('a stale demo home', () => {
   });
 });
 
-describe('why the demo cannot start', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('why the demo cannot start', () => {
   it('says the port is in use, and by which pid', async () => {
     const server = net.createServer().listen(0, '127.0.0.1');
     await new Promise((r) => server.once('listening', r));
@@ -97,7 +101,9 @@ describe('why the demo cannot start', () => {
   });
 });
 
-describe('teardown', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('teardown', () => {
   it('stops the demo daemon and clears its files, twice safely', async () => {
     const home = tmp();
     mkdirSync(home, { recursive: true });

@@ -119,7 +119,8 @@ describe('the policy in a sync run', () => {
     expect(decideTool('Bash', bash('git reset --hard'), sync)).toBe('deny');
   });
 
-  it('only files with conflict markers can be edited', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('only files with conflict markers can be edited', () => {
     expect(decideTool('Edit', { file_path: '/work/app/src/a.ts' }, sync)).toBe('ask');
     expect(decideTool('Edit', { file_path: 'src/a.ts' }, { ...sync, syncMain: { conflicted: (p: string) => p === '/work/app/src/a.ts' } })).toBe('ask');
     expect(decideTool('Write', { file_path: '/work/app/src/b.ts' }, sync)).toBe('deny');

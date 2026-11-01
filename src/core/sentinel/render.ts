@@ -1,4 +1,5 @@
 import { PAYLOAD_MAX, capPayload } from './model.js';
+import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 
 /**
  * A step's templates (docs/sentinel.md §4): `{{trigger}}`, `{{trigger.json}}`, `{{previous}}`,
@@ -64,7 +65,7 @@ function valueOf(key: string, ctx: RenderContext): string | undefined {
     case 'previous':
       return ctx.previous === undefined ? '' : ctx.material ? ctx.material('step', ctx.previousName ?? 'previous', ctx.previous, ctx.previousFile) : ctx.previous;
     case 'project':
-      return ctx.project?.name ?? 'Your Mac';
+      return ctx.project?.name ?? ASSISTANT_TITLE;
     case 'project.path':
       return ctx.project?.path ?? '~';
     case 'date':

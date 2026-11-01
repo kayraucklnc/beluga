@@ -12,6 +12,7 @@ import { useSelf, useTaskActions } from './use-tasks.js';
 import { useApp } from '../lib/beluga.js';
 import { useMyAgent } from '../lib/agent-words.js';
 import t from './tasks.module.css';
+import { chordLabel } from '../lib/shortcuts-model.js';
 
 /**
  * What happened to a task, oldest first: changes as quiet lines ("Beluga moved this to In
@@ -135,7 +136,7 @@ function CommentBox({ issue, people, world }: { issue: Issue; people: ReadonlyAr
         {tags.list}
       </div>
       <div className={t.commentBar}>
-        <span className={t.editorHint}>⌘↩ to send · @ mentions · Markdown</span>
+        <span className={t.editorHint}>{chordLabel('Cmd+Enter')} to send · @ mentions · Markdown</span>
         <span className={t.grow} />
         <Button size="small" variant="primary" disabled={!text.trim() || busy} onClick={() => void send()}>
           Comment

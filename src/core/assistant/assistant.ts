@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, promises as fs, readFileSync, renameSync, writeF
 import path from 'node:path';
 import { claudeConfigDir, dropSession } from '../../agent/runtime/claude/claude-sessions.js';
 import type { AgentPlace, MacTools } from '../../agent/types.js';
-import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, type AssistantChats, CHAT_ID, FIRST_CHAT, assistantChannel, assistantChatOf } from '../../shared/assistant.js';
+import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, CHAT_ID, FIRST_CHAT, THIS_COMPUTER, type AssistantChats, assistantChannel, assistantChatOf } from '../../shared/assistant.js';
 import { SCRATCH_DIR, listScratch } from '../../workspaces/scratch.js';
 import { type SystemPort, captureScreen, describeDevice, deviceInfo, realSystem } from '../gateway/device.js';
 import { HistorySaver } from '../history-saver.js';
@@ -376,7 +376,7 @@ export function assistantBrief(): string {
   return [
     '',
     '',
-    `You are "${ASSISTANT_TITLE}": the owner's assistant for this Mac as a whole, not one project. They talk to you`,
+    `You are "${ASSISTANT_TITLE}": the owner's assistant for ${THIS_COMPUTER} as a whole, not one project. They talk to you`,
     'from their phone or from the Mac (this conversation is the same on both), often away from the Mac, so answer',
     'short and in plain words, and send back what they asked for rather than describing it.',
     '',

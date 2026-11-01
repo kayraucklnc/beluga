@@ -51,7 +51,7 @@ describe('Your Mac’s tools', () => {
     expect(readdirSync(screens)).toHaveLength(1);
     const outs = await a.outputs();
     expect(outs).toHaveLength(1);
-    expect(outs[0]!.path).toMatch(/screens\/screen-.*\.png$/);
+    expect(outs[0]!.path).toMatch(/screens[\\/]screen-.*\.png$/);
     expect(outs[0]!.cwd).toBe(a.workDir);
   });
 

@@ -73,7 +73,8 @@ describe('EnvVars (kept by the core)', () => {
     const file = path.join(dir, 'env.json');
     const env = new EnvVars({ store, file });
     env.set(undefined, [{ key: 'API_TOKEN', value: 'sk-secret-1' }, { key: '', value: '' }]);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(loadEnvFile(file).global).toEqual({ API_TOKEN: 'sk-secret-1' });
     expect(env.get().vars).toEqual([{ key: 'API_TOKEN', value: 'sk-secret-1' }]);
     expect(store.getState().envKeys.global).toEqual(['API_TOKEN']);

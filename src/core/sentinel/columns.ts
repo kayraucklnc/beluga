@@ -326,7 +326,7 @@ export function typedWords(rows: readonly Row[], typed: readonly MetricColumn[] 
 /** The chip's words for a storage cell: the object's file name. */
 export const storageName = (cell: unknown): string => {
   const s = splitStorage(cell);
-  return s ? (s.path.split('/').pop() ?? s.path) : typeof cell === 'string' ? cell : '';
+  return s ? (s.path.split(/[\\/]/).pop() ?? s.path) : typeof cell === 'string' ? cell : '';
 };
 
 

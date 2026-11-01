@@ -48,6 +48,13 @@ async function openPeopleSettings(page: Page): Promise<void> {
 
 const rowsFromMia = (page: Page) => received(page).getByRole('button', { name: /^From mia’s agent: / });
 
+/** The list shows what waits for you; answered ones are under Show answered. */
+async function showAnswered(page: Page): Promise<void> {
+  const more = page.getByRole('button', { name: /^Show answered/ });
+  await expect(more).toBeVisible({ timeout: 20_000 });
+  await more.click();
+}
+
 test('the request sheet: Always for this project for a week makes a rule you see in Settings', async ({ page }) => {
   await networkOn(page);
   await nudgeMia(page, 'Claude, can you help me with something?');
@@ -85,6 +92,7 @@ test('the request sheet: Always for this project for a week makes a rule you see
 test('with the rule her next request runs without asking; once it’s deleted, the next one asks again', async ({ page }) => {
   await nudgeMia(page, 'Claude, one more thing?');
   await openReceived(page);
+  await showAnswered(page);
   await expect(rowsFromMia(page)).toHaveCount(2, { timeout: 20_000 });
   await expect(rowsFromMia(page).first()).toHaveAccessibleName(/Done$/, { timeout: 30_000 });
 
@@ -96,6 +104,7 @@ test('with the rule her next request runs without asking; once it’s deleted, t
 
   await nudgeMia(page, 'Claude, and again?');
   await openReceived(page);
+  await showAnswered(page);
   await expect(rowsFromMia(page)).toHaveCount(3, { timeout: 20_000 });
   await expect(rowsFromMia(page).first()).toHaveAccessibleName(/Waiting for you to approve$/, { timeout: 20_000 });
   // Decline it, with a reason she sees.

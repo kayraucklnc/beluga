@@ -373,6 +373,8 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         panActivationKeyCode={inline ? null : 'Space'}
         zoomOnPinch
         panOnDrag
+        // Nothing in a graph is deleted by a key (React Flow listens for Backspace on the whole window).
+        deleteKeyCode={null}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} className={g.dots} />
         {!inline ? <MiniMap pannable zoomable className={g.minimap} nodeClassName={(n) => (n.type === 'group' ? g.miniGroup! : g.miniNode!)} /> : null}

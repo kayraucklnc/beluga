@@ -1,4 +1,5 @@
-//! Beluga for macOS: the native shell around the web view.
+//! Beluga's native shell around the web view: macOS first, and Linux and Windows (what only a
+//! Mac has, such as vibrancy, the Dock, Focus and widgets, is left out there).
 //!
 //! The app owns only what the operating system is for: the window (vibrancy, traffic lights),
 //! the menu bar, the tray, notifications, `beluga://` (and the older `klaud://`) links, and
@@ -231,8 +232,10 @@ pub fn run() {
     } else {
         tauri_plugin_window_state::StateFlags::all()
     };
-    let app = tauri::Builder::default()
-        .activate_ignoring_other_apps(!background)
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.activate_ignoring_other_apps(!background);
+    let app = builder
         // A beluga:// link opened while Beluga runs is passed on to the link handler below.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             focus_main(app);
@@ -301,8 +304,8 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle().clone();
+            #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
-                #[cfg(target_os = "macos")]
                 window_vibrancy(&window, true);
             }
             menu::tray(&handle)?;
@@ -368,6 +371,7 @@ pub fn run() {
 
     app.run(|app, event| match event {
         // Clicking the Dock icon brings the window back.
+        #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => focus_main(app),
         // Quitting leaves the room (unless this app didn't start Beluga; it's left running then),
         // then puts a downloaded update in place.

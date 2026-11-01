@@ -758,7 +758,7 @@ export class Gateway {
       task.kind === 'run'
         ? `asked to run \`${oneLine(task.command ?? '', 80)}\` on ${task.peerName}'s Mac`
         : task.kind === 'file'
-          ? `asked ${task.peerName}'s Mac for ${(task.path ?? '').split('/').pop() || 'a file'}`
+          ? `asked ${task.peerName}'s Mac for ${(task.path ?? '').split(/[\\/]/).pop() || 'a file'}`
           : `asked ${task.peerName}'s agent: ${oneLine(task.summary?.trim() || task.ask, 140)}`;
     try {
       this.mesh?.post?.(chat, `${who} ${what}`, { task: { id: task.id, role: 'request' } });

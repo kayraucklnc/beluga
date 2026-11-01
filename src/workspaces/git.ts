@@ -30,15 +30,21 @@ export interface WorktreeEntry {
   readonly bare: boolean;
 }
 
+/**
+ * A path as git prints it, the way this system writes paths: git for Windows says
+ * C:/Users/you/app, which Windows (and every path Beluga keeps) writes C:\Users\you\app.
+ */
+export const fromGit = (p: string, platform: NodeJS.Platform = process.platform): string => (platform === 'win32' && p ? path.win32.normalize(p) : p);
+
 export function parseWorktreeList(porcelain: string): WorktreeEntry[] {
   return porcelain
-    .split('\n\n')
+    .split(/\r?\n\r?\n/)
     .map((block) => block.trim())
     .filter(Boolean)
     .map((block) => {
       const fields = new Map(block.split('\n').map((l) => [l.split(' ')[0] ?? '', l.slice(l.indexOf(' ') + 1)] as const));
       const branch = fields.get('branch')?.replace(/^refs\/heads\//, '');
-      return { path: fields.get('worktree') ?? '', head: fields.get('HEAD'), branch, detached: fields.has('detached'), bare: fields.has('bare') };
+      return { path: fromGit(fields.get('worktree') ?? ''), head: fields.get('HEAD'), branch, detached: fields.has('detached'), bare: fields.has('bare') };
     })
     .filter((w) => w.path);
 }
@@ -54,7 +60,8 @@ export async function isGitRepo(dir: string): Promise<boolean> {
 /** The main checkout of the repo `dir` belongs to (works from inside a worktree too). */
 export async function mainCheckout(dir: string): Promise<string | undefined> {
   const common = (await tryGit(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']))?.trim();
-  return common?.endsWith('/.git') ? common.slice(0, -5) : undefined;
+  const gitDir = common ? fromGit(common) : undefined;
+  return gitDir && path.basename(gitDir) === '.git' ? path.dirname(gitDir) : undefined;
 }
 
 /** origin's default branch, e.g. "origin/main"; falls back to a local main/master. */

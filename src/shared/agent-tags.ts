@@ -1,6 +1,10 @@
-import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import type { AgentRef } from '../protocol.js';
 import { agentName } from './agent-label.js';
 import { type AgentMark, agentMark } from './agent-marks.js';
+
+/** protocol.ts's defaultAgentOf, repeated so the phone bundles this file without the daemon's protocol. */
+// agent-wording: claude (the Claude runtime's own name)
+const defaultAgentOf = (p: { readonly agents?: readonly AgentRef[]; readonly defaultAgent?: AgentRef } | undefined): AgentRef => p?.defaultAgent ?? p?.agents?.[0] ?? { runtime: 'claude', label: 'Claude' };
 
 /**
  * The room's agent tags (BLG-520), as the Mac's composer and the phone list them after "@": your

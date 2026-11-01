@@ -43,9 +43,19 @@ describe('keeping the Mac awake for the phone (BLG-127)', () => {
     expect(a.mode).toBe('off');
   });
 
-  it('does nothing off a Mac', () => {
+  it('holds systemd-inhibit on Linux and SetThreadExecutionState on Windows, both tied to this process', () => {
+    const linux = fakeSpawn();
+    new Awake({ spawn: linux.spawn, platform: 'linux' }).set('power', true);
+    expect(linux.runs[0]!.args).toContain(`--pid=${process.pid}`);
+    expect(linux.runs[0]!.args[0]).toBe('--what=sleep:idle');
+    const windows = fakeSpawn();
+    new Awake({ spawn: windows.spawn, platform: 'win32' }).set('always', true);
+    expect(windows.runs[0]!.args.at(-1)).toContain(`Wait-Process -Id ${process.pid}`);
+  });
+
+  it('does nothing where it has no way to', () => {
     const f = fakeSpawn();
-    new Awake({ spawn: f.spawn, platform: 'linux' }).set('always', true);
+    new Awake({ spawn: f.spawn, platform: 'freebsd' }).set('always', true);
     expect(f.runs).toHaveLength(0);
   });
 });

@@ -102,7 +102,7 @@ describe('sharing a project with a friend over the network', () => {
     ata.session.sharing.shareWithFriend({ peerId: kay.id, projectId: project.id, role: 'contribute' });
     const shared = await settle(() => kay.store.getState().sharedProjects.find((p) => p.id === project.id && p.copy?.state === 'ready'));
     const copy = shared!.copy!;
-    expect(copy.path).toMatch(/copies\/ata\/bob-api$/);
+    expect(copy.path).toMatch(/copies[\\/]ata[\\/]bob-api$/);
     expect(git(copy.path!, 'branch', '--format=%(refname:short)').split('\n').sort()).toEqual(branches);
     // It's one of kay's projects now.
     expect(kay.store.getState().projects.some((p) => p.id === copy.projectId && p.root === copy.path)).toBe(true);

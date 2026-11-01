@@ -14,7 +14,13 @@ import path from 'node:path';
  */
 
 /** Where views keep data on this Mac (the show tool's big `data` too). BELUGA_CACHE_DIR moves it (tests). */
-export const viewDataDir = (): string => process.env.BELUGA_CACHE_DIR ?? path.join(os.homedir(), process.platform === 'darwin' ? 'Library/Caches/Beluga/views' : '.cache/beluga/views');
+export const viewDataDir = (): string =>
+  process.env.BELUGA_CACHE_DIR ??
+  (process.platform === 'darwin'
+    ? path.join(os.homedir(), 'Library/Caches/Beluga/views')
+    : process.platform === 'win32'
+      ? path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'Beluga', 'Cache', 'views')
+      : path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'beluga', 'views'));
 const dir = (): string => path.join(viewDataDir(), 'fetched');
 
 /** Bigger than this isn't kept (sources.ts still holds a whole source for a minute). */

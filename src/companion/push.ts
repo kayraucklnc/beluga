@@ -87,16 +87,31 @@ export function deliver(nudge: Pick<Nudge, 'kind' | 'topic'>, ctx: PushContext):
   return ctx.linked ? 'nudge' : 'push';
 }
 
+/** How long since the last key press or mouse move (Windows: GetLastInputInfo), in ms. */
+const WINDOWS_IDLE_PS = `Add-Type -Name I -Namespace Beluga -MemberDefinition '[StructLayout(LayoutKind.Sequential)] public struct L { public uint cb; public uint t; } [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref L l);'
+$l = New-Object Beluga.I+L; $l.cb = 8; [void][Beluga.I]::GetLastInputInfo([ref]$l); [Environment]::TickCount - $l.t`;
+
+/** Each system's way to ask, and how to read its answer as milliseconds. */
+const IDLE: Partial<Record<NodeJS.Platform, readonly [string, readonly string[], (out: string) => number | undefined]>> = {
+  // IOKit's HIDIdleTime, via ioreg, in nanoseconds.
+  darwin: ['ioreg', ['-c', 'IOHIDSystem', '-d', '4', '-k', 'HIDIdleTime'], (out) => {
+    const ns = /"HIDIdleTime"\s*=\s*(\d+)/.exec(out)?.[1];
+    return ns ? Math.round(Number(ns) / 1e6) : undefined;
+  }],
+  // X11 only (Wayland doesn't tell other apps): xprintidle, when it's installed.
+  linux: ['xprintidle', [], (out) => (/^\d+$/.test(out.trim()) ? Number(out.trim()) : undefined)],
+  win32: ['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_IDLE_PS], (out) => (/^-?\d+$/.test(out.trim()) ? Math.max(0, Number(out.trim())) : undefined)],
+};
+
 /**
- * Seconds since you last used the Mac's keyboard or mouse (IOKit's HIDIdleTime, via ioreg), or
- * undefined when it can't tell (not a Mac). Cheap enough to ask when there's something to push.
+ * Milliseconds since you last used this computer's keyboard or mouse, or undefined when it can't
+ * tell. Cheap enough to ask when there's something to push.
  */
 export function macIdleMs(): Promise<number | undefined> {
-  if (process.platform !== 'darwin') return Promise.resolve(undefined);
+  const how = IDLE[process.platform];
+  if (!how) return Promise.resolve(undefined);
+  const [cmd, args, read] = how;
   return new Promise((resolve) => {
-    execFile('ioreg', ['-c', 'IOHIDSystem', '-d', '4', '-k', 'HIDIdleTime'], { timeout: 3_000 }, (err, out) => {
-      const ns = err ? undefined : /"HIDIdleTime"\s*=\s*(\d+)/.exec(out)?.[1];
-      resolve(ns ? Math.round(Number(ns) / 1e6) : undefined);
-    });
+    execFile(cmd, [...args], { timeout: 3_000 }, (err, out) => resolve(err ? undefined : read(String(out))));
   });
 }

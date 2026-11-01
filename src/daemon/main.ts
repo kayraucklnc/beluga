@@ -135,7 +135,8 @@ export async function runDaemon(config: Config, opts: DaemonOptions): Promise<vo
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(signal, () => void daemon.stop(`Got ${signal}`));
   // The Mac app's word that the Mac is about to sleep (BLG-277, src-tauri/src/power.rs): mail the
   // outboxes, then say so in a file the app waits for before it lets the Mac sleep.
-  process.on('SIGUSR2', () => {
+  // Windows has no SIGUSR2 (listening for it throws there); its app has no sleep hook yet.
+  if (process.platform !== 'win32') process.on('SIGUSR2', () => {
     void daemon.core
       .sleeping()
       .catch((err: unknown) => log(`before sleep: ${errorText(err)}`))

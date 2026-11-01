@@ -3,6 +3,7 @@ import { type ReactNode, useRef } from 'react';
 import { Icon, type IconName } from './Icon.js';
 import { cx } from './ui.js';
 import s from './alert.module.css';
+import { primaryKey } from '../lib/shortcuts-model.js';
 
 export interface AlertButton {
   readonly label: string;
@@ -54,7 +55,7 @@ export function Alert({ title, message, icon = 'alert', tone = 'caution', table,
           onOpenAutoFocus={(e) => (e.preventDefault(), ok.current?.focus())}
           onKeyDown={(e) => {
             // Return is the default button, wherever the focus is (except another button or a field).
-            if (e.key !== 'Enter' || e.metaKey || e.shiftKey) return;
+            if (e.key !== 'Enter' || primaryKey(e) || e.shiftKey) return;
             const el = e.target as HTMLElement;
             if (el.tagName === 'BUTTON' && el !== ok.current) return;
             if (el.tagName === 'TEXTAREA') return;

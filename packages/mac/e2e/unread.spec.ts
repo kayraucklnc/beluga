@@ -61,7 +61,7 @@ test('a run that finishes while you are elsewhere marks its row and project unti
   await project.getByRole('button', { name: 'Fold bob-api' }).click();
   await expect(auth).toBeHidden();
   await expect(project.locator('[data-tally]')).toBeVisible();
-  await project.getByRole('button', { name: "Show what's in bob-api" }).click();
+  await project.getByRole('button', { name: "Show what's in bob-api" }).first().click();
 
   // It's in Unread, a click away; opening it reads it (it stays there, plain, while you're in it).
   const listed = unreadSection(page).getByRole('button', { name: /^add-auth · Your agent finished/ });

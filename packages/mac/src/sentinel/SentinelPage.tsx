@@ -45,6 +45,8 @@ import { useRunsFolder, useSentinelActions, useSentinelState } from './use-senti
 import t from '../tasks/tasks.module.css';
 import s from './sentinel.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
+import { primaryKey } from '../lib/shortcuts-model.js';
+import { ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
 
 /**
  * A sentinel's page: the editor and its history in one. The name is renamed in place, When and
@@ -106,7 +108,7 @@ function Crumbs({ item, back }: { item: Sentinel; back: () => void }) {
       </button>
       <Icon name="chevronRight" size={10} />
       <button type="button" className={t.crumb} onClick={() => a.openList(item.projectId ?? MAC_SCOPE)}>
-        {project?.name ?? 'Your Mac'}
+        {project?.name ?? ASSISTANT_TITLE}
       </button>
       <span className={t.grow} />
     </nav>
@@ -311,7 +313,7 @@ function History({ item }: { item: Sentinel }) {
                   data-run={r.id}
                   onClick={() => a.openRun(r.id)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.metaKey) {
+                    if (e.key === 'Enter' && primaryKey(e)) {
                       e.preventDefault();
                       const channel = r.channel ?? r.steps.find((x) => x.channel)?.channel;
                       if (chatPlaceOf(channel)) a.openChannel(channel);
@@ -350,7 +352,7 @@ function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatc
           label="Project"
           size="small"
           value={item.projectId ?? MAC_SCOPE}
-          options={[{ value: MAC_SCOPE, label: 'Your Mac' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+          options={[{ value: MAC_SCOPE, label: ASSISTANT_TITLE }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
           onChange={(v) => save({ projectId: v === MAC_SCOPE ? null : v })}
         />
       </Prop>

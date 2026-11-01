@@ -24,6 +24,10 @@
   width: 78px;
   height: 100%;
 }
+/* Linux and Windows draw their own title bar above the window: no traffic lights to make room for. */
+:global(html:not([data-os='mac'])) .trafficSpace {
+  width: 8px;
+}
 
 .scroll {
   flex: 1;

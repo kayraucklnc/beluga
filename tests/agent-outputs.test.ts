@@ -51,14 +51,16 @@ describe('what counts as something an agent made', () => {
 });
 
 describe('outputs from tool calls', () => {
-  it('files it wrote or looked at', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('files it wrote or looked at', () => {
     expect(refsOfTool('Write', { file_path: '/tmp/shot.png' }, CWD, TS)).toEqual([{ path: '/tmp/shot.png', how: 'wrote', ts: TS }]);
     expect(refsOfTool('Write', { file_path: `${CWD}/src/a.ts` }, CWD, TS)).toEqual([]);
     expect(refsOfTool('Read', { file_path: '/tmp/test.log' }, CWD, TS)).toEqual([{ path: '/tmp/test.log', how: 'read', ts: TS }]);
     expect(refsOfTool('Read', { file_path: 'shots/a.png' }, CWD, TS)).toEqual([{ path: `${CWD}/shots/a.png`, how: 'read', ts: TS }]);
   });
 
-  it('where a command sends its output, and files a command names', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('where a command sends its output, and files a command names', () => {
     expect(refsOfTool('Bash', { command: 'npm test > /tmp/test.log 2>&1' }, CWD, TS)).toEqual([{ path: '/tmp/test.log', how: 'ran', ts: TS }]);
     expect(refsOfTool('Bash', { command: 'npx vitest run | tee -a out/run.txt' }, CWD, TS)).toEqual([{ path: `${CWD}/out/run.txt`, how: 'ran', ts: TS }]);
     expect(refsOfTool('Bash', { command: 'curl -s https://x.dev/api -o "/tmp/api response.json"' }, CWD, TS)).toEqual([{ path: '/tmp/api response.json', how: 'ran', ts: TS }]);
@@ -70,13 +72,15 @@ describe('outputs from tool calls', () => {
     expect(refsOfTool('Bash', { command: 'cat > src/x.ts <<EOF' }, CWD, TS)).toEqual([]);
   });
 
-  it('screenshots and files other tools save (browsers, MCP servers)', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('screenshots and files other tools save (browsers, MCP servers)', () => {
     expect(refsOfTool('mcp__playwright__browser_take_screenshot', { filename: '/tmp/pw/home.png' }, CWD, TS)).toEqual([{ path: '/tmp/pw/home.png', how: 'wrote', ts: TS }]);
     expect(refsOfTool('mcp__x__save', { outputPath: '/tmp/r.pdf', other: '/tmp/no.png' }, CWD, TS)).toEqual([{ path: '/tmp/r.pdf', how: 'wrote', ts: TS }]);
     expect(refsOfTool('Grep', { pattern: 'x', path: '/tmp' }, CWD, TS)).toEqual([]);
   });
 
-  it('full paths of pictures, PDFs, videos and traces a result mentions', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('full paths of pictures, PDFs, videos and traces a result mentions', () => {
     const text = 'Took the screenshot, saved as /tmp/pw/shot-1.png.\n  attachment: /work/app/test-results/login/trace.zip\nsee "/tmp/a b.pdf" and src/x.png and /tmp/code.ts';
     expect(pathsInText(text)).toEqual(['/tmp/pw/shot-1.png', '/work/app/test-results/login/trace.zip', '/tmp/a b.pdf']);
     expect(pathsInText('x'.repeat(10))).toEqual([]);
@@ -109,7 +113,8 @@ describe("a sub-agent's own scratch folder", () => {
     expect(AGENT_SCRATCH_DIR).toBe('.beluga/scratch/agents');
   });
 
-  it('is handed to each sub-agent in its prompt', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('is handed to each sub-agent in its prompt', () => {
     const patched = withAgentScratch('Agent', { description: 'Check the UI', prompt: 'Take screenshots.' }, 'toolu_01xyz0123456789', '/work/app/.beluga/scratch');
     expect(patched?.prompt).toContain('Take screenshots.');
     expect(patched?.prompt).toContain('/work/app/.beluga/scratch/agents/0123456789/');
@@ -181,7 +186,8 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('lists what it made or looked at that is still there, newest first, its own folder included', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('lists what it made or looked at that is still there, newest first, its own folder included', () => {
     const out = w.outputs(SID, 'a1');
     expect(out.scratch).toBe(path.join(cwd, '.beluga/scratch/agents/0123456789'));
     expect(out.outputs.map((o) => [path.relative(root, o.path), o.how, o.kind])).toEqual([
@@ -195,7 +201,8 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     expect(w.outputs('ffffffff-0000-0000-0000-000000000000', 'a1')).toEqual({ outputs: [], missing: true });
   });
 
-  it('reads one: pictures as data, text with secrets taken out; nothing it never touched', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('reads one: pictures as data, text with secrets taken out; nothing it never touched', () => {
     const shot = w.output(SID, 'a1', path.join(tmp, 'shot.png'));
     expect(shot).toMatchObject({ kind: 'image', mime: 'image/png', size: 4, data: Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64') });
     const log = w.output(SID, 'a1', path.join(tmp, 'test.log'));

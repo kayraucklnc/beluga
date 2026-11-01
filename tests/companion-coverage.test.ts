@@ -93,7 +93,7 @@ describe('the typed list of the phone’s calls', () => {
 
   it('is browser-safe: zod and the API list only', () => {
     const g = graph('src/companion/calls.ts');
-    const offenders = [...g.entries()].flatMap(([file, imports]) => imports.filter((s) => !s.startsWith('.') && s !== 'zod').map((s) => `${path.relative(process.cwd(), file)} → ${s}`));
+    const offenders = [...g.entries()].flatMap(([file, imports]) => imports.filter((s) => !s.startsWith('.') && s !== 'zod').map((s) => `${path.relative(process.cwd(), file).replaceAll(path.sep, '/')} → ${s}`));
     expect(offenders).toEqual([]);
   });
 });
@@ -104,7 +104,7 @@ describe('the phone side runs in Bare', () => {
     graph('src/companion/client.ts', g);
     graph('src/companion/protocol.ts', g);
     graph('src/companion/diagnose.ts', g);
-    const files = [...g.keys()].map((f) => path.relative(process.cwd(), f)).sort();
+    const files = [...g.keys()].map((f) => path.relative(process.cwd(), f).replaceAll(path.sep, '/')).sort();
     expect(files).toEqual(['src/companion/client.ts', 'src/companion/device-crypto.ts', 'src/companion/diagnose.ts', 'src/companion/dial.ts', 'src/companion/protocol.ts']);
     const offenders = [...g.entries()].flatMap(([file, imports]) => imports.filter((s) => !s.startsWith('.') && (NODE.has(s) || !PHONE_PACKAGES.has(s))).map((s) => `${file} → ${s}`));
     expect(offenders).toEqual([]);

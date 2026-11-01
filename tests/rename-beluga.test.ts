@@ -63,7 +63,8 @@ describe('the home folder moves from ~/.klaud to ~/.beluga', () => {
     expect(lstatSync(path.join(home, '.klaud')).isDirectory()).toBe(true);
   });
 
-  it.skipIf(process.getuid?.() === 0)('when it cannot move, it keeps using the old folder', () => {
+  // Not as root, nor on Windows: chmod can’t make the folder read-only there.
+  it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')('when it cannot move, it keeps using the old folder', () => {
     const home = tmp();
     mkdirSync(path.join(home, '.klaud'));
     chmodSync(home, 0o555);

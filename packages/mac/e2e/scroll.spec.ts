@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from './fixtures.js';
+import { openSharedWorkspace } from './helpers.js';
 
 /**
  * Every file scrolls, wherever it's shown: the panel's Files preview, full size, the Files view

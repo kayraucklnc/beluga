@@ -145,12 +145,14 @@ describe('explainGitTrouble', () => {
 
 describe('finding gh from a Mac app (a minimal PATH)', () => {
   const has = (files: string[]) => (f: string) => files.includes(f);
-  it('looks in Homebrew’s folders when PATH has no gh', () => {
+  // Not on Windows: Homebrew is a Mac's.
+  it.skipIf(process.platform === 'win32')('looks in Homebrew’s folders when PATH has no gh', () => {
     expect(findTool('gh', '/usr/bin:/bin', has(['/opt/homebrew/bin/gh']))).toBe('/opt/homebrew/bin/gh');
     expect(findTool('gh', '/usr/bin:/bin', has(['/usr/local/bin/gh']))).toBe('/usr/local/bin/gh');
     expect(findTool('gh', '/usr/bin:/bin', has([]))).toBeUndefined();
   });
-  it('runs it by name when PATH has it, by full path when only Homebrew has it', () => {
+  // Not on Windows: Homebrew is a Mac's.
+  it.skipIf(process.platform === 'win32')('runs it by name when PATH has it, by full path when only Homebrew has it', () => {
     expect(toolCommand('gh', '/opt/homebrew/bin:/usr/bin', has(['/opt/homebrew/bin/gh']))).toBe('gh');
     expect(toolCommand('gh', '/usr/bin:/bin', has(['/opt/homebrew/bin/gh']))).toBe('/opt/homebrew/bin/gh');
     expect(toolCommand('gh', '/usr/bin:/bin', has([]))).toBe('gh');

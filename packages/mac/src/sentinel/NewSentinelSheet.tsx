@@ -8,6 +8,7 @@ import { Icon } from '../components/Icon.js';
 import { MAC_SCOPE, describedName, iconOf, recipeWhen } from './sentinel-model.js';
 import { useSentinelActions } from './use-sentinel.js';
 import s from './sentinel.module.css';
+import { ASSISTANT_TITLE, THIS_COMPUTER } from '@beluga/shared/assistant.js';
 
 type Way = 'describe' | 'recipe' | 'build';
 
@@ -74,7 +75,7 @@ export function NewSentinelSheet({ projectId, way: first = 'describe', close }: 
     a.open(made.id);
   };
 
-  const projectName = project === MAC_SCOPE ? 'Your Mac' : projects.find((p) => p.id === project)?.name;
+  const projectName = project === MAC_SCOPE ? ASSISTANT_TITLE : projects.find((p) => p.id === project)?.name;
   return (
     <FormSheet
       title="New Sentinel"
@@ -96,11 +97,11 @@ export function NewSentinelSheet({ projectId, way: first = 'describe', close }: 
             label="Where it works"
             value={project}
             onChange={setProject}
-            options={[{ value: MAC_SCOPE, label: 'Your Mac', description: 'Not tied to a project: things about the Mac itself' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            options={[{ value: MAC_SCOPE, label: ASSISTANT_TITLE, description: `Not tied to a project: things about ${THIS_COMPUTER} itself` }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
           />
         </div>
         {way === 'describe' ? (
-          <Field label="What should it do?" htmlFor="sentinel-words" hint={`Your agent sets it up in ${projectName ?? 'Your Mac'}, looking at the project first when that helps. It starts paused: look it over, then Turn On.`}>
+          <Field label="What should it do?" htmlFor="sentinel-words" hint={`Your agent sets it up in ${projectName ?? ASSISTANT_TITLE}, looking at the project first when that helps. It starts paused: look it over, then Turn On.`}>
             <TextArea
               id="sentinel-words"
               value={words}
@@ -144,7 +145,7 @@ export function NewSentinelSheet({ projectId, way: first = 'describe', close }: 
             </div>
           )
         ) : (
-          <Field label="Name" htmlFor="sentinel-name" hint={`In ${projectName ?? 'Your Mac'}; it runs when you press Run until you give it a schedule.`}>
+          <Field label="Name" htmlFor="sentinel-name" hint={`In ${projectName ?? ASSISTANT_TITLE}; it runs when you press Run until you give it a schedule.`}>
             <TextInput id="sentinel-name" value={name} onChange={setName} maxLength={80} placeholder="Morning brief" data-autofocus />
           </Field>
         )}

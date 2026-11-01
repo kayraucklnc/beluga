@@ -59,6 +59,25 @@ export function latestJson({ version, notes, pubDate, signature, url, arch }) {
   return { version, notes, pub_date: pubDate, platforms: { [`darwin-${arch}`]: { signature: signature.trim(), url } } };
 }
 
+/**
+ * One latest.json for every platform: the Mac's (here) and Linux's and Windows' (CI's
+ * release-desktop.yml) land on the same release, so each adds its own and keeps the others of the
+ * same version. A different version's are dropped: they'd offer an older build.
+ */
+export function mergeLatest(existing, next) {
+  const kept = existing && existing.version === next.version && existing.platforms && typeof existing.platforms === 'object' ? existing.platforms : {};
+  return { ...next, platforms: { ...kept, ...next.platforms } };
+}
+
+/** The latest.json already on this release, if there is one. */
+export function releasedLatest(tag) {
+  try {
+    return JSON.parse(execFileSync('gh', ['release', 'download', tag, '--repo', REPO, '--pattern', 'latest.json', '--output', '-'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString());
+  } catch {
+    return undefined;
+  }
+}
+
 function args(argv) {
   const out = { flags: new Set() };
   for (let i = 0; i < argv.length; i++) {
@@ -190,7 +209,7 @@ function main() {
   copyFileSync(`${app}.sig`, path.join(out, `${name}.sig`));
   copyFileSync(dmg, path.join(out, dmgAsset(version, arch)));
   const signature = readFileSync(`${app}.sig`, 'utf8');
-  const latest = latestJson({ version, notes, pubDate: new Date().toISOString(), signature, url: assetUrl(tag, name), arch });
+  const latest = mergeLatest(dry ? undefined : releasedLatest(tag), latestJson({ version, notes, pubDate: new Date().toISOString(), signature, url: assetUrl(tag, name), arch }));
   writeFileSync(path.join(out, 'latest.json'), `${JSON.stringify(latest, null, 2)}\n`);
   writeFileSync(path.join(out, 'notes.md'), `${notes}\n`);
   const files = ['latest.json', name, `${name}.sig`, dmgAsset(version, arch)].map((f) => path.join(out, f));

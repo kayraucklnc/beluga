@@ -9,6 +9,7 @@ import { useApi } from '../../lib/beluga.js';
 import type { OverviewItem } from './overview-model.js';
 import f from '../../components/form.module.css';
 import s from './peek.module.css';
+import { primaryKey } from '../../lib/shortcuts-model.js';
 
 /**
  * Read an archived conversation without restoring it, like Quick Look: no message box, nothing
@@ -37,7 +38,7 @@ export function ConversationPeek({ item, onClose, onRestore, onDelete }: { item:
             if (e.key === ' ' && !onButton) {
               e.preventDefault();
               onClose();
-            } else if (e.key === 'Enter' && !onButton && !e.metaKey) {
+            } else if (e.key === 'Enter' && !onButton && !primaryKey(e)) {
               e.preventDefault();
               onRestore();
             }

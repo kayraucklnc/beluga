@@ -142,7 +142,8 @@ describe('the rule book', () => {
     expect(edited.id).not.toBe(kept.id);
     expect(book.rules()[0]!.decision).toBe('ask');
     expect(() => book.save({ peerId: KAY, peerName: 'kay', kind: 'task', needs: [], decision: 'allow', expiresAt: NOW - 5 })).toThrow('past');
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ version: 1, rules: [{ decision: 'ask' }] });
     // A day later it's gone, here and in the file.
     now += 86_400_001;

@@ -149,7 +149,8 @@ describe('Run a script', () => {
     expect(s.ran[0]!.cwd).toBe('/home/me');
   });
 
-  it('the real shell: your variables, the exit code, and the process group killed at its limit', async () => {
+  // Not on Windows: process groups; Git Bash runs it there.
+  it.skipIf(process.platform === 'win32')('the real shell: your variables, the exit code, and the process group killed at its limit', async () => {
     const ctl = new AbortController();
     const res = await runSentinelShell('echo "$GREETING"; exit 3', '/tmp', 5000, { GREETING: 'hi there' }, ctl.signal);
     expect(res).toMatchObject({ exitCode: 3, timedOut: false });

@@ -1,6 +1,10 @@
-import { type AgentRef, CLAUDE_AGENT } from '../protocol.js';
+import type { AgentRef } from '../protocol.js';
 import type { RuntimeChoice, RuntimeModel } from '../shared/agent-runtimes.js';
 import { type AgentMark, runtimeMark } from '../shared/agent-marks.js';
+
+/** protocol.ts's CLAUDE_AGENT, repeated so the phone bundles this file without the daemon's protocol (types only from there). */
+// agent-wording: claude (the Claude runtime's own name)
+const CLAUDE_AGENT: AgentRef = { runtime: 'claude', label: 'Claude' };
 
 /**
  * The agents you can pick (BLG-444, BLG-497) as pop-up entries: every runtime this Mac knows, each

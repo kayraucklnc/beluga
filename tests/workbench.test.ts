@@ -16,6 +16,13 @@ import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
 import { runId, setupId } from '../src/core/workbench.js';
 import { attach, waitFor } from './helpers.js';
+import { posixSh } from '../src/terminal/pty.js';
+
+/** Windows' runners make worktrees and start Git Bash several times slower. */
+const SLOW = process.platform === 'win32' ? 3 : 1;
+
+/** bash, or Git Bash on Windows. */
+const BASH = process.platform === 'win32' ? (posixSh() ?? 'bash') : '/bin/bash';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -111,9 +118,9 @@ describe('setup and run scripts', () => {
     expect(kay.state().approvals[0]?.title).toBe("app's klaud.json wants to run its setup in new worktrees");
     kay.session.answerApproval('always');
     // A new worktree and a login shell can take a while on a busy CI runner: generous waits.
-    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 20_000);
+    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', SLOW * 20_000);
     const next = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'second');
-    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', 20_000);
+    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', SLOW * 20_000);
     expect(kay.state().approvals).toHaveLength(0);
     const setup = terminals.get(setupId(ws!.id))!;
     expect(setup.backlog()).toContain('installing');
@@ -480,13 +487,13 @@ describe('your shell, its names and your variables', () => {
     const kay = await solo(dir);
     const project = projectOf(kay.workspaces);
     await waitFor(() => kay.state().projects.some((p) => p.id === project.id), 4000);
-    kay.session.setPrefs({ shell: '/bin/bash', shellLogin: false, shellArgs: ['--norc', '--noprofile'] });
+    kay.session.setPrefs({ shell: BASH, shellLogin: false, shellArgs: ['--norc', '--noprofile'] });
     kay.session.env.set(undefined, [{ key: 'KLAUD_T_MINE', value: 'mine' }, { key: 'KLAUD_T_BOTH', value: 'mine' }]);
     kay.session.env.set(project.id, [{ key: 'KLAUD_T_BOTH', value: 'project' }]);
     const shell = kay.bench.globalShell('shell:1', dir)!;
     shell.run('echo "got:$KLAUD_T_MINE:$KLAUD_T_BOTH:$0"');
     await waitFor(() => shell.backlog().includes('got:mine:project:'), 8000);
-    expect(shell.shell).toBe('/bin/bash');
+    expect(shell.shell).toBe(BASH);
 
     // Setup and run commands get them too (alongside Beluga's own).
     const ws = await kay.session.workspaces!.newWorktree(project.id, 'envy');

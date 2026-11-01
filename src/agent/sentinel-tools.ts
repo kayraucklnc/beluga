@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { TOOL_DRAFT_SHAPE, TOOL_PATCH_SHAPE } from '../core/sentinel/tool-draft.js';
 import { SOURCE_KINDS } from '../shared/view-spec.js';
 import type { SentinelTools } from './types.js';
+import { ASSISTANT_TITLE } from '../shared/assistant.js';
 
 /**
  * Sentinels as Claude's tools (server `beluga_sentinel`), in your own runs only: list them, read
@@ -59,7 +60,7 @@ export function createSentinelToolDefs(sentinel: SentinelTools) {
       `Run a view source once, read-only, and see its first rows, before you put it in a sentinel: read the schema (postgres: SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' ORDER BY 1, ordinal_position; the foreign keys from information_schema.key_column_usage), look at a few real rows, then try the query you mean to keep. It uses the project’s variables (a postgres source without url or env finds DATABASE_URL, or Supabase’s), never writes, and a command source waits for the user’s yes. ${READ_FIRST}`,
       {
         source: z.looseObject({ kind: z.enum(SOURCE_KINDS) }).describe('The same JSON a view’s source takes: { kind: "postgres", query: "SELECT …" }, { kind: "sqlite", path, query }, { kind: "http", url, headers? }'),
-        project: z.string().max(200).optional().describe('The project whose variables and folder it uses (its name); leave out for Your Mac'),
+        project: z.string().max(200).optional().describe(`The project whose variables and folder it uses (its name); leave out for ${ASSISTANT_TITLE}`),
       },
       (a) => guarded(() => sentinel.trySource(a.source, a.project)),
     ),

@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { posixSh } from '../../terminal/pty.js';
+import { killTree, ownGroup } from '../process-tree.js';
 import { redactSecrets } from '../../shared/steps.js';
 import type { NoticeEvent } from '../notify.js';
 import { type Named, mentionNote, personMentions } from '../person-mentions.js';
@@ -39,6 +41,7 @@ import type { Row, Source } from '../../shared/view-spec.js';
 import { type Measured, keptWords, measureFrom, readOutput } from './metrics.js';
 import { sentinelRunPrompt, stepMaterial } from './prompt.js';
 import { type RenderContext, dateText, jsonInside, render } from './render.js';
+import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 
 /**
  * A run's steps, one after the other (docs/sentinel.md §4, "Runner"): Ask Claude, Run a script,
@@ -850,7 +853,7 @@ export class SentinelRunner {
     let place: SentinelPlace | undefined;
     if (step.where === 'mac') place = places.macChat();
     else {
-      if (!s.projectId) return 'it needs a project: pick one on the sentinel’s page, or have the agent work on Your Mac';
+      if (!s.projectId) return `it needs a project: pick one on the sentinel’s page, or have the agent work on ${ASSISTANT_TITLE}`;
       const at = this.deps.now();
       place = step.where === 'worktree' ? await places.worktree(s.projectId, `sentinel ${s.name} ${yymmdd(at)}`) : await places.projectChat(s.projectId, `${s.name} · ${dateText(at)}`);
     }
@@ -1115,10 +1118,13 @@ export const runSentinelShell: SentinelShell = (command, cwd, timeoutMs, env, si
     let out = '';
     let truncated = false;
     let timedOut = false;
-    const child = spawn('/bin/sh', ['-c', command], {
+    const sh = posixSh();
+    if (!sh) return resolve({ exitCode: 127, output: 'Scripts need Git for Windows (its bash): install it from git-scm.com', truncated: false, timedOut: false, ms: 0 });
+    const child = spawn(sh, ['-c', command], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
+      detached: ownGroup(),
+      windowsHide: true,
       env: { ...process.env, ...env, CI: '1', GIT_TERMINAL_PROMPT: '0', NO_COLOR: '1', TERM: 'dumb', PAGER: 'cat', GIT_PAGER: 'cat' },
     });
     const take = (chunk: Buffer): void => {
@@ -1130,13 +1136,7 @@ export const runSentinelShell: SentinelShell = (command, cwd, timeoutMs, env, si
     };
     child.stdout?.on('data', take);
     child.stderr?.on('data', take);
-    const kill = (): void => {
-      try {
-        if (child.pid) process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        // Already gone.
-      }
-    };
+    const kill = (): void => killTree(child);
     const timer = setTimeout(() => {
       timedOut = true;
       kill();

@@ -8,7 +8,8 @@ describe('parseConfig', () => {
     expect(parseConfig(['host', '-h']).mode).toBe('help');
   });
 
-  it('parses host options', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('parses host options', () => {
     const c = parseConfig(['host', '-n', 'kay!', '-s', 'web=./site:rw', '--tunnel', 'none', '--lan', '-p', '4000', '--policy', 'auto'], '/tmp');
     expect(c).toMatchObject({ mode: 'host', name: 'kay', tunnel: 'none', lan: true, port: 4000, policy: 'auto', agent: true });
     expect(c.shares).toEqual([{ name: 'web', root: '/tmp/site', writable: true }]);

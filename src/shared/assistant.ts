@@ -5,7 +5,32 @@
  * the screens, the phone's views and the daemon all name them by these channels.
  */
 export const ASSISTANT_CHANNEL = 'mac:assistant';
-export const ASSISTANT_TITLE = 'Your Mac';
+
+/** Which kind of computer Beluga runs on (its channels keep saying `mac:` everywhere). */
+export type ComputerKind = 'mac' | 'windows' | 'linux';
+
+/** A platform as Node or a browser says it ("darwin", "win32", "MacIntel", "Linux x86_64") → its kind. */
+export const computerKindOf = (platform: string): ComputerKind => (/win/i.test(platform) && !/darwin/i.test(platform) ? 'windows' : /linux|x11|cros/i.test(platform) ? 'linux' : 'mac');
+
+/**
+ * The computer this runs on: the window's in the app, the process's in the daemon.
+ * $BELUGA_COMPUTER picks one (the tests are a Mac's wherever they run).
+ */
+function computerHere(): ComputerKind {
+  const set = typeof process !== 'undefined' ? process.env?.BELUGA_COMPUTER : undefined;
+  if (set === 'mac' || set === 'windows' || set === 'linux') return set;
+  if (typeof window !== 'undefined' && typeof navigator !== 'undefined') return computerKindOf(`${navigator.platform ?? ''} ${navigator.userAgent ?? ''}`);
+  return typeof process !== 'undefined' ? computerKindOf(process.platform) : 'mac';
+}
+
+export const COMPUTER: ComputerKind = computerHere();
+
+/** Your own Claude's name for this computer: "Your Mac", "Your Linux", "Your Windows". */
+export const assistantTitleFor = (kind: ComputerKind): string => (kind === 'windows' ? 'Your Windows' : kind === 'linux' ? 'Your Linux' : 'Your Mac');
+export const ASSISTANT_TITLE = assistantTitleFor(COMPUTER);
+
+/** The computer in a sentence: "this Mac", "this PC", "this computer". */
+export const THIS_COMPUTER = COMPUTER === 'windows' ? 'this PC' : COMPUTER === 'linux' ? 'this computer' : 'this Mac';
 
 /** The first chat: the one conversation there was before BLG-102, keeping its channel `mac:assistant`. */
 export const FIRST_CHAT = 'main';

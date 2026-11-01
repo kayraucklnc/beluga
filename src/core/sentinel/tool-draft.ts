@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ACCESS, BELUGA_EVENTS, GITHUB_EVENTS, NOTIFY_WHERE, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 import { SOURCE_KINDS } from '../../shared/view-spec.js';
 import { LimitsSchema, MetricSpecSchema, ScheduleTriggerSchema } from './schema.js';
+import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 
 /**
  * What Claude's sentinel_create and sentinel_update take (agent/sentinel-tools.ts): a sentinel in
@@ -69,7 +70,7 @@ const TOOL_STEP = z.discriminatedUnion('kind', [
 
 export const TOOL_DRAFT_SHAPE = {
   name: z.string().trim().min(1).max(80).describe('A short name, like "Morning brief"'),
-  project: z.string().max(200).optional().describe('The project’s name; leave out for Your Mac'),
+  project: z.string().max(200).optional().describe(`The project’s name; leave out for ${ASSISTANT_TITLE}`),
   trigger: TOOL_TRIGGER,
   steps: z.array(TOOL_STEP).min(1).max(12),
   access: z.enum(ACCESS).optional().describe('look (default): read and report; work: change code in a worktree and open pull requests; ship: also merge after checks and approval'),
@@ -83,7 +84,7 @@ export type ToolStep = z.infer<typeof TOOL_STEP>;
 /** sentinel_update: only what changes. Steps are the whole new list, in order. */
 export const TOOL_PATCH_SHAPE = {
   name: TOOL_DRAFT_SHAPE.name.optional(),
-  project: z.string().max(200).nullable().optional().describe('The project’s name; null for Your Mac'),
+  project: z.string().max(200).nullable().optional().describe(`The project’s name; null for ${ASSISTANT_TITLE}`),
   trigger: TOOL_TRIGGER.optional(),
   steps: z.array(TOOL_STEP).max(12).optional().describe('The whole list of steps, in order (keep the ids of the ones you keep)'),
   access: TOOL_DRAFT_SHAPE.access,

@@ -86,11 +86,7 @@ pub async fn privacy_request(pane: String) -> Result<(), String> {
         match pane.as_str() {
             "screen" => mac::request_screen(),
             "accessibility" => mac::request_accessibility(),
-            "automation" => {
-                if mac::automation(true) == "granted" {
-                    return Ok(());
-                }
-            }
+            "automation" if mac::automation(true) == "granted" => return Ok(()),
             _ => {}
         }
         open_pane(&pane)

@@ -25,7 +25,8 @@ describe('settings', () => {
     const next = saveSettings({ theme: 'mono', policy: 'auto' }, file);
     expect(next).toMatchObject({ name: 'kay', theme: 'mono', policy: 'auto' });
     expect(JSON.parse(readFileSync(file, 'utf8')).name).toBe('kay');
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(() => saveSettings({ name: 'bad name!' }, file)).toThrow();
   });
 
@@ -47,7 +48,8 @@ describe('settings', () => {
     expect(loadSettings(file).autoCompact).toBe(false);
   });
 
-  it('respects BELUGA_HOME', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('respects BELUGA_HOME', () => {
     const before = process.env.BELUGA_HOME;
     process.env.BELUGA_HOME = '/tmp/kh';
     expect(settingsPath()).toBe('/tmp/kh/settings.json');

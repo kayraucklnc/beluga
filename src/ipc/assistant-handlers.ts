@@ -2,7 +2,7 @@ import { assistantOf } from '../core/assistant/registry.js';
 import type { MacAssistant } from '../core/assistant/assistant.js';
 import { busyChannels } from '../core/board/work.js';
 import type { Session } from '../core/session.js';
-import { assistantChannel } from '../shared/assistant.js';
+import { ASSISTANT_TITLE, assistantChannel } from '../shared/assistant.js';
 import type { Args, Method } from './api.js';
 
 /** What each `assistant.*` method does (see assistant-api.ts). */
@@ -12,7 +12,7 @@ type AssistantHandlers = { readonly [M in AssistantMethod]: (s: Session, ...args
 
 const mac = (s: Session): MacAssistant => {
   const a = assistantOf(s);
-  if (!a) throw new Error('Your Mac’s assistant needs the Beluga app');
+  if (!a) throw new Error(`${ASSISTANT_TITLE}’s assistant needs the Beluga app`);
   return a;
 };
 

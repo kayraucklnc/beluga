@@ -358,15 +358,11 @@ pub fn apply_keys<R: Runtime>(menu: &Menu<R>, keys: &HashMap<String, Option<Stri
         .collect();
     for (id, accel) in keys {
         match submenus.iter().find_map(|s| s.get(id)) {
-            Some(MenuItemKind::MenuItem(i)) => {
-                if i.set_accelerator(accel.as_deref()).is_err() {
-                    let _ = i.set_accelerator(None::<&str>);
-                }
+            Some(MenuItemKind::MenuItem(i)) if i.set_accelerator(accel.as_deref()).is_err() => {
+                let _ = i.set_accelerator(None::<&str>);
             }
-            Some(MenuItemKind::Check(i)) => {
-                if i.set_accelerator(accel.as_deref()).is_err() {
-                    let _ = i.set_accelerator(None::<&str>);
-                }
+            Some(MenuItemKind::Check(i)) if i.set_accelerator(accel.as_deref()).is_err() => {
+                let _ = i.set_accelerator(None::<&str>);
             }
             _ => {}
         }

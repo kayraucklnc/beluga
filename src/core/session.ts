@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { agentLabel } from '../shared/agent-label.js';
 import { KNOWN_RUNTIMES } from '../shared/agent-runtimes.js';
-import { isAssistant } from '../shared/assistant.js';
+import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 import { assistantOf } from './assistant/registry.js';
 import os from 'node:os';
 import path from 'node:path';
@@ -1011,7 +1011,7 @@ export class Session {
       assistantOf(this)?.forget(channel);
       this.store.dispatch({ type: 'context_reset', channel });
       this.host.forgetContext(channel);
-      this.toast('Cleared. Your Mac starts a fresh conversation', 'success');
+      this.toast(`Cleared. ${ASSISTANT_TITLE} starts a fresh conversation`, 'success');
       return;
     }
     this.toast(channel.startsWith('ws:') || isAssistant(channel) ? 'Messages cleared. Your agent still remembers the conversation' : 'Cleared on your screen', 'success');

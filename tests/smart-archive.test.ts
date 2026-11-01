@@ -120,7 +120,8 @@ describe('a smart archive', () => {
     expect(sh(wt, 'status', '--porcelain')).toBe(status);
     expect(existsSync(path.join(wt, 'gone.ts'))).toBe(false);
     expect(lstatSync(path.join(wt, 'link.ts')).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(path.join(wt, 'link.ts'))).toBe('src/app.ts');
+    // Windows keeps a link's target with its own slashes.
+    expect(readlinkSync(path.join(wt, 'link.ts')).replaceAll('\\', '/')).toBe('src/app.ts');
     // Made again, not kept.
     expect(existsSync(path.join(wt, 'node_modules'))).toBe(false);
     // Restored: the archive is gone with its ref.

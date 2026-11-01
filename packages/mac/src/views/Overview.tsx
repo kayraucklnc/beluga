@@ -14,6 +14,7 @@ import { ActiveRow, type ArchivedActions, ArchivedRow } from './overview/Overvie
 import { type OverviewGroup, type OverviewItem, emptyText, filterCounts, groupItems, inFilter, narrow, overviewItems, rowOrder, stepRow } from './overview/overview-model.js';
 import { useOverviewPrefs } from './overview/use-overview-prefs.js';
 import s from './overview.module.css';
+import { primaryKey } from '../lib/shortcuts-model.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const sameRows = (a: readonly OverviewItem[], b: readonly OverviewItem[]): boolean => sameDeep(a, b, 3);
@@ -56,7 +57,7 @@ export function OverviewView() {
   // ⌘F: the search field (the Find menu item is off here, so the key comes to the window).
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
-      if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || e.key.toLowerCase() !== 'f') return;
+      if (!primaryKey(e) || e.shiftKey || e.altKey || (e.metaKey && e.ctrlKey) || e.key.toLowerCase() !== 'f') return;
       if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       e.preventDefault();
       searchRef.current?.focus();
@@ -106,7 +107,7 @@ export function OverviewView() {
     } else if (e.key === ' ' && item?.archived && e.target === row) {
       e.preventDefault();
       act.read(item);
-    } else if (e.key === 'Backspace' && e.metaKey && item?.archived) {
+    } else if (e.key === 'Backspace' && primaryKey(e) && item?.archived) {
       e.preventDefault();
       act.remove(item);
     }

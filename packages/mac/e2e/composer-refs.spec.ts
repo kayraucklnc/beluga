@@ -58,14 +58,14 @@ test('a pasted path of a picture becomes the picture; a path to nothing stays wo
   const tray = page.getByRole('group', { name: 'Images to send' });
   await expect(tray.locator('img')).toHaveCount(1);
   await expect(tray.locator('img')).toHaveJSProperty('complete', true);
-  await page.screenshot({ path: path.join(import.meta.dirname, '../../../.klaud/scratch/01-pasted-path-thumbnail.png') });
+  await page.screenshot({ path: path.join(import.meta.dirname, '../../../.beluga/scratch/01-pasted-path-thumbnail.png') });
   await box.press('Enter');
   await expect(tray).toBeHidden();
   // The message carries the picture (a link to Beluga's copy, shown as a thumbnail).
   const sent = page.getByRole('button', { name: /^Open image \d+/ }).last();
   await expect(sent).toBeVisible();
   await expect(sent.locator('img')).toHaveJSProperty('complete', true);
-  await page.screenshot({ path: path.join(import.meta.dirname, '../../../.klaud/scratch/02-sent-with-image.png') });
+  await page.screenshot({ path: path.join(import.meta.dirname, '../../../.beluga/scratch/02-sent-with-image.png') });
 });
 
 test('an image path inside pasted words becomes the image; the words stay (plain, quoted, smart quoted, escaped)', async ({ page }) => {
@@ -78,11 +78,12 @@ test('an image path inside pasted words becomes the image; the words stay (plain
   await sidebar(page).getByRole('button', { name: 'Group chat' }).click();
   const box = composer(page);
   const tray = page.getByRole('group', { name: 'Images to send' });
-  for (const [i, written] of [shot, `"${shot}"`, `“${shot}”`, shot.replace(/ /g, '\\ ')].entries()) {
+  for (const written of [shot, `"${shot}"`, `“${shot}”`, shot.replace(/ /g, '\\ ')]) {
+    // Emptying the box takes its image off the tray too (an image leaves with its reference).
     await box.fill('');
     await pasteText(box, `the header is cut off in ${written}, can you fix it`);
     await expect(box).toHaveValue(/^the header is cut off in \[(?:image \d+|\d+\u2007[^\]\n]+)\], can you fix it$/);
-    await expect(tray.locator('img')).toHaveCount(i + 1);
+    await expect(tray.locator('img')).toHaveCount(1);
   }
   // Paths that aren't images here stay words.
   await box.fill('');
@@ -129,7 +130,7 @@ test('the plan chat takes pasted images, image paths in words, and files like an
   // Taking an image out takes its reference out too (nothing is sent: the demo's plan stays as it is).
   await chat.getByRole('button', { name: /Remove image/ }).last().click({ force: true });
   await expect(box).toHaveValue('also see too');
-  await page.screenshot({ path: path.join(import.meta.dirname, '../../../.klaud/scratch/13-plan-chat-attachments.png') });
+  await page.screenshot({ path: path.join(import.meta.dirname, '../../../.beluga/scratch/13-plan-chat-attachments.png') });
 });
 
 test('a pasted path of another file waits as a chip and goes as its path; a folder stays words', async ({ page }) => {

@@ -6,7 +6,9 @@ use std::io::{Read, Seek, SeekFrom};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::{mpsc, Mutex, MutexGuard, OnceLock, PoisonError};
+#[cfg(target_os = "macos")]
+use std::sync::{mpsc, OnceLock};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Manager};
 
@@ -17,6 +19,7 @@ const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a daemon gets to quit on its own before it's forced.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long your shell gets to say what your PATH is.
+#[cfg(target_os = "macos")]
 const SHELL_TIMEOUT: Duration = Duration::from_secs(4);
 const PATH_MARK: &str = "__BELUGA_PATH__";
 
@@ -82,7 +85,25 @@ fn home_in(set: Option<PathBuf>, user_home: &std::path::Path) -> PathBuf {
         .unwrap_or(home)
 }
 
+/// The signals the app sends: only checking, asking to quit and forcing.
+#[cfg(unix)]
+pub mod sig {
+    pub const CHECK: i32 = 0;
+    pub const TERM: i32 = libc::SIGTERM;
+    pub const KILL: i32 = libc::SIGKILL;
+}
+
+/// Windows has no signals: checking opens the process, and quitting ends it outright (the daemon
+/// writes everything as it goes, and a stale daemon.json is told apart by its port).
+#[cfg(windows)]
+pub mod sig {
+    pub const CHECK: i32 = 0;
+    pub const TERM: i32 = 15;
+    pub const KILL: i32 = 9;
+}
+
 /// Send a signal to a process (0 only checks that it's there and ours).
+#[cfg(unix)]
 pub fn signal(pid: u32, sig: i32) -> bool {
     // Never 0 (our whole process group) or 1 (the system's first process).
     let Ok(pid) = i32::try_from(pid) else {
@@ -95,8 +116,41 @@ pub fn signal(pid: u32, sig: i32) -> bool {
     unsafe { libc::kill(pid, sig) == 0 }
 }
 
+#[cfg(windows)]
+pub fn signal(pid: u32, sig: i32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        PROCESS_TERMINATE,
+    };
+    if pid <= 4 {
+        return false;
+    }
+    let access = if sig == sig::CHECK {
+        PROCESS_QUERY_LIMITED_INFORMATION
+    } else {
+        PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE
+    };
+    // SAFETY: plain Win32 calls on a handle we open and close here; a bad pid just fails.
+    unsafe {
+        let handle = OpenProcess(access, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let mut code = 0u32;
+        let running = GetExitCodeProcess(handle, &mut code) != 0 && code == STILL_ACTIVE as u32;
+        let done = if sig == sig::CHECK || !running {
+            running
+        } else {
+            TerminateProcess(handle, 1) != 0
+        };
+        CloseHandle(handle);
+        done
+    }
+}
+
 fn alive(pid: u32) -> bool {
-    signal(pid, 0)
+    signal(pid, sig::CHECK)
 }
 
 /// Whether something answers on Beluga's port (a leftover pid could belong to anything).
@@ -135,7 +189,14 @@ fn outdated(running: Option<&str>, keep_alive: bool, bundled: Option<&str>) -> b
     keep_alive && matches!((running, bundled), (Some(r), Some(b)) if r != b)
 }
 
-/// The process that started `pid` (1 once that one is gone), if it can be told.
+/// The process that started `pid` (1 once that one is gone), if it can be told. Windows doesn't
+/// hand orphans to a first process, so a daemon there is never taken for one left behind.
+#[cfg(windows)]
+fn parent_of(_pid: u32) -> Option<u32> {
+    None
+}
+
+#[cfg(unix)]
 fn parent_of(pid: u32) -> Option<u32> {
     let out = Command::new("/bin/ps")
         .args(["-o", "ppid=", "-p", &pid.to_string()])
@@ -170,6 +231,13 @@ fn running(app: &AppHandle) -> Option<Info> {
 }
 
 /// Apps opened from Finder get a bare PATH; Beluga needs yours (git, gh, claude, node tools).
+/// Windows and Linux desktops start apps with your PATH already.
+#[cfg(not(target_os = "macos"))]
+async fn login_path() -> String {
+    std::env::var("PATH").unwrap_or_default()
+}
+
+#[cfg(target_os = "macos")]
 async fn login_path() -> String {
     static PATH: OnceLock<String> = OnceLock::new();
     if let Some(path) = PATH.get() {
@@ -184,6 +252,7 @@ async fn login_path() -> String {
 }
 
 /// Ask your login shell for its PATH, giving up (and stopping it) if it takes too long.
+#[cfg(target_os = "macos")]
 fn shell_path() -> Option<String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let script = format!("printf '{PATH_MARK}%s{PATH_MARK}' \"$PATH\"");
@@ -217,6 +286,7 @@ fn shell_path() -> Option<String> {
 }
 
 /// The PATH between the markers (your shell's startup files may print other things too).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn parse_path(text: &str) -> Option<String> {
     let rest = &text[text.find(PATH_MARK)? + PATH_MARK.len()..];
     let path = rest[..rest.find(PATH_MARK)?].trim();
@@ -224,6 +294,7 @@ fn parse_path(text: &str) -> Option<String> {
 }
 
 /// When the shell can't say: the PATH we have, plus where Homebrew puts things.
+#[cfg(target_os = "macos")]
 fn fallback_path() -> String {
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
@@ -281,7 +352,7 @@ fn base_command(app: &AppHandle) -> Result<(Command, bool), String> {
 #[cfg(debug_assertions)]
 fn dev_command() -> Result<Command, String> {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let mut c = Command::new("npx");
+    let mut c = Command::new(if cfg!(windows) { "npx.cmd" } else { "npx" });
     c.current_dir(&repo).args(["tsx", "src/cli.ts"]);
     c.env("BELUGA_ALLOW_ORIGINS", "http://localhost:1420");
     Ok(c)
@@ -296,7 +367,10 @@ fn dev_command() -> Result<Command, String> {
 fn bundled(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     let resources = app.path().resource_dir().ok()?;
     let script = resources.join("daemon").join("dist").join("cli.js");
-    let node = std::env::current_exe().ok()?.parent()?.join("node");
+    let node = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join(format!("node{}", std::env::consts::EXE_SUFFIX));
     (script.exists() && node.exists()).then_some((node, script))
 }
 
@@ -306,6 +380,12 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
     cmd.arg("daemon").arg("--keep-alive").args(args);
     cmd.env("PATH", login_path().await);
     cmd.stdin(Stdio::null());
+    // No console window for it on Windows.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
     let log = log_file();
     let log_from = log
         .as_ref()
@@ -363,7 +443,7 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
 
 /// Ask a daemon we started to quit; force it if it doesn't.
 async fn terminate_child(mut child: Child) -> bool {
-    signal(child.id(), libc::SIGTERM);
+    signal(child.id(), sig::TERM);
     let deadline = Instant::now() + STOP_TIMEOUT;
     while Instant::now() < deadline {
         if matches!(child.try_wait(), Ok(Some(_))) {
@@ -376,7 +456,7 @@ async fn terminate_child(mut child: Child) -> bool {
 
 /// Ask a daemon this app didn't start to quit; force it if it doesn't.
 async fn terminate_pid(pid: u32) -> bool {
-    if !signal(pid, libc::SIGTERM) {
+    if !signal(pid, sig::TERM) {
         return !alive(pid);
     }
     let deadline = Instant::now() + STOP_TIMEOUT;
@@ -386,7 +466,7 @@ async fn terminate_pid(pid: u32) -> bool {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    signal(pid, libc::SIGKILL);
+    signal(pid, sig::KILL);
     for _ in 0..10 {
         if !alive(pid) {
             return true;
@@ -483,7 +563,7 @@ pub fn stop(app: &AppHandle) {
     let Some(mut child) = locked(&state.child).take() else {
         return;
     };
-    signal(child.id(), libc::SIGTERM);
+    signal(child.id(), sig::TERM);
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
         if matches!(child.try_wait(), Ok(Some(_))) {
@@ -557,6 +637,7 @@ mod tests {
         assert!(!orphaned(false, Some(1)));
     }
 
+    #[cfg(unix)]
     #[test]
     fn tells_a_process_parent() {
         let me = std::process::id();

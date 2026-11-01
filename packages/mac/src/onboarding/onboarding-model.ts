@@ -7,6 +7,8 @@
  * Quit halfway (macOS's "Quit & Reopen" after a permission, say) and it opens where it was left.
  */
 
+import { keyPlatform } from '../lib/shortcuts-model.js';
+
 /** Where the mark that you've been through it is kept. */
 export const DONE_KEY = 'beluga.onboarding.v1';
 /** The step it was on, so reopening Beluga (macOS's "Quit & Reopen" after a permission) comes back to it. */
@@ -20,11 +22,14 @@ export const FORCE_PARAM = 'welcome';
 /** The document event File › Onboard Again, Help › Welcome to Beluga and the palette send to show it again. */
 export const SHOW_WELCOME = 'beluga:welcome';
 
-export const STEPS = ['hello', 'yourAgents', 'parallel', 'agents', 'tables', 'friends', 'sentinel', 'uses', 'earnings', 'archive', 'look', 'terminal', 'fire', 'setup', 'screen', 'accessibility', 'disk', 'automation', 'popups', 'phone', 'ready'] as const;
+const ALL_STEPS = ['hello', 'yourAgents', 'parallel', 'agents', 'tables', 'friends', 'sentinel', 'uses', 'earnings', 'archive', 'look', 'terminal', 'fire', 'setup', 'screen', 'accessibility', 'disk', 'automation', 'popups', 'phone', 'ready'] as const;
+export type Step = (typeof ALL_STEPS)[number];
+
+/** The steps on this computer: the macOS permissions only on a Mac (Linux and Windows don't ask). */
+export const STEPS: readonly Step[] = keyPlatform() === 'mac' ? ALL_STEPS : ALL_STEPS.filter((s) => !['screen', 'accessibility', 'disk', 'automation'].includes(s));
 
 /** The last step before the app (its button says Finish). */
 export const LAST_SETTING: Step = 'phone';
-export type Step = (typeof STEPS)[number];
 
 /** The tour: what Beluga does, one idea a step (Skip Tour goes past all of them). */
 export const TOUR: readonly Step[] = ['parallel', 'agents', 'tables', 'friends', 'sentinel', 'uses', 'earnings', 'archive'];

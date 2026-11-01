@@ -79,7 +79,8 @@ test('Share a Folder: share with one person, see it listed, stop sharing', async
   await sheet.getByRole('textbox', { name: 'Folder path' }).fill(dir);
   await sheet.getByRole('radio', { name: 'Only…' }).click();
   await expect(sheet.getByRole('button', { name: 'Share', exact: true })).toBeDisabled();
-  await sheet.getByRole('checkbox', { name: 'bob' }).check();
+  // bob is in the room and a friend too: either one is him.
+  await sheet.getByRole('checkbox', { name: 'bob' }).first().check();
   await sheet.getByRole('button', { name: 'Share', exact: true }).click();
   const row = sheet.getByRole('list', { name: 'Shared folders' }).getByRole('listitem', { name: 'sketches' });
   await expect(row).toContainText('only bob');

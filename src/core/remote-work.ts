@@ -105,7 +105,7 @@ export const continuePrompt = (from: string, note: string): string =>
 export function expandPath(p: string, home = os.homedir()): string {
   const trimmed = p.trim();
   if (trimmed === '~') return home;
-  if (trimmed.startsWith('~/')) return path.join(home, trimmed.slice(2));
+  if (/^~[\\/]/.test(trimmed)) return path.join(home, trimmed.slice(2));
   return path.isAbsolute(trimmed) ? path.normalize(trimmed) : path.join(home, trimmed);
 }
 
@@ -299,7 +299,7 @@ export class RemoteWork {
   /** Send a file from this computer to someone (they save it; automatically if they trust you). */
   async sendFile(peerId: string, localPath: string, note = ''): Promise<string> {
     const trimmed = localPath.trim();
-    if (!trimmed.startsWith('/') && !trimmed.startsWith('~/')) throw new Error('Use a full path (/… or ~/…)');
+    if (!path.isAbsolute(trimmed) && !/^~[\\/]/.test(trimmed)) throw new Error(process.platform === 'win32' ? 'Use a full path (C:\\… or ~\\…)' : 'Use a full path (/… or ~/…)');
     const offer = await this.offerFile(expandPath(trimmed), peerId);
     if (!this.deps.send({ kind: 'file_offer', fid: randomUUID(), ...offer, note: note.slice(0, 1000) }, { to: peerId })) throw new Error('Not connected');
     return `Offered ${offer.name} (${formatBytes(offer.size)}) to ${this.name(peerId)}. It downloads on their side.`;

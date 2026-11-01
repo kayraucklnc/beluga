@@ -125,9 +125,10 @@ const run = (cmd: string, args: readonly string[]): Promise<void> =>
  * writable for a second try; whatever still can't go is left where it was set aside.
  */
 function deleteInBackground(dir: string): void {
-  const rmrf = (): Promise<void> => (process.platform === 'darwin' ? run('/usr/sbin/taskpolicy', ['-b', '/bin/rm', '-rf', dir]) : run('nice', ['-n', '19', 'rm', '-rf', dir])).catch(() => rm(dir, { recursive: true, force: true }));
+  const rmrf = (): Promise<void> =>
+    (process.platform === 'darwin' ? run('/usr/sbin/taskpolicy', ['-b', '/bin/rm', '-rf', dir]) : process.platform === 'win32' ? Promise.reject(new Error('no rm')) : run('nice', ['-n', '19', 'rm', '-rf', dir])).catch(() => rm(dir, { recursive: true, force: true, maxRetries: 3 }));
   const job: Promise<void> = rmrf()
-    .catch(() => run('chmod', ['-R', 'u+w', dir]).then(rmrf))
+    .catch(() => (process.platform === 'win32' ? run('attrib', ['-R', `${dir}\\*`, '/S', '/D']) : run('chmod', ['-R', 'u+w', dir])).then(rmrf))
     .catch(() => undefined)
     .finally(() => deleting.delete(job));
   deleting.add(job);

@@ -46,7 +46,8 @@ describe('finding Claude Code conversations for a folder', () => {
     expect(encodeProjectDir('/Users/k/Desktop/ratel/_pr-review/catalog-v2/ratel.154')).toBe('-Users-k-Desktop-ratel--pr-review-catalog-v2-ratel-154');
   });
 
-  it('treats /tmp and /private/tmp (and symlinks) as one folder', () => {
+  // Not on Windows: macOS's /private links.
+  it.skipIf(process.platform === 'win32')('treats /tmp and /private/tmp (and symlinks) as one folder', () => {
     expect(pathVariants('/tmp/x')).toEqual(expect.arrayContaining(['/tmp/x', '/private/tmp/x']));
     expect(samePath('/tmp/does-not-exist-klaud', '/private/tmp/does-not-exist-klaud')).toBe(true);
     expect(samePath('/tmp/a', '/tmp/b')).toBe(false);
@@ -118,7 +119,8 @@ describe('finding Claude Code conversations for a folder', () => {
 });
 
 describe('which conversation made a worktree', () => {
-  it('reads the folders `git worktree add` makes, following cd and -C', () => {
+  // Not on Windows: POSIX paths in the commands.
+  it.skipIf(process.platform === 'win32')('reads the folders `git worktree add` makes, following cd and -C', () => {
     expect(worktreeAddTargets('git worktree add /abs/wt -b feat', '/repo')).toEqual(['/abs/wt']);
     expect(worktreeAddTargets('cd /Users/k/repo && git worktree add ../rc210-replay feat/x', '/elsewhere')).toEqual(['/Users/k/rc210-replay']);
     expect(worktreeAddTargets('git -C /Users/k/repo worktree add -B pr-154 "../_pr review/ratel-154" origin/pr', '/x')).toEqual(['/Users/k/_pr review/ratel-154']);
@@ -396,7 +398,8 @@ describe('opening a worktree from another tool', () => {
 });
 
 describe("Conductor's live workspaces", () => {
-  it('are never offered for cleanup or removed by Clean Up (archive them in Conductor)', async () => {
+  // Not on Windows: Conductor is a Mac app.
+  it.skipIf(process.platform === 'win32')('are never offered for cleanup or removed by Clean Up (archive them in Conductor)', async () => {
     const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-conductor-live-')));
     const repo = path.join(base, 'code', 'app');
     mkdirSync(repo, { recursive: true });

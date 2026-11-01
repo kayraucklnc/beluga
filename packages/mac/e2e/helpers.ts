@@ -57,3 +57,23 @@ export async function optionLabels(button: Locator): Promise<string[]> {
   await expect(popupMenu(page)).toHaveCount(0);
   return labels;
 }
+
+/** Plans: the sidebar's Work row (Tasks, Issues, Actions and Plans, BLG-197), then its Plans tab. */
+export async function openPlans(page: Page): Promise<void> {
+  await page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: /^Work/ }).first().click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: /^Plans/ }).click();
+}
+
+/** A friend's workspace shared with you: under "<friend>’s conversations", in their project (unfolded first). */
+export async function openSharedWorkspace(page: Page, project: string, friend: string, name: string | RegExp): Promise<void> {
+  const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
+  const row = sidebar.getByRole('button', { name, exact: typeof name === 'string' }).first();
+  if (!(await row.isVisible())) await sidebar.getByRole('button', { name: `${project}, shared by ${friend}` }).getByRole('button', { name: new RegExp(`^Show what's in ${project}`) }).click();
+  await row.click();
+}
+
+/** Tasks: the sidebar's Work row, then its Tasks tab. */
+export async function openTasks(page: Page): Promise<void> {
+  await page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: /^Work/ }).first().click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: /^Tasks/ }).click();
+}

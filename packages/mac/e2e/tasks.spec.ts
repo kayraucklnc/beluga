@@ -431,7 +431,7 @@ for (const width of [1440, 2560]) {
     const goalBox = await goal.boundingBox();
     expect(goalBox, 'the Goal paragraph has a box').not.toBeNull();
     expect(goalBox!.width).toBeLessThanOrEqual(900);
-    await page.screenshot({ path: `../../.klaud/scratch/task-page-${width}.png` });
+    await page.screenshot({ path: `../../.beluga/scratch/task-page-${width}.png` });
   });
 }
 

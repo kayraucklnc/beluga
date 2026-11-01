@@ -27,7 +27,7 @@ import { belugaEnvBoth } from './beluga-env.js';
 import { planForHome } from './plans/model.js';
 import { findIssue } from './board/model.js';
 import { explainTaskMentions } from '../shared/task-refs.js';
-import { isAssistant } from '../shared/assistant.js';
+import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 import { type SlotWait, clampParallelRuns } from '../shared/run-slots.js';
 import { fallbackFor } from '../shared/runtime-fallbacks.js';
 import { agentForAsk } from './gateway/serve.js';
@@ -1130,7 +1130,7 @@ export class AgentHost {
     const move = place?.askOnly && !place.syncMain && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
     if (body.channel !== 'room' && !place) {
       const why = isAssistant(body.channel)
-        ? 'Your Mac’s assistant needs the Beluga app.'
+        ? `${ASSISTANT_TITLE}’s assistant needs the Beluga app.`
         : /^(dm|group):/.test(body.channel)
           ? 'Your agent acts in chats only in the Beluga app, and only when you ask it.'
         : this.deps.workspaces?.inChannel(body.channel)?.kind === 'main'

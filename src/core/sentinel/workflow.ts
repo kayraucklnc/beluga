@@ -2,6 +2,7 @@ import { type Graph, type GraphEdge, type GraphNode, type GraphStatus, type Grap
 import { type Dashboard, tileRefs } from './dashboard-model.js';
 import { labelOf } from './metrics.js';
 import { type RunSummary, type Sentinel, type Step, type StepKind, type StepState, ACCESS_INFO, SCRIPT_LANGUAGE_INFO, STEP_INFO, scheduleSentence, stepSentence } from './model.js';
+import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 
 /**
  * A sentinel's workflow as a graph (BLG-352): what starts it, its steps in order with what moves
@@ -52,7 +53,7 @@ function handsOn(st: Step): string {
 /** A step's card, in Markdown: what it does and how (never a secret: headers are names only). */
 function stepDetails(st: Step): string {
   const lines = [`**${STEP_INFO[st.kind].label}** · ${stepSentence(st)}`];
-  if (st.kind === 'claude') lines.push(`Works ${st.where === 'worktree' ? 'in a new worktree (later steps share it)' : st.where === 'mac' ? 'on Your Mac' : 'in the project, reading only'}.`, '', `> ${st.prompt.split('\n').slice(0, 6).join('\n> ').slice(0, 1200)}`);
+  if (st.kind === 'claude') lines.push(`Works ${st.where === 'worktree' ? 'in a new worktree (later steps share it)' : st.where === 'mac' ? `on ${ASSISTANT_TITLE}` : 'in the project, reading only'}.`, '', `> ${st.prompt.split('\n').slice(0, 6).join('\n> ').slice(0, 1200)}`);
   if (st.kind === 'script') lines.push(st.code?.trim() ? `${SCRIPT_LANGUAGE_INFO[st.language ?? 'sh'].label}, ${st.code.split('\n').length} lines${st.command.trim() ? `, with \`${st.command.trim().slice(0, 80)}\`` : ''}.` : `\`${st.command.slice(0, 200)}\``);
   if (st.kind === 'http') lines.push(`\`${st.method} ${st.url.slice(0, 200)}\`${Object.keys(st.headers).length ? `\n\nHeaders: ${Object.keys(st.headers).join(', ')}` : ''}`);
   if (st.kind === 'measure') {

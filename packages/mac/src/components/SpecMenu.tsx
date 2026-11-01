@@ -31,7 +31,7 @@ const keepFocus = (e: Event): void => e.preventDefault();
 const stayInMenu = (e: MouseEvent): void => e.stopPropagation();
 
 /** A hint that is a shortcut (⌘J) sits at the right like a menu bar's; a description is a tooltip. */
-const isKeys = (hint: string | undefined): hint is string => !!hint && /^[⌘⌥⇧⌃↩⌫]+.{0,3}$/.test(hint);
+const isKeys = (hint: string | undefined): hint is string => !!hint && (/^[⌘⌥⇧⌃↩⌫]+.{0,3}$/.test(hint) || /^((Ctrl|Alt|Shift|Win|Super)\+)+.{1,5}$/.test(hint));
 
 const isDanger = (id: string): boolean => /delete|remove|leave|revoke|stop|hide/.test(id);
 

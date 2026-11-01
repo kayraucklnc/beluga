@@ -83,7 +83,7 @@ fn changed_at(file: &PathBuf) -> Option<SystemTime> {
 
 /// Whether to redraw now: something changed, and Beluga is in front or it's been long enough.
 pub fn due(changed: bool, front: bool, since_last: Option<Duration>) -> bool {
-    changed && (front || since_last.map_or(true, |d| d >= BEHIND))
+    changed && (front || since_last.is_none_or(|d| d >= BEHIND))
 }
 
 pub fn start<R: Runtime>(app: &AppHandle<R>) {

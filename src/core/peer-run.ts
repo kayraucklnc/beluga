@@ -6,6 +6,7 @@ import { mentionsSecret } from '../agent/policy.js';
 import { type BodyInput, type BodyOf, MAX_SHELL_OUTPUT, MAX_SHELL_SECONDS } from '../protocol.js';
 import { ATTACHMENT_SHARE } from './attachments.js';
 import { tilde } from './paths.js';
+import { killTree, ownGroup } from './process-tree.js';
 import { expandPath } from './remote-work.js';
 import { type ShareService, isSecretPath } from './shares.js';
 import { type ShellItem, type Store, clean, peerName } from './store.js';
@@ -61,7 +62,8 @@ export const runShell: ShellRunner = (command, cwd, timeoutMs) =>
     const child = spawn(shell, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32',
+      detached: ownGroup(),
+      windowsHide: true,
       // Only the basics: your API tokens and other secrets in the environment never reach their command.
       env: { ...baseEnv(), CI: '1', GIT_TERMINAL_PROMPT: '0', NO_COLOR: '1', TERM: 'dumb', PAGER: 'cat', GIT_PAGER: 'cat' },
     });
@@ -72,14 +74,7 @@ export const runShell: ShellRunner = (command, cwd, timeoutMs) =>
     };
     child.stdout?.on('data', take);
     child.stderr?.on('data', take);
-    const kill = (): void => {
-      try {
-        if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
-        else child.kill('SIGKILL');
-      } catch {
-        // Already gone.
-      }
-    };
+    const kill = (): void => killTree(child);
     const timer = setTimeout(() => {
       timedOut = true;
       kill();

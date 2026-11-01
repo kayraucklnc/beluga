@@ -22,7 +22,8 @@ describe('ReplayGuard', () => {
     const first = new ReplayGuard(file, FRESH_MS, () => now);
     expect(first.admit('bob:iv1', now)).toBe(true);
     first.flush();
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     const restarted = new ReplayGuard(file, FRESH_MS, () => now);
     expect(restarted.admit('bob:iv1', now)).toBe(false);
     now += FRESH_MS * 3;

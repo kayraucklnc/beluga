@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { AGENT_SCRATCH_MARK, buildAgentScratchNote, summarizeTool } from '../../prompt.js';
 import { agentScratchName } from '../../../shared/scratch-dir.js';
 import type { SubAgentEvent } from '../../types.js';
@@ -14,7 +15,7 @@ export const SUBAGENT_TOOLS = new Set(['Task', 'Agent']);
 export function withAgentScratch(toolName: string, input: Readonly<Record<string, unknown>>, toolUseId: string, scratch: string): Record<string, unknown> | undefined {
   const prompt = input.prompt;
   if (!SUBAGENT_TOOLS.has(toolName) || typeof prompt !== 'string' || !prompt.trim() || prompt.includes(AGENT_SCRATCH_MARK)) return undefined;
-  const dir = `${scratch.replace(/\/+$/, '')}/agents/${agentScratchName(toolUseId)}`;
+  const dir = path.join(scratch, 'agents', agentScratchName(toolUseId));
   try {
     mkdirSync(dir, { recursive: true });
   } catch {

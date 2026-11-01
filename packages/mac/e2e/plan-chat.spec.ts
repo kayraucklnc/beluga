@@ -18,7 +18,7 @@ const box = (page: Page) => chat(page).getByRole('textbox', { name: 'Message you
 
 // A 2×2 red PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64');
-const SCRATCH = path.join(import.meta.dirname, '../../../.klaud/scratch');
+const SCRATCH = path.join(import.meta.dirname, '../../../.beluga/scratch');
 
 test.describe.configure({ mode: 'serial' });
 

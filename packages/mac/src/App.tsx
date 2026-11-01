@@ -17,7 +17,7 @@ import { RightPanel } from './layout/RightPanel.js';
 import { Main } from './layout/Main.js';
 import { Sidebar } from './layout/Sidebar.js';
 import { useActions } from './lib/actions.js';
-import { SHORTCUTS, TALK_ID, shortcutFor } from './lib/shortcuts-model.js';
+import { SHORTCUTS, TALK_ID, keyPlatform, shortcutFor } from './lib/shortcuts-model.js';
 import { fromKey, getBindings, isRecording, useMenuKeys } from './lib/shortcuts.js';
 import { useApp, useBeluga } from './lib/beluga.js';
 import { usePrefs } from './lib/prefs.js';
@@ -104,6 +104,9 @@ function useOverlays() {
 const APP_SHORTCUTS = SHORTCUTS.filter((d) => d.scope === 'app' && d.id !== TALK_ID).map((d) => d.id);
 const APPROVAL_SHORTCUTS = ['approve-yes', 'approve-no', 'approve-always'];
 
+/** A key pressed in a terminal that's still Beluga's, not the shell's. */
+const inTerminalOurs = (e: KeyboardEvent): boolean => (keyPlatform() === 'mac' ? e.metaKey || (e.ctrlKey && e.key === 'Tab') : e.ctrlKey && (e.key === 'Tab' || (e.shiftKey && !/^[cv]$/i.test(e.key))));
+
 /** Keys that work everywhere in the window: yours (Settings › Keyboard), as the menus show them. */
 function useShortcuts() {
   const { client, ui } = useBeluga();
@@ -112,7 +115,8 @@ function useShortcuts() {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || isRecording()) return;
       // In a terminal, keys without ⌘ are the shell's (⌥B types there, ⌃K kills the line); only ⌃Tab still moves places.
-      if (!e.metaKey && (e.target as Element | null)?.closest?.('.xterm') && !(e.ctrlKey && e.key === 'Tab')) return;
+      // Off a Mac, Ctrl is both: Ctrl+C, Ctrl+K and the rest stay the shell's, Ctrl+Shift and Ctrl+Tab are ours.
+      if ((e.target as Element | null)?.closest?.('.xterm') && !inTerminalOurs(e)) return;
       const state = client.store.getState();
       const bindings = getBindings();
       // A request waiting for you: ⌃Y, ⌃N, ⌃A (not while typing).

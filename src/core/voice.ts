@@ -6,6 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { type VoiceModelId, VOICE_MODEL_IDS, VOICE_MODELS, voiceKnows } from '../shared/voice-models.js';
 import type { VoiceMacView } from '../companion/protocol.js';
 import { belugaHome } from './home.js';
+import { ASSISTANT_TITLE } from '../shared/assistant.js';
 
 /**
  * Your Mac writes down what you said (BLG-140, BLG-144): on the phone (it `put`s the WAV and calls
@@ -137,7 +138,7 @@ export class MacVoice {
         void this.fetchModel(a.model).catch(() => {});
         const g = this.getting.get(a.model);
         const pct = g ? Math.round((g.got / m.files.mac.bytes) * 100) : 0;
-        throw new Error(`Your Mac is still getting ${m.label} (${pct}%)`);
+        throw new Error(`${ASSISTANT_TITLE} is still getting ${m.label} (${pct}%)`);
       }
       const run = this.queue.then(async () => {
         const t = Date.now();

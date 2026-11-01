@@ -7,8 +7,9 @@ const { getDefaultConfig } = require('expo/metro-config');
 const project = __dirname;
 const repo = path.resolve(project, '../..');
 // The shared contract (src/companion) and the shared, browser-safe models the phone draws with
-// (src/shared: views, graphs, inline elements, as the Mac app reads them).
-const shared = [path.join(repo, 'src/companion'), path.join(repo, 'src/shared')];
+// (src/shared: views, graphs, inline elements, as the Mac app reads them; src/ui: the screens'
+// models, such as which agents you can pick).
+const shared = [path.join(repo, 'src/companion'), path.join(repo, 'src/shared'), path.join(repo, 'src/ui')];
 
 const config = getDefaultConfig(project);
 

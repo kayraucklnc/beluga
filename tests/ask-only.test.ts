@@ -200,7 +200,8 @@ describe('main folders in the workspace list', () => {
 });
 
 describe('carrySession', () => {
-  it('copies a Claude Code conversation next to the folder it continues in', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('copies a Claude Code conversation next to the folder it continues in', () => {
     const config = mkdtempSync(path.join(os.tmpdir(), 'klaud-cc-'));
     const from = path.join(config, 'projects', encodeProjectDir('/work/app'));
     mkdirSync(from, { recursive: true });

@@ -16,6 +16,8 @@ export function adbCandidates(home = homedir()): string[] {
     '/opt/homebrew/bin/adb',
     '/usr/local/bin/adb',
     process.env.ANDROID_HOME ? path.join(process.env.ANDROID_HOME, 'platform-tools/adb') : '',
+    // Windows: Android Studio's SDK in AppData (adb.exe; execFile finds it without the .exe).
+    process.platform === 'win32' ? path.join(process.env.LOCALAPPDATA ?? path.join(home, 'AppData', 'Local'), 'Android', 'Sdk', 'platform-tools', 'adb.exe') : '',
   ].filter(Boolean);
 }
 

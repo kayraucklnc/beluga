@@ -71,13 +71,17 @@ export interface PretendSystem extends SystemPort {
   readonly ran: string[];
 }
 
-/** A pretend Mac (see the top of this file); `big` makes screenshots several MB. */
-export function pretendSystem(opts: { big?: boolean } = {}): PretendSystem {
+/** A pretend Mac (see the top of this file), or a Linux or Windows computer; `big` makes screenshots several MB. */
+export function pretendSystem(opts: { big?: boolean; platform?: 'darwin' | 'linux' | 'win32' } = {}): PretendSystem {
   const ran: string[] = [];
+  const shoot = (file: string): ExecResult => {
+    writeFileSync(file, pretendScreenshot(opts.big ? 1400 : 960, opts.big ? 900 : 600, Boolean(opts.big)));
+    return ok();
+  };
   return {
     ran,
     os: {
-      platform: () => 'darwin',
+      platform: () => opts.platform ?? 'darwin',
       release: () => '25.5.0',
       arch: () => 'arm64',
       cpus: () => Array.from({ length: 10 }, () => ({ model: 'Apple M4', speed: 0, times: { user: 0, nice: 0, sys: 0, idle: 0, irq: 0 } })),
@@ -93,12 +97,31 @@ export function pretendSystem(opts: { big?: boolean } = {}): PretendSystem {
         ],
       }),
     },
-    readdir: async (dir) => (dir === '/Applications' ? ['Safari.app', 'Xcode.app', 'Figma.app', 'Beluga.app', '.DS_Store', 'Utilities'] : []),
+    readdir: async (dir) =>
+      dir === '/Applications'
+        ? ['Safari.app', 'Xcode.app', 'Figma.app', 'Beluga.app', '.DS_Store', 'Utilities']
+        : dir === '/usr/share/applications'
+          ? ['org.gnome.Nautilus.desktop', 'firefox.desktop', 'code.desktop', 'mimeinfo.cache']
+          : dir.endsWith('Programs')
+            ? ['Visual Studio Code.lnk', 'Beluga.lnk', 'desktop.ini', 'Accessories']
+            : [],
     exec: async (cmd, args) => {
       ran.push([cmd, ...args].join(' '));
-      if (cmd === 'screencapture') {
-        writeFileSync(args[args.length - 1]!, pretendScreenshot(opts.big ? 1400 : 960, opts.big ? 900 : 600, Boolean(opts.big)));
-        return ok();
+      if (cmd === 'screencapture' || cmd === 'grim') return shoot(args[args.length - 1]!);
+      if (cmd === 'powershell.exe') {
+        const script = args[args.length - 1]!;
+        const save = /\$b\.Save\('((?:[^']|'')*)'/.exec(script)?.[1];
+        if (save) return shoot(save.replace(/''/g, "'"));
+        if (script.includes('Get-Process')) return ok(JSON.stringify([{ id: 197_634, app: 'chrome', title: 'Staging' }]));
+        if (script.includes('Win32_OperatingSystem')) return ok(JSON.stringify({ os: 'Microsoft Windows 11 Pro', build: '26100', model: 'XPS 13 9340', maker: 'Dell Inc.', chip: 'Intel(R) Core(TM) Ultra 7 155H', size: 512 * 1024 ** 3, free: 200 * 1024 ** 3, percent: 64, status: 1, minutes: 250 }));
+      }
+      if (cmd === 'cat') {
+        const file = args[0]!;
+        if (file === '/etc/os-release') return ok('NAME="Ubuntu"\nPRETTY_NAME="Ubuntu 24.04.1 LTS"\nID=ubuntu\n');
+        if (file.endsWith('product_name')) return ok('ThinkPad X1 Carbon Gen 12\n');
+        if (file.endsWith('BAT0/capacity')) return ok('71\n');
+        if (file.endsWith('BAT0/status')) return ok('Charging\n');
+        if (file.endsWith('AC/online')) return ok('1\n');
       }
       if (cmd === 'sips') {
         // A "smaller copy": the same picture is fine here.

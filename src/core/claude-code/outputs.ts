@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isUnder } from '../../shared/path-inside.js';
 
 /**
  * What an agent made or looked at while it worked, from its transcript: the screenshots it took,
@@ -36,7 +37,7 @@ const OUTPUT_DIRS = /[\\/](\.(?:beluga|klaud)[\\/]scratch|test-results|playwrigh
 const NEVER = /[\\/](node_modules|\.git)[\\/]/;
 
 const isMedia = (p: string): boolean => MEDIA.test(p) || TRACE.test(p);
-const inside = (root: string, p: string): boolean => p === root || p.startsWith(`${root}/`);
+const inside = isUnder;
 
 export function outputKind(p: string): OutputKind {
   if (IMAGE.test(p)) return 'image';

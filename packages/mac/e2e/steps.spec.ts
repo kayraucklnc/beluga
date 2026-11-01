@@ -185,7 +185,8 @@ test('with reduced motion, a sent message just appears', async ({ page }) => {
   await countFlights(page);
   await send(page, 'What does the hero say now?');
   const row = page.locator('[data-mine="true"]', { hasText: 'What does the hero say now?' }).last();
-  await expect(row).toHaveAttribute('data-flown', 'instant');
+  // No copy flies: it appears (or, landing above a live turn's rows, fades in where it goes).
+  await expect(row).toHaveAttribute('data-flown', /^(instant|in-place)$/);
   expect(await flights(page)).toBe(0);
   await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 30_000 });
 });

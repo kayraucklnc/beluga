@@ -21,7 +21,8 @@ const svc = new ShareService([share]);
 afterAll(() => svc.close());
 
 describe('parseShareSpec', () => {
-  it('parses name, path and rw flag', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('parses name, path and rw flag', () => {
     expect(parseShareSpec('web=./site:rw', '/tmp')).toEqual({ name: 'web', root: '/tmp/site', writable: true });
     expect(parseShareSpec('/a/b:ro', '/tmp')).toEqual({ name: 'b', root: '/a/b', writable: false });
     expect(parseShareSpec('.', '/tmp/my proj')).toEqual({ name: 'my_proj', root: '/tmp/my proj', writable: false });
