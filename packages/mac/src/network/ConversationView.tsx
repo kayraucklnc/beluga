@@ -19,7 +19,7 @@ import { MessageFiles } from './ChatFiles.js';
 import { ChatTabs } from './ChatTabs.js';
 import { addBlobs, addPaths } from './attachments.js';
 import { type RunPlace, askedLine, authorLabel, channelName, channelWorld, isMain, liveIn, liveLine, runPlaces } from './chat-model.js';
-import { conversationOf, dayLabel, keepsFollowing, membersLine, mergeMessages, presenceLine, sameDay, shownState, unreadSince } from './net-model.js';
+import { conversationOf, dayLabel, keepsFollowing, membersLine, mergeMessages, presenceLine, sameDay, shownState, unreadLine, unreadSince } from './net-model.js';
 import { showWaiting, useChatPeople } from './use-chat-people.js';
 import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork, useSay } from './use-net.js';
@@ -659,7 +659,7 @@ function Conversation({ id }: { id: string }) {
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              {m.id === firstUnread ? <div className={s.unreadLine}>{unread.size === 1 ? 'New message' : `${unread.size} new messages`}</div> : null}
+              {m.id === firstUnread ? <div className={s.unreadLine}>{unreadLine(unread.size)}</div> : null}
               <div className={cx(unread.has(m.id) && s.unread, m.id === lastUnread && s.unreadEnd)}>{m.task ? offered.has(m.task.id) ? null : <TaskMessage id={m.task.id} plain={plain} {...(me ? { me } : {})} /> : plain}</div>
             </div>
           );

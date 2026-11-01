@@ -551,6 +551,9 @@ describe('the views of a known Mac', () => {
     ]);
     // 1.30 (BLG-429): only your own words, whole on the phone, can be edited there.
     expect(chat.messages.map((m) => m.editable)).toEqual([undefined, true]);
+    // 1.38 (BLG-574): what's unread, so the phone marks it when it opens; none, and it isn't said.
+    expect(chat.unread).toBe(2);
+    expect(ChatView.parse(viewOf({ ...state, network: { ...state.network, friends: state.network.friends.map((f) => ({ ...f, unread: 0 })) } }, ctx, `chat:dm:${BOB}`)).unread).toBeUndefined();
     expect(ChatsView.parse(viewOf(state, ctx, 'chats')).chats[0]).toMatchObject({ name: 'bob', kind: 'dm', unread: 2 });
     expect(PeopleView.parse(viewOf(state, ctx, 'people')).people[0]).toMatchObject({ name: 'bob', presence: 'away', note: 'lunch', offers: ['claude', 'screen', 'shell'] });
     expect(WorkView.parse(viewOf(state, ctx, 'work')).projects.find((p) => p.id === 'p1')?.conversations.map((c) => c.title)).toEqual(['tests', 'auth']);

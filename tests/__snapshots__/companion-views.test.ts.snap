@@ -42,6 +42,7 @@ here",
     "more": false,
     "name": "bob",
     "topic": "chat:dm:bob00000000000000000000000000bob",
+    "unread": 2,
   },
   "chats": {
     "chats": [

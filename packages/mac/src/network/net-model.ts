@@ -273,21 +273,7 @@ export function mergeMessages(earlier: readonly MessageView[], latest: readonly 
   return [...earlier.filter((m) => !ids.has(m.id)), ...latest];
 }
 
-/**
- * What was new when you came into a conversation: the last `count` of their messages, up to the
- * one that was last then (`upTo`; what arrives while you're here is read as it comes).
- */
-export function unreadSince(messages: readonly MessageView[], count: number, upTo?: string): ReadonlySet<string> {
-  if (count <= 0) return new Set();
-  const end = upTo === undefined ? -1 : messages.findIndex((m) => m.id === upTo);
-  const then = end < 0 ? messages : messages.slice(0, end + 1);
-  return new Set(
-    then
-      .filter((m) => !m.mine)
-      .slice(-count)
-      .map((m) => m.id),
-  );
-}
+export { unreadLine, unreadSince } from '../../../../src/shared/unread.js';
 
 /** Close enough to the bottom of a log to count as there. */
 const BOTTOM_SLACK = 48;
