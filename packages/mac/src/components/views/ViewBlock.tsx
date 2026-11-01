@@ -98,6 +98,8 @@ function ViewCard({ view, code, warnings, local, bare = false }: { view: View; c
   ];
   const body = (inFull: boolean) => <Body view={view} data={data} shape={asChart ? (view.type === 'chart' && shape === 'table' ? view.chart : shape) : 'table'} full={inFull} />;
   const canSwitch = (view.type === 'table' || view.type === 'chart') && chartable(view, data);
+  // Opened from the welcome (the tour's table): over it, not hidden behind it.
+  const overWelcome = full && document.querySelector('[data-welcome]') ? '' : undefined;
   return (
     <>
       <ActionsContext items={items}>
@@ -123,8 +125,8 @@ function ViewCard({ view, code, warnings, local, bare = false }: { view: View; c
       {full ? (
         <Dialog.Root open onOpenChange={(open) => (open ? undefined : setFull(false))}>
           <Dialog.Portal>
-            <Dialog.Overlay className={v.fullOverlay} />
-            <Dialog.Content className={v.full} aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
+            <Dialog.Overlay className={v.fullOverlay} data-over-welcome={overWelcome} />
+            <Dialog.Content className={v.full} data-over-welcome={overWelcome} aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
               <Head view={view} data={data} warnings={warnings} shape={shape} setShape={canSwitch ? setShape : undefined} copy={tableCopy ? { copied, onCopy: copyTable } : undefined} more={exportable ? items.filter((it) => it.label !== 'Open in Full Window') : undefined} inFull onClose={() => setFull(false)} />
               <ControlsBar view={view} data={data} />
               <div className={v.fullBody}>{body(true)}</div>

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { PresenceState } from '@beluga/net/mesh/views.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { inApp } from '../lib/boot.js';
-import { IDLE_AWAY_MS, findInvitation, idleStep, presenceFor, selfLine } from './net-model.js';
+import { IDLE_AWAY_MS, findInvitation, idleStep, presenceFor, rememberIdleAway, selfLine, wasIdleAway } from './net-model.js';
 import { openNet } from './net-sheets.js';
 
 /**
@@ -20,6 +20,7 @@ export function runNetworkMenuItem(id: string, client: SocketClient): boolean {
   if (id === 'status-set') return openNet({ kind: 'status' }), true;
   const note = client.store.getState().network.self?.presence.note;
   const set = (state: PresenceState, duration?: 'hour' | 'tomorrow'): true => {
+    rememberIdleAway(false);
     void client.api.network['presence.set'](presenceFor(state, { ...(note ? { note } : {}), ...(duration ? { duration } : {}) }));
     return true;
   };
@@ -56,7 +57,7 @@ export function useTrayPresence(client: SocketClient): void {
 }
 
 const CHECK_MS = 30_000;
-const ACTIVITY = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const;
+const ACTIVITY = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'focus'] as const;
 
 /** How long since you last used the Mac (the system's idle time in the app; this window's input in a browser). */
 async function idleMs(lastInput: number): Promise<number> {
@@ -74,27 +75,30 @@ async function idleMs(lastInput: number): Promise<number> {
 
 /**
  * Away when you haven't used the Mac for a while (only if you chose Online), back to Online
- * when you return (only if it was this that made you Away).
+ * when you return (only if it was this that made you Away). Which Away it was is kept in
+ * storage, not memory: the core keeps your status across reloads, so this must too.
  */
 export function useIdleAway(client: SocketClient, threshold = IDLE_AWAY_MS): void {
   useEffect(() => {
     let lastInput = Date.now();
-    let autoAway = false;
     let checking = false;
     const check = async (): Promise<void> => {
       const self = client.store.getState().network.self;
       if (!self || checking) return;
-      // You changed it yourself since: it's yours again.
-      if (autoAway && self.presence.state !== 'away') autoAway = false;
+      const { state, note } = self.presence;
+      // You chose Do Not Disturb or Appear Offline since: it's yours again.
+      if (state === 'dnd' || state === 'offline') rememberIdleAway(false);
       checking = true;
       try {
-        const step = idleStep({ presence: self.presence, idleMs: await idleMs(lastInput), autoAway, threshold });
+        const step = idleStep({ presence: self.presence, idleMs: await idleMs(lastInput), autoAway: wasIdleAway(), threshold });
         if (!step) return;
-        autoAway = step === 'away';
-        const note = self.presence.note;
+        // Marked before sending: if the answer is lost, a stale mark on Online is harmless,
+        // but a missing one on Away would leave you Away for good.
+        if (step === 'away') rememberIdleAway(true);
         await client.api.network['presence.set']({ state: step, ...(note ? { note } : {}) });
+        if (step === 'online') rememberIdleAway(false);
       } catch {
-        autoAway = false;
+        // The core wasn't reachable (waking from sleep, reconnecting): the next check tries again.
       } finally {
         checking = false;
       }
@@ -103,12 +107,17 @@ export function useIdleAway(client: SocketClient, threshold = IDLE_AWAY_MS): voi
     const active = (): void => {
       lastInput = Date.now();
       // Coming back: say so soon, not at the next check.
-      if (autoAway && !pending) pending = setTimeout(() => ((pending = undefined), void check()), 300);
+      if (wasIdleAway() && !pending) pending = setTimeout(() => ((pending = undefined), void check()), 300);
+    };
+    const shown = (): void => {
+      if (document.visibilityState === 'visible') active();
     };
     for (const e of ACTIVITY) window.addEventListener(e, active, { passive: true });
+    document.addEventListener('visibilitychange', shown);
     const timer = setInterval(() => void check(), CHECK_MS);
     return () => {
       for (const e of ACTIVITY) window.removeEventListener(e, active);
+      document.removeEventListener('visibilitychange', shown);
       clearInterval(timer);
       if (pending) clearTimeout(pending);
     };

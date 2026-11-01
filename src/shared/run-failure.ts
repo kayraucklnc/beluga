@@ -52,7 +52,7 @@ export function failureTitle(f: RunFailure, now = Date.now()): string {
     case 'usage_limit':
       return `You hit your ${who.agent} plan usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
     case 'signed_out':
-      return `${who.app} isn’t signed in on this Mac`;
+      return EXPIRED.test(f.detail) ? `${who.app}’s sign-in on this Mac expired` : `${who.app} isn’t signed in on this Mac`;
     case 'crash':
       return `${who.app} stopped unexpectedly${f.exitCode !== undefined ? ` (exit ${f.exitCode})` : ''}`;
     case 'network':
@@ -157,7 +157,9 @@ const CODEX_LIMIT_INFO = 'usageLimitExceeded';
 /** Codex's limit words: "You've hit your usage limit. …" (longer than Claude's notice, so not one of those). */
 const CODEX_LIMIT = /you['’]ve hit your usage limit/i;
 // Claude Code has no login here ("Not logged in · Please run /login"), or the one it had stopped working.
-const SIGNED_OUT = /\bnot logged in\b|please run \/login|oauth token (has )?(expired|been revoked)/i;
+const SIGNED_OUT = /\bnot logged in\b|please run \/login|oauth token (has )?(expired|been revoked)|oauth token revoked|auth session expired|please log in again/i;
+// The login it had stopped working ("Failed to authenticate: OAuth session expired and could not be refreshed").
+const EXPIRED = /expired|could not be refreshed|revoked|log in again/i;
 
 const NETWORK = /\b(ECONNRESET|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|fetch failed|network error|connection error|getaddrinfo)\b/i;
 const EXIT = /exited with code (-?\d+)|terminated by signal (\w+)/i;

@@ -80,6 +80,12 @@ export const capFor = (caps: Capabilities, need: Need, trust: string): CapLevel 
 /** What your Beluga offers someone at this trust level (on your card: their Claude sees it). */
 export const offersFor = (caps: Capabilities, trust: string): Need[] => (trust === 'blocked' ? [] : NEEDS.filter((n) => capFor(caps, n, trust) !== 'off'));
 
+/** Whether someone sees your plan usage (BLG-597): every friend, only those you trust (Trusted, Full trust), or no one. Never anyone blocked. */
+export function sharesUsageWith(share: 'trusted' | 'everyone' | 'off', trust: string): boolean {
+  if (share === 'off' || trust === 'blocked') return false;
+  return share === 'everyone' || trust === 'trusted' || trust === 'full';
+}
+
 // ------------------------------------------------------------------ rules
 
 /** task: their Claude asks yours (with these needs). command: run one command. file: send one file. */

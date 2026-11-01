@@ -52,6 +52,11 @@ export interface SharedFork {
   readonly state: 'asking' | 'copying' | 'ready' | 'failed';
   readonly wsId?: string;
   readonly error?: string;
+  /** While copying: bytes of its pack here so far, of all of them (all here: it's being set up). */
+  readonly received?: number;
+  readonly total?: number;
+  /** Files in the pack (uncommitted ones and Scratch), when their Mac said. */
+  readonly files?: number;
 }
 
 /** Who one of your projects is shared with (owner side): `only` limits it to those worktrees. */

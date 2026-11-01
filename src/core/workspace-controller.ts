@@ -13,7 +13,7 @@ import type { AgentPlace } from '../agent/types.js';
 import type { AgentRef } from '../protocol.js';
 import { placeAgent } from '../shared/agent-picker.js';
 import { agentName } from '../shared/agent-label.js';
-import { transcriptOf } from './agent-switch.js';
+import { carriedPrompt, transcriptOf } from './agent-switch.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import { type EnvChange, scanEnvFiles } from '../workspaces/env.js';
 import type { Project, Workspace } from '../workspaces/types.js';
@@ -629,6 +629,19 @@ export class WorkspaceController {
   agentIn(channel: string): AgentRef | undefined {
     const ws = this.inChannel(channel);
     return ws ? (ws.agent ?? this.followedAgent(ws.id)) : undefined;
+  }
+
+  /**
+   * A message as its run starts: after a quiet switch (BLG-592) the first run carries the recent
+   * conversation the new agent can't read, once (without the message itself, `requestId`'s).
+   */
+  withCarry(channel: string, message: string, requestId?: string): string {
+    const ws = this.inChannel(channel);
+    if (!ws?.carryFrom) return message;
+    this.deps.manager.setCarry(ws.id, undefined);
+    const log = this.deps.store.getState().log.filter((l) => !(requestId && l.type === 'chat' && l.request === requestId));
+    const transcript = transcriptOf(log, channel);
+    return transcript ? carriedPrompt(ws.carryFrom, transcript, message) : message;
   }
 
   /** The runtime a workspace's conversation runs on (its pick, else yours, else the daemon's own). */

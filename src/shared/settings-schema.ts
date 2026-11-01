@@ -118,6 +118,8 @@ export const Settings = z.object({
   friendWorktrees: z.enum(['ask', 'off']).default('ask'),
   /** Who may call your Claude into a chat (you always can): friends in the chat, people you trust, or only you. */
   chatClaude: z.enum(['everyone', 'trusted', 'off']).default('everyone'),
+  /** Who sees how much of your plans (Claude Code, Codex…) you have left, on your profile: people you trust, every friend, or no one (BLG-597). */
+  shareUsage: z.enum(['trusted', 'everyone', 'off']).default('trusted'),
   /** Your main channel: a group with all your friends (made the first time you open it). */
   mainChannel: z.string().regex(/^[0-9a-f]{32}$/).optional(),
   /** People you chose a trust level for (by their key-derived id). */

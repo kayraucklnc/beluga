@@ -91,6 +91,8 @@ const INBOUND_KEPT = 500;
 const HISTORY_KEPT = 2000;
 /** How long each message of a fork's conversation may be. */
 const FORK_TEXT = 20_000;
+/** A fork's progress as it comes over goes to the screens at most this often. */
+const FORK_PROGRESS_MS = 250;
 const ICON_MAX = 120_000;
 
 const wsOf = (channel: string | undefined): string | undefined => (channel?.startsWith('ws:') ? channel.slice(3) : undefined);
@@ -777,7 +779,7 @@ export class FriendShares implements FriendSharing {
         this.opts.session.shareService.remove(share);
         void fs.rm(dir, { recursive: true, force: true });
       }, COPY_TTL_MS).unref();
-      this.courier.send(from, { k: 'fork_ready', ws: wsId, share, size }, { reliable: true });
+      this.courier.send(from, { k: 'fork_ready', ws: wsId, share, size, files: meta.changed + meta.scratch }, { reliable: true });
       const what = [meta.changed ? `${meta.changed} uncommitted ${meta.changed === 1 ? 'file' : 'files'}` : '', meta.scratch ? 'Scratch' : '', 'the conversation'].filter(Boolean).join(', ');
       this.dispatch({ type: 'system', channel: `ws:${wsId}`, text: `${name} forked this worktree to their Mac (its commits, ${what}). This one stays as it is.` });
     } catch (err) {
@@ -791,14 +793,22 @@ export class FriendShares implements FriendSharing {
     const rec = this.receivedWs(m.ws);
     const ctl = this.opts.session.workspaces;
     if (!rec || rec.owner !== from || !ctl || this.state.forks[m.ws]?.state !== 'asking' || m.size > MAX_DOWNLOAD_BYTES) return;
-    this.setFork(m.ws, { state: 'copying' });
+    const files = m.files !== undefined ? { files: m.files } : {};
+    this.setFork(m.ws, { state: 'copying', received: 0, total: m.size, ...files });
     this.incoming.set(m.share, from);
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'beluga-fork-'));
     let made: { root: string; branch: string } | undefined;
+    let shown = 0;
+    const progress = (received: number, total: number): void => {
+      const now = Date.now();
+      if (received < total && now - shown < FORK_PROGRESS_MS) return;
+      shown = now;
+      this.setFork(m.ws, { state: 'copying', received, total, ...files });
+    };
     try {
       const project = await this.localProjectOf(rec);
       if (!project) throw new Error(`${rec.name} isn’t on this Mac any more`);
-      const bytes = await fetchBytes({ owner: from, share: m.share, path: 'fork.tgz' }, (to, b) => this.opts.session.files.request(to, b), MAX_DOWNLOAD_BYTES);
+      const bytes = await fetchBytes({ owner: from, share: m.share, path: 'fork.tgz' }, (to, b) => this.opts.session.files.request(to, b), MAX_DOWNLOAD_BYTES, progress);
       const got = await unpackFork(bytes, tmp);
       const name = this.forkNames.get(m.ws) || clean(got.meta.name) || 'fork';
       const branch = await ctl.manager.freeBranchName(project.root, name);

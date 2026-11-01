@@ -5,7 +5,7 @@ import type { PersonView } from '@beluga/net/mesh/views.js';
 import { ZoomAvatar } from '../components/ZoomAvatar.js';
 import { cx } from '../components/ui.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
-import { Action, AskMeFor } from '../dialogs/native/PersonCards.js';
+import { Action, AskMeFor, PlanUsage } from '../dialogs/native/PersonCards.js';
 import { Tag } from '../dialogs/native/parts.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
@@ -83,6 +83,8 @@ export function PersonButton({ peerId, name, className, children }: { peerId: st
 function ProfileCard({ person, friend, close }: { person: PersonView; friend: boolean; close: () => void }) {
   const { client } = useBeluga();
   const trust = useApp((st) => trustOf(st, person.peerId));
+  // Their plans, as their card told you: only when they share them with you (BLG-597).
+  const usages = useApp((st) => st.gateway.cards[person.peerId]?.usages);
   const state = shownState(person);
   return (
     <>
@@ -108,6 +110,14 @@ function ProfileCard({ person, friend, close }: { person: PersonView; friend: bo
               openDm(client, person.peerId);
             }}
           />
+        </div>
+      ) : null}
+      {usages?.length ? (
+        <PlanUsage usages={usages} />
+      ) : friend ? (
+        <div className={p.block}>
+          <div className={p.blockLabel}>Usage</div>
+          <div className={p.blockDetail}>{person.name} doesn’t share how much of their plans is left with you. People share it with friends they trust.</div>
         </div>
       ) : null}
       <AskMeFor peerId={person.peerId} name={person.name} />

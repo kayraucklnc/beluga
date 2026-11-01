@@ -117,7 +117,7 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
 - **Drawing:** `packages/mac/src/components/graph/`:
   - `GraphBlock.tsx`: the card, the errors, the full window
   - `FlowGraph.tsx`: React Flow (`@xyflow/react`); it measures nodes out of sight, lays them out, then shows them
-  - `layout.ts`: ELK (`elkjs`), layered, groups as compound nodes, orthogonal lines that ELK routes. `FlowGraph.tsx` tries both ways round, plainly and wrapped to the frame's shape, and keeps the one that reads biggest (`bestLayout` in `graph-model.ts`)
+  - `layout.ts`: ELK (`elkjs`), layered, groups as compound nodes, orthogonal lines that ELK routes. A line that would close a loop (an answer to a call) is handed to ELK turned back, in the order lines were written (`backEdges`), so the flow reads one way. Every label gets room of its own on its line, and `placeLabels` moves any that would still cover a node or another label. `FlowGraph.tsx` tries both ways round, plainly and wrapped to the frame's shape, and keeps the one that reads biggest (`bestLayout` in `graph-model.ts`; wrapping, whose lines loop back across the graph, only when it reads far bigger)
   - `graph-model.ts`: the pure parts, tested in `tests/mac-graph.test.ts`
   - `nodes.tsx`, `edges.tsx`, `Inspector.tsx`, `Walkthrough.tsx`
 - **Load time:** React Flow and ELK load the first time a graph shows.

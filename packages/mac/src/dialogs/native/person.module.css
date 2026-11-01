@@ -94,9 +94,43 @@
   background: var(--bg-sunken);
   box-shadow: 0 0 0 0.5px var(--hairline);
 }
+/* Each provider's plans (BLG-597): its name, then a line per window. */
+.usageProvider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.usageProvider + .usageProvider {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--hairline);
+}
+.usageHead {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.usagePlan {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-press);
+  color: var(--text-3);
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 15px;
+}
+.resets {
+  grid-column: 2 / -1;
+  margin-top: -3px;
+  color: var(--text-3);
+  font-size: 0.76rem;
+}
 .meter {
   display: grid;
-  grid-template-columns: 50px 1fr 34px;
+  grid-template-columns: 50px 1fr auto;
   align-items: center;
   gap: 8px;
   color: var(--text-2);

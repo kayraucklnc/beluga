@@ -58,10 +58,16 @@ test('start a worktree on Codex, run a task, approve a command, stop mid-turn, h
   await stop.click();
   await expect(stop).toHaveCount(0, { timeout: 15_000 });
 
-  // 4. Hand off to Claude: the picker's Claude models, then Claude answers here.
+  // 4. Hand off to Claude: the picker's Claude models; Claude can't read Codex's conversation, so it asks how (BLG-592). Just switch, then Claude answers here.
   await chip(page).click();
   await page.getByRole('radiogroup', { name: 'Claude models' }).getByRole('radio').first().click();
+  const how = page.getByRole('group', { name: 'How to move to Claude' });
+  await expect(how).toBeVisible();
+  await expect(how.getByRole('button', { name: /Write a handoff note first/ })).toBeEnabled();
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: process.env.BELUGA_SHOTS });
+  await how.getByRole('button', { name: /Just switch/ }).click();
   await page.keyboard.press('Escape');
+  await expect(page.getByText(/Switched from Codex to Claude/).last()).toBeVisible({ timeout: 20_000 });
   await expect(chip(page)).not.toContainText('Codex', { timeout: 20_000 });
   await composer(page).fill('carry on with the build');
   await composer(page).press('Enter');

@@ -34,6 +34,7 @@ import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
 import { type AgentRef, defaultAgentOf } from '../protocol.js';
 import type { RuntimeChoice } from '../shared/agent-runtimes.js';
+import type { HandoffMode } from '../shared/agent-handoff.js';
 import { type GitFixId, type GitSetup, type GitTrouble, explainGitTrouble, httpsRemoteOf, troubleLine } from '../shared/git-trouble.js';
 
 export interface WorkbenchDeps {
@@ -55,7 +56,7 @@ export interface WorkbenchDeps {
   /** Models your Claude Code offers (asked once). */
   readonly listModels?: () => Promise<readonly ModelChoice[] | undefined>;
   /** Another runtime on a live conversation hands it off (core/agent-switch.ts, BLG-447); unset: a plain switch. */
-  readonly switchAgent?: (channel: string, agent: AgentRef | undefined) => Promise<unknown>;
+  readonly switchAgent?: (channel: string, agent: AgentRef | undefined, mode?: HandoffMode) => Promise<unknown>;
   /** The agent picker's runtimes: which run on this Mac, and why the others don't (BLG-446). */
   readonly listRuntimes?: () => readonly RuntimeChoice[];
   /** Whether each runtime that can say so is ready here (Codex: installed, signed in) and its models (BLG-455). */
@@ -334,12 +335,15 @@ export class Workbench {
     this.deps.toast(`New conversations use ${label}`, 'success');
   }
 
-  /** Pick the agent for one conversation (undefined: your default); every run from there uses it. */
-  setAgent(channel: string, agent: AgentRef | undefined): boolean {
+  /**
+   * Pick the agent for one conversation (undefined: your default); every run from there uses it.
+   * `mode`: when the new agent can't read the session, switch quietly or have the old one write a note (BLG-592).
+   */
+  setAgent(channel: string, agent: AgentRef | undefined, mode?: HandoffMode): boolean {
     const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
     if (!id || !this.manager.find(id)) return false;
-    // Another runtime on a live conversation is a handoff (the old agent's note seeds the new one), never a silent swap.
-    if (this.deps.switchAgent) void this.deps.switchAgent(channel, agent).finally(() => void this.deps.controller.refresh());
+    // Another runtime on a live conversation is a handoff (a note, or the recent conversation with your next message), never a silent swap.
+    if (this.deps.switchAgent) void this.deps.switchAgent(channel, agent, mode).finally(() => void this.deps.controller.refresh());
     else {
       this.manager.setAgent(id, agent);
       void this.deps.controller.refresh();
@@ -577,13 +581,14 @@ export class Workbench {
   /**
    * Claude Code isn't signed in on this Mac: `claude auth login` in one of your shells (`key`, a
    * global shell the screen picked, so it shows it), and once it ends well the Claude that stopped
-   * in `channel` goes on where it left off.
+   * in `channel` goes on where it left off. `how`: a Claude subscription (the default) or an
+   * Anthropic Console account, the first two of Claude Code's own /login choices.
    */
-  async signInClaude(key: string, channel: string): Promise<{ ok: boolean; message: string }> {
+  async signInClaude(key: string, channel: string, how: 'claudeai' | 'console' = 'claudeai'): Promise<{ ok: boolean; message: string }> {
     if (!isGlobalShell(key)) return { ok: false, message: 'That isn’t one of your shells' };
     const ws = channel.startsWith('ws:') ? this.manager.find(channel.slice(3)) : undefined;
     this.closeTerminal(key);
-    const session = this.openSession(key, { path: ws?.path ?? os.homedir() }, `${shQuote(claudeCodeCommand())} auth login`);
+    const session = this.openSession(key, { path: ws?.path ?? os.homedir() }, `${shQuote(claudeCodeCommand())} auth login --${how}`);
     if (!session) return { ok: false, message: 'There’s no terminal here to run it in' };
     this.deps.store.dispatch({ type: 'terminal_name', id: key, name: 'Claude sign-in' });
     this.deps.toast('Sign in to Claude in your browser…');
