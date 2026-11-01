@@ -10,6 +10,8 @@ import {
   expiryLabel,
   findInvitation,
   idleStep,
+  rememberIdleAway,
+  wasIdleAway,
   membersLine,
   mergeMessages,
   openFriendInvitation,
@@ -139,6 +141,25 @@ describe('presence', () => {
     expect(idleStep({ presence: away, idleMs: 1_000, autoAway: true })).toBe('online');
     expect(idleStep({ presence: away, idleMs: 1_000, autoAway: false })).toBeUndefined();
     expect(idleStep({ presence: away, idleMs: 20 * 60_000, autoAway: true })).toBeUndefined();
+    // A mark left from before (or the core not caught up yet) never keeps an idle Online from going Away.
+    expect(idleStep({ presence: online, idleMs: 11 * 60_000, autoAway: true })).toBe('away');
+    expect(idleStep({ presence: online, idleMs: 1_000, autoAway: true })).toBeUndefined();
+  });
+
+  it('remembers an idle Away across reloads, and forgets it when you pick a status', () => {
+    const data = new Map<string, string>();
+    const store = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v), removeItem: (k: string) => void data.delete(k) };
+    expect(wasIdleAway(store)).toBe(false);
+    rememberIdleAway(true, store);
+    expect(wasIdleAway(store)).toBe(true);
+    expect(idleStep({ presence: { state: 'away' }, idleMs: 1_000, autoAway: wasIdleAway(store) })).toBe('online');
+    rememberIdleAway(false, store);
+    expect(wasIdleAway(store)).toBe(false);
+    // No storage, or storage that throws: no mark, never a crash.
+    expect(wasIdleAway(undefined)).toBe(false);
+    const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('full'); }, removeItem: () => undefined };
+    expect(() => rememberIdleAway(true, broken)).not.toThrow();
+    expect(wasIdleAway(broken)).toBe(false);
   });
 });
 

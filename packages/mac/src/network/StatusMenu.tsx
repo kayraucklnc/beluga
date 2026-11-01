@@ -6,7 +6,7 @@ import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useBeluga } from '../lib/beluga.js';
 import { PersonAvatar, PresenceDot } from './Avatars.js';
-import { CHOICE_LABEL, DURATIONS, type Duration, presenceFor, selfLine } from './net-model.js';
+import { CHOICE_LABEL, DURATIONS, type Duration, presenceFor, rememberIdleAway, selfLine } from './net-model.js';
 import { closeNet } from './net-sheets.js';
 import { useNetwork } from './use-net.js';
 import sh from '../dialogs/native/sharing.module.css';
@@ -25,10 +25,16 @@ function durationOf(p: Presence, now = Date.now()): Duration {
   return p.until - now <= 61 * 60_000 ? 'hour' : 'tomorrow';
 }
 
-/** Send a status (the core keeps it, tells your friends, and turns it back to Online when it ends). */
+/**
+ * Send a status (the core keeps it, tells your friends, and turns it back to Online when it ends).
+ * It's yours now: the idle watcher won't undo it.
+ */
 export function useSetPresence(): (p: Presence) => void {
   const { client } = useBeluga();
-  return (p) => void client.api.network['presence.set'](p);
+  return (p) => {
+    rememberIdleAway(false);
+    void client.api.network['presence.set'](p);
+  };
 }
 
 /**
