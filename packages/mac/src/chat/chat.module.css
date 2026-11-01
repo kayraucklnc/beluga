@@ -398,6 +398,10 @@
 .markdown p {
   margin: 0 0 0.6em;
 }
+/* A person's own words: a line they broke stays broken (typed-lines.ts keeps the blank ones). */
+.typed p {
+  white-space: pre-line;
+}
 .markdown h1,
 .markdown h2,
 .markdown h3,
