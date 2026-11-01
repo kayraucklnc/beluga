@@ -1107,11 +1107,28 @@ button.chatName:hover {
   font-weight: 500;
   color: var(--text-2);
 }
-/* A narrow panel: the claude mark stands for "Ask Sentinel", and the chat's name gets the room. */
-@container chatbar (max-width: 440px) {
-  .chatTitleText {
-    display: none;
-  }
+/* "Your Agent" always shows (BLG-590): a narrow panel shortens the chat's name instead. */
+.chatTitle + .chatName {
+  flex-shrink: 1;
+}
+
+/* The empty chat's starts: what it makes, picked by kind, then a few examples as pills. */
+.starts {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 520px;
+  margin-top: 14px;
+}
+.starts [role='group'] {
+  justify-content: center;
+}
+.startsLine {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: center;
 }
 
 /* ---------------------------------------------------------------- a Claude step's session, in its run (BLG-330) */

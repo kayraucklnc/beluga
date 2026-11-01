@@ -66,7 +66,8 @@ test('Ask Sentinel is docked beside the page; × closes it until you ask again',
   await openSentinel(page);
   const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
   await expect(panel.locator('[data-sentinel-chat]')).toContainText('What did my sentinels find this week?');
-  await expect(panel).toContainText('Ask Sentinel');
+  // It reads as your agent, whatever the panel's width.
+  await expect(panel.getByText('Your Agent', { exact: true })).toBeVisible();
   // The page stays beside it.
   await expect(main(page).getByRole('region', { name: 'Watching' })).toBeVisible();
   await shoot(page, 'ask');
@@ -131,6 +132,29 @@ test('Ask Sentinel’s panel is resized by its edge, and its message box stays o
   // Double-click: back to its usual width.
   await edge.dblclick();
   expect(Math.abs((await panel.boundingBox())!.width - 380)).toBeLessThan(2);
+});
+
+test('a new chat shows what your agent builds: dashboards, watchers and pipelines, each with examples', async ({ page }) => {
+  await openSentinel(page);
+  const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
+  await panel.getByRole('button', { name: 'New Chat' }).click();
+  const starts = panel.getByTestId('sentinel-starts');
+  await expect(starts).toBeVisible();
+  const kinds = starts.getByRole('radiogroup', { name: 'What your agent can make' });
+  await expect(kinds).toContainText('Dashboards');
+  await expect(kinds).toContainText('Watchers');
+  await expect(kinds).toContainText('Pipelines');
+  await expect(starts.getByRole('group', { name: 'Dashboards to ask for' }).getByRole('button')).toHaveCount(3);
+  await expect(starts.getByRole('group', { name: 'Or let it look first' }).getByRole('button').first()).toHaveText('Suggest Some for Me');
+  await panel.evaluate((el) => Promise.allSettled(el.getAnimations({ subtree: true }).map((x) => x.finished)));
+  await shoot(page, 'ask-new');
+  await kinds.getByRole('radio', { name: 'Pipelines' }).click();
+  const pipelines = starts.getByRole('group', { name: 'Pipelines to ask for' });
+  await expect(pipelines).toContainText('Review Each Pull Request');
+  // A tap sends it, as if you'd typed it.
+  await pipelines.getByRole('button', { name: 'Review Each Pull Request' }).click();
+  await expect(panel.locator('[data-sentinel-chat]')).toContainText('When a pull request opens, have the agent review it');
+  await expect(starts).toHaveCount(0);
 });
 
 test('asking about one sentinel opens the chat beside its page, naming it', async ({ page }) => {
@@ -278,21 +302,29 @@ test('with nothing set up: what it can do as scenes, the box, ideas, and every r
   await page.screenshot({ path: path.join(shots, 'home-first-fix.png') });
   await show.press('ArrowRight');
   await expect(show.locator('[data-slide="review"]')).toBeVisible();
-  // Set This Up hands the scene's words to Ask Sentinel.
+  // Set This Up hands the scene's words to your agent: with nothing set up yet, the conversation
+  // takes the middle of the page, and no panel opens beside it (BLG-590).
   await show.getByRole('button', { name: 'Set This Up' }).click();
-  const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
-  await expect(panel).toContainText('When a pull request opens');
-  await panel.getByRole('button', { name: 'Close' }).click();
-  // The ideas: the first has Claude look at your projects and suggest.
+  const chat = main(page).getByTestId('sentinel-first-chat');
+  await expect(chat).toContainText('When a pull request opens');
+  await expect(main(page).getByRole('complementary', { name: 'Ask Sentinel' })).toHaveCount(0);
+  await expect(first).toHaveCount(0);
+  await chat.getByRole('button', { name: 'Close' }).click();
+  // The ideas: the first has your agent look at your projects and suggest.
   await expect(first.getByRole('list', { name: 'Ideas' }).getByRole('listitem').first()).toHaveText('Suggest Some for Me');
-  // The box asks Claude in the panel beside the page.
+  // The box asks your agent, and the conversation goes on in the middle.
   await first.getByRole('textbox', { name: 'What should Beluga keep an eye on?' }).fill('Every morning, tell me what changed in bob-api');
   await first.getByRole('button', { name: 'Ask Your Agent' }).click();
-  // The panel slides in from the right, and the conversation goes on there.
-  await expect(panel.locator('[data-sentinel-chat]')).toBeVisible();
-  await expect(panel).toContainText('Every morning, tell me what changed in bob-api');
-  await expect(panel.getByRole('button', { name: /^Chat: / })).toBeVisible();
-  await panel.getByRole('button', { name: 'Close' }).click();
+  await expect(chat.locator('[data-sentinel-chat]')).toBeVisible();
+  await expect(chat).toContainText('Every morning, tell me what changed in bob-api');
+  await expect(chat.getByRole('button', { name: /^Chat: / })).toBeVisible();
+  await expect(main(page).getByRole('complementary', { name: 'Ask Sentinel' })).toHaveCount(0);
+  await shoot(page, 'first-chat');
+  // Closed, the first visit is back, with the way back to the conversation.
+  await chat.getByRole('button', { name: 'Close' }).click();
+  await first.getByRole('button', { name: 'Back to your conversation' }).click();
+  await expect(chat).toContainText('Every morning, tell me what changed in bob-api');
+  await chat.getByRole('button', { name: 'Close' }).click();
   // Every recipe is one tap away.
   await first.getByRole('button', { name: 'Every recipe' }).click();
   await expect(page.getByRole('dialog', { name: 'New Sentinel' }).locator('[data-recipe="morning-brief"]')).toBeVisible();

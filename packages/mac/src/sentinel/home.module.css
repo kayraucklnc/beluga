@@ -11,6 +11,17 @@
   overflow-y: auto;
   padding: 14px 24px 40px;
 }
+/* Nothing set up yet: the conversation is the page, in a column down its middle (BLG-590). */
+.middle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  max-width: 860px;
+  min-height: 0;
+  margin: 0 auto;
+}
 .panel {
   position: relative;
   flex: none;
