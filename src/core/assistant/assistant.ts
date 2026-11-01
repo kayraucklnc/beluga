@@ -61,14 +61,24 @@ interface Saved {
   readonly runtime?: string;
 }
 
+/** One chat in chats.json; `auto`: Beluga opened it on its own (a sentinel's run or ask), not you. */
+interface ChatEntry {
+  readonly id: string;
+  readonly createdAt: number;
+  readonly auto?: true;
+}
+
 /** What chats.json holds: the chats in tab order, and the one open. */
 interface ChatsFile {
-  readonly chats: ReadonlyArray<{ readonly id: string; readonly createdAt: number }>;
+  readonly chats: readonly ChatEntry[];
   readonly active: string;
 }
 
 /** The most items kept of its history (as a worktree's). */
 const KEEP = 500;
+
+/** The most chats Beluga opened on its own kept at once: past it, the oldest idle ones go (BLG-568). */
+export const AUTO_CHATS_KEPT = 20;
 
 /**
  * Your Mac's chats (BLG-102): several conversations at once, tabs on the Mac. Each has its own
@@ -160,7 +170,7 @@ export class MacAssistant {
   private migrate(): ChatsFile {
     const listed = readJson<Partial<ChatsFile> | undefined>(this.file('chats.json'), undefined);
     const raw = Array.isArray(listed?.chats) ? listed.chats : [];
-    const chats = raw.filter((c, i) => typeof c?.id === 'string' && CHAT_ID.test(c.id) && raw.findIndex((x) => x?.id === c.id) === i).map((c) => ({ id: c.id, createdAt: typeof c.createdAt === 'number' ? c.createdAt : 0 }));
+    const chats = raw.filter((c, i) => typeof c?.id === 'string' && CHAT_ID.test(c.id) && raw.findIndex((x) => x?.id === c.id) === i).map((c): ChatEntry => ({ id: c.id, createdAt: typeof c.createdAt === 'number' ? c.createdAt : 0, ...(c.auto === true ? { auto: true } : {}) }));
     if (chats.length) return { chats, active: chats.some((c) => c.id === listed?.active) ? listed!.active! : chats[0]!.id };
     mkdirSync(this.chatDir(FIRST_CHAT), { recursive: true, mode: 0o700 });
     for (const name of ['state.json', 'history.json']) {
@@ -203,18 +213,38 @@ export class MacAssistant {
     this.saved.set(id, {});
   }
 
-  /** A new chat, after the others, open now → its id. */
-  newChat(): string {
-    // How many chats at once is yours to choose (Settings › Agent › Open chats; 0: no limit).
-    const limit = this.deps.store.getState().prefs.chatLimit;
-    if (!chatFits(this.list.chats.length, limit)) throw new Error(chatLimitMessage(this.list.chats.length, limit, 'Your Mac chats'));
+  /**
+   * A new chat, after the others → its id. Yours opens now, within your limit (Settings › Agent ›
+   * Open chats; 0: no limit), which counts only the chats you opened. `auto` (BLG-568): Beluga's
+   * own, for a sentinel's run or ask. It is never refused (a sentinel never fails on your tabs),
+   * leaves the tab you have open alone, and only the newest AUTO_CHATS_KEPT of them are kept.
+   */
+  newChat(opts: { readonly auto?: boolean } = {}): string {
+    if (!opts.auto) {
+      const limit = this.deps.store.getState().prefs.chatLimit;
+      const yours = this.list.chats.filter((c) => !c.auto).length;
+      if (!chatFits(yours, limit)) throw new Error(chatLimitMessage(yours, limit, 'Your Mac chats'));
+    }
     let id = '';
     do id = randomBytes(5).toString('hex');
     while (this.has(id) || id === FIRST_CHAT);
     this.fresh(id);
-    this.save({ chats: [...this.list.chats, { id, createdAt: this.now }], active: id });
+    const chat: ChatEntry = { id, createdAt: this.now, ...(opts.auto ? { auto: true } : {}) };
+    this.save({ chats: [...this.list.chats, chat], active: opts.auto ? this.list.active : id });
     this.saver.loaded(assistantChannel(id));
+    if (opts.auto) void this.dropOldAuto(id).catch(() => undefined);
     return id;
+  }
+
+  /** Past AUTO_CHATS_KEPT of Beluga's own chats, the oldest go: never the one just made, one working now or the one open. */
+  private async dropOldAuto(made: string): Promise<void> {
+    const auto = this.list.chats.filter((c) => c.auto);
+    const extra = auto.length - AUTO_CHATS_KEPT;
+    if (extra <= 0) return;
+    const busy = busyChannels(this.deps.store.getState().log);
+    const idle = auto.filter((c) => c.id !== made && c.id !== this.list.active && !busy.has(assistantChannel(c.id)));
+    const oldest = [...idle].sort((a, b) => a.createdAt - b.createdAt).slice(0, extra);
+    for (const c of oldest) await this.deleteChat(c.id);
   }
 
   /** Open a chat (which one is open is kept across restarts). */

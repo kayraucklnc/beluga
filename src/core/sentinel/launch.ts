@@ -177,7 +177,8 @@ function places(session: Session): SentinelPlaces | undefined {
     macChat: () => {
       const mac = assistantOf(session);
       if (!mac) return undefined;
-      return { channel: assistantChannel(mac.newChat()) };
+      // Beluga's own: never refused by your Open chats limit, never takes your tab (BLG-568).
+      return { channel: assistantChannel(mac.newChat({ auto: true })) };
     },
     madeChanges: async (workspaceId) => {
       const ws = ctl.manager.find(workspaceId);
