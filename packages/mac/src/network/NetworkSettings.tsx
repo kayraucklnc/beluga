@@ -25,6 +25,7 @@ export function NetworkSettings() {
   const friends = net.friends.length;
   const groups = net.groups.filter((g) => g.active).length;
   const chatClaude = useApp((st) => st.prefs.chatClaude);
+  const shareUsage = useApp((st) => st.prefs.shareUsage);
   return (
     <Group title="Friends">
       <Row
@@ -66,6 +67,20 @@ export function NetworkSettings() {
               { value: 'off', label: 'Only me' },
             ]}
             onChange={(v) => void client.api.session.setPrefs({ chatClaude: v })}
+          />
+        </Row>
+      ) : null}
+      {net.enabled ? (
+        <Row label="Who sees your usage" detail="How much of your Claude Code, Codex and other plans you have left, and when it resets, on your profile. Never your conversations or code.">
+          <Select<'trusted' | 'everyone' | 'off'>
+            label="Who sees your usage"
+            value={shareUsage}
+            options={[
+              { value: 'trusted', label: 'People I trust' },
+              { value: 'everyone', label: 'All my friends' },
+              { value: 'off', label: 'No one' },
+            ]}
+            onChange={(v) => void client.api.session.setPrefs({ shareUsage: v })}
           />
         </Row>
       ) : null}

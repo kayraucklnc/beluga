@@ -762,7 +762,9 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       return slugify(prompt);
     },
     draftTask: async (text, ctx) => {
-      await new Promise((r) => setTimeout(r, (ctx.look ? 6000 : 1500) * pace));
+      // "Take your time" in what you wrote: slow enough, at any pace, to watch the task being written (BLG-598).
+      const watch = /take your time/i.test(text) ? 5000 : 0;
+      await new Promise((r) => setTimeout(r, Math.max(watch, (ctx.look ? 6000 : 1500) * pace)));
       return mockDraft(text, ctx);
     },
     describeProject: async (_dir, project) => {

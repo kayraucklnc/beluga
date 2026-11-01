@@ -82,6 +82,7 @@ export const PrefsPatch = z
     hiddenButtons: z.array(z.string().max(40)).max(40),
     friendWorktrees: z.enum(['ask', 'off']),
     chatClaude: z.enum(['everyone', 'trusted', 'off']),
+    shareUsage: z.enum(['trusted', 'everyone', 'off']),
     shell: z.string().max(200).optional(),
     shellLogin: bool,
     shellArgs: z.array(z.string().max(200)).max(20),

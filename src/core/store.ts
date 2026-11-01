@@ -296,6 +296,8 @@ export interface Prefs {
   readonly friendWorktrees: Settings['friendWorktrees'];
   /** Who may call your Claude into a chat (core/chat/claude.ts). */
   readonly chatClaude: Settings['chatClaude'];
+  /** Who sees your plan usage on your profile (core/gateway: it rides on your card). */
+  readonly shareUsage: Settings['shareUsage'];
   readonly shell?: string;
   /** Start the terminal's shell as a login shell. */
   readonly shellLogin: boolean;
@@ -664,6 +666,7 @@ export const DEFAULT_PREFS: Prefs = {
   hiddenButtons: [],
   friendWorktrees: 'ask',
   chatClaude: 'everyone',
+  shareUsage: 'trusted',
   shellLogin: true,
   shellArgs: [],
 };

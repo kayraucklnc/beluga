@@ -4,7 +4,8 @@ import { parseCriterion } from '@beluga/core/board/criteria.js';
 import { BRIEF_SECTIONS, type BriefSection, type Issue, SECTION_INFO, actorName } from '@beluga/core/board/model.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
-import { Button, IconButton, Tip, cx } from '../components/ui.js';
+import { Button, Dot, IconButton, Tip, cx } from '../components/ui.js';
+import { useMyAgentName } from '../lib/agent-words.js';
 import { ago, checklist, toggleCheck } from './tasks-model.js';
 import { useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -17,10 +18,18 @@ import t from './tasks.module.css';
  */
 export function Brief({ issue }: { issue: Issue }) {
   const [adding, setAdding] = useState<BriefSection>();
+  // Fresh from its agent: the brief fades in where the skeleton was (once, not on every visit).
+  const [arrived, setArrived] = useState(false);
+  const wasDrafting = useRef(issue.drafting);
+  useEffect(() => {
+    if (wasDrafting.current && !issue.drafting) setArrived(true);
+    wasDrafting.current = issue.drafting;
+  }, [issue.drafting]);
   const filled = BRIEF_SECTIONS.filter((s) => issue.brief[s] || s === 'goal' || s === adding);
   const missing = BRIEF_SECTIONS.filter((s) => !filled.includes(s));
+  if (issue.drafting) return <BriefWriting />;
   return (
-    <div className={t.brief}>
+    <div className={cx(t.brief, arrived && t.briefArrived)}>
       {filled.map((s) => (
         <Section key={s} issue={issue} section={s} startEditing={s === adding} onDone={() => setAdding(undefined)} />
       ))}
@@ -36,6 +45,49 @@ export function Brief({ issue }: { issue: Issue }) {
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** How long each ghost line is, as a share of the section: uneven, like written lines. */
+const GHOST_GOAL = [94, 81, 58] as const;
+const GHOST_CRITERIA = [72, 86, 64] as const;
+
+/**
+ * While its agent writes the task (BLG-598): the goal and criteria drawn in outline, a light
+ * passing over them, and a line saying who is writing. Nothing to edit until it's done.
+ */
+function BriefWriting() {
+  const who = useMyAgentName();
+  return (
+    <div className={cx(t.brief, t.briefWriting)} aria-busy="true">
+      <div className={t.writingStatus} role="status">
+        <Dot tone="claude" live />
+        {who} is writing this task…
+      </div>
+      <section className={t.section} aria-hidden="true">
+        <header className={t.sectionHead}>
+          <h3 className={t.sectionTitle}>{SECTION_INFO.goal.label}</h3>
+        </header>
+        <div className={t.ghostLines}>
+          {GHOST_GOAL.map((w, i) => (
+            <span key={i} className={t.ghostLine} style={{ width: `${w}%`, ['--i' as string]: i }} />
+          ))}
+        </div>
+      </section>
+      <section className={t.section} aria-hidden="true">
+        <header className={t.sectionHead}>
+          <h3 className={t.sectionTitle}>{SECTION_INFO.acceptance.label}</h3>
+        </header>
+        <div className={t.ghostLines}>
+          {GHOST_CRITERIA.map((w, i) => (
+            <span key={i} className={t.ghostCheck} style={{ ['--i' as string]: i + GHOST_GOAL.length }}>
+              <span className={t.ghostBox} />
+              <span className={t.ghostLine} style={{ width: `${w}%` }} />
+            </span>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

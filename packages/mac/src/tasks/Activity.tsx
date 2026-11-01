@@ -104,9 +104,11 @@ function CommentBox({ issue, people, world }: { issue: Issue; people: ReadonlyAr
   const { api, act } = useTaskActions();
   const box = useRef<HTMLTextAreaElement>(null);
   const tags = useBoxSuggestions({ text, setText, people });
+  // Its agent is still writing the task: comments wait until it's done (BLG-598).
+  const writing = Boolean(issue.drafting);
   const send = async (): Promise<void> => {
     const body = text.trim();
-    if (!body || busy) return;
+    if (!body || busy || writing) return;
     setBusy(true);
     const done = await act(() => api.comment(issue.id, body));
     setBusy(false);
@@ -120,7 +122,8 @@ function CommentBox({ issue, people, world }: { issue: Issue; people: ReadonlyAr
           ref={box}
           value={text}
           rows={text.includes('\n') ? 4 : 2}
-          placeholder="Leave a comment… @ mentions someone"
+          disabled={writing}
+          placeholder={writing ? 'You can comment once the task is written…' : 'Leave a comment… @ mentions someone'}
           aria-label="Comment"
           aria-haspopup="listbox"
           aria-expanded={tags.open}
@@ -138,7 +141,7 @@ function CommentBox({ issue, people, world }: { issue: Issue; people: ReadonlyAr
       <div className={t.commentBar}>
         <span className={t.editorHint}>{chordLabel('Cmd+Enter')} to send · @ mentions · Markdown</span>
         <span className={t.grow} />
-        <Button size="small" variant="primary" disabled={!text.trim() || busy} onClick={() => void send()}>
+        <Button size="small" variant="primary" disabled={!text.trim() || busy || writing} onClick={() => void send()}>
           Comment
         </Button>
       </div>

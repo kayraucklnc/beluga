@@ -104,21 +104,31 @@ export function LabelMark({ def, label }: { def: LabelDef | undefined; label: st
   );
 }
 
-/** Who a task is for: a person's avatar (a task is for a person, never a Claude: BLG-278). */
-export function AssigneeMark({ assignee, selfId, size = 18 }: { assignee: Assignee | undefined; selfId: string; size?: number }) {
+/** Who a task is for, in words: "For you", "For Mia", "For no one yet". */
+export function assigneeWords(assignee: Assignee | undefined, selfId: string): string {
+  if (!assignee) return 'For no one yet';
+  return assignee.id === selfId ? 'For you' : `For ${assignee.name}`;
+}
+
+/**
+ * Who a task is for: a person's avatar (a task is for a person, never a Claude: BLG-278).
+ * `changeable`: a click on it picks someone else, and its hover says so.
+ */
+export function AssigneeMark({ assignee, selfId, size = 18, changeable }: { assignee: Assignee | undefined; selfId: string; size?: number; changeable?: boolean }) {
+  const words = assigneeWords(assignee, selfId);
+  const tip = changeable ? `${words} · Click to change` : words;
   if (!assignee) {
     return (
-      <Tip label="No one">
-        <span className={t.nobody} style={{ width: size, height: size }} aria-label="No one">
+      <Tip label={tip}>
+        <span className={t.nobody} style={{ width: size, height: size }} aria-label={words}>
           <Icon name="person" size={size * 0.62} />
         </span>
       </Tip>
     );
   }
-  const name = assignee.id === selfId ? 'You' : assignee.name;
   return (
-    <Tip label={name}>
-      <span className={t.assignee} aria-label={name}>
+    <Tip label={tip}>
+      <span className={t.assignee} aria-label={words}>
         <Avatar name={assignee.name} id={assignee.id} size={size} />
       </span>
     </Tip>

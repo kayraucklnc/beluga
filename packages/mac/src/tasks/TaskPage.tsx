@@ -164,13 +164,16 @@ function Title({ issue }: { issue: Issue }) {
     setDraft(undefined);
     if (next && next !== issue.title) void act(() => api.update(issue.id, { title: next }));
   };
+  // While its agent writes the task, the title is its stand-in and theirs to replace (BLG-598).
+  const writing = Boolean(issue.drafting);
   return (
     <textarea
       ref={input}
-      className={t.pageTitle}
+      className={cx(t.pageTitle, writing && t.pageTitleWriting)}
       value={draft ?? issue.title}
       rows={1}
       aria-label="Title"
+      readOnly={writing}
       spellCheck={false}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={save}
@@ -364,6 +367,8 @@ function NextStep({ issue }: { issue: Issue }) {
   };
   if (isFinished(issue.status)) return <Outcome issue={issue} ws={ws} live={live} />;
   if (!STATUS_INFO[issue.status].open && !live) return null;
+  // Its agent is still writing it: Start waits for the brief (BLG-598).
+  const writing = Boolean(issue.drafting);
   return (
     <div className={t.nextStep}>
       {had || live ? (
@@ -373,13 +378,15 @@ function NextStep({ issue }: { issue: Issue }) {
         </>
       ) : (
         <>
-          <SplitButton label="Start with another agent" disabled={starting} items={items((a) => void start(a))}>
-            <Button variant="primary" size="small" icon="play" disabled={starting} onClick={() => void start()}>
+          <SplitButton label="Start with another agent" disabled={starting || writing} items={items((a) => void start(a))}>
+            <Button variant="primary" size="small" icon="play" disabled={starting || writing} onClick={() => void start()}>
               {starting ? 'Starting…' : 'Start'}
             </Button>
           </SplitButton>
           <span className={t.nextInfo}>
-            {others.length
+            {writing
+              ? 'You can start it once its brief is written'
+              : others.length
               ? `A worktree in ${[repo, ...others].slice(0, -1).join(', ')} and ${others.at(-1)} from the latest origin, with ${who} working on ${issue.key} across them`
               : `A new worktree from the latest origin, with ${who} working on ${issue.key}${issue.brief.goal ? ' from this brief' : ''}`}
           </span>

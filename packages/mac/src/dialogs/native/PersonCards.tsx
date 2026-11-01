@@ -2,7 +2,9 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { type ReactNode, useState } from 'react';
 import type { Guest } from '@beluga/core/collab-store.js';
 import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
-import { CLAUDE_AGENT, type GuestCan, type PeerInfo, type Usage, defaultAgentOf } from '@beluga/protocol.js';
+import { type GuestCan, type PeerInfo, type ProviderUsage, defaultAgentOf } from '@beluga/protocol.js';
+import { usagesOf } from '@beluga/agent/usage.js';
+import { windowsOf } from '@beluga/ui/usage-cards.js';
 import { agentName } from '@beluga/shared/agent-label.js';
 import { agentMark } from '@beluga/shared/agent-marks.js';
 import { CAN_INFO } from '@beluga/shared/invites.js';
@@ -15,6 +17,7 @@ import { cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Select } from '../settings-controls.js';
+import { resetsAt } from '../../views/usage/usage-model.js';
 import type { Confirm } from './PersonPopover.js';
 import { Choice, Tag, optionIndex } from './parts.js';
 import { addressTo } from './PeerSheets.js';
@@ -111,33 +114,55 @@ function AgentOn({ peer }: { peer: PeerInfo }) {
   );
 }
 
-function Meter({ label, pct }: { label: string; pct: number }) {
+/** One plan window: what's left of it, and when it resets. */
+function Meter({ label, pct, resets }: { label: string; pct: number; resets?: string }) {
+  const left = Math.max(0, 100 - pct);
   return (
     <div className={p.meter}>
       <span>{label}</span>
-      <span className={p.bar}>
+      <span className={p.bar} role="meter" aria-label={`${label}: ${left}% left`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
         <span style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} className={pct >= 85 ? p.barHot : undefined} />
       </span>
-      <span className={p.pct}>{pct}%</span>
+      <span className={p.pct}>{left}% left</span>
+      {resets ? <span className={p.resets}>Resets {resets}</span> : null}
     </div>
   );
 }
 
-/** Their default agent's plan usage (an older Mac sends only Claude's), and whose plan it is. */
-function shownUsage(peer: PeerInfo): { usage: Usage | undefined; provider: string } {
-  const own = peer.usages?.find((u) => u.agent.runtime === defaultAgentOf(peer).runtime);
-  return own ? { usage: own, provider: own.agent.label } : { usage: peer.usage, provider: CLAUDE_AGENT.label };
-}
+/** "max" → "Max". */
+const planName = (plan: string): string => plan.charAt(0).toUpperCase() + plan.slice(1);
 
-function UsageMeters({ peer }: { peer: PeerInfo }) {
-  const { usage, provider } = shownUsage(peer);
-  if (!usage?.fiveHour && !usage?.week) return null;
+/**
+ * Someone's plans (BLG-597): for each provider they run (Claude, Codex…), how much of each window
+ * is left and when it resets. Nothing shared: nothing drawn.
+ */
+export function PlanUsage({ usages }: { usages: readonly ProviderUsage[] | undefined }) {
+  const now = Date.now();
+  const shown = (usages ?? []).map((u) => ({ u, windows: windowsOf(u) })).filter((x) => x.windows.length);
+  if (!shown.length) return null;
   return (
-    <div className={p.usage} aria-label={`${provider} plan usage`}>
-      {usage.fiveHour ? <Meter label="5-hour" pct={usage.fiveHour.pct} /> : null}
-      {usage.week ? <Meter label="Week" pct={usage.week.pct} /> : null}
+    <div className={p.usage}>
+      {shown.map(({ u, windows }) => (
+        <div key={u.agent.runtime} className={p.usageProvider} role="group" aria-label={`${agentName(u.agent)} plan usage`}>
+          <div className={p.usageHead}>
+            <Icon name={agentMark(u.agent)} size={11} />
+            <span>{agentName(u.agent)}</span>
+            {u.plan ? <span className={p.usagePlan}>{planName(u.plan)}</span> : null}
+          </div>
+          {windows.map((w) => (
+            <Meter key={w.label} label={w.label} pct={w.pct} {...(w.resetsAt && w.resetsAt > now ? { resets: resetsAt(w.resetsAt, now) } : {})} />
+          ))}
+        </div>
+      ))}
     </div>
   );
+}
+
+/** A room peer's plans: what their room profile says, else what their card told you (a friend's). */
+function UsageMeters({ peer }: { peer: PeerInfo }) {
+  const card = useApp((st) => st.gateway.cards[peer.peerId]?.usages);
+  const own = usagesOf(peer);
+  return <PlanUsage usages={own.length ? own : card} />;
 }
 
 /**

@@ -1414,8 +1414,10 @@ export function peopleView(state: DomainState): PeopleView {
   return {
     people: state.network.friends.slice(0, 600).map((f) => {
       const peer = state.peers.find((p) => p.peerId === f.peerId);
-      const usage = usageViews(peer, defaultAgentOf(peer))[0];
       const card = state.gateway.cards[f.peerId];
+      // In your room: their room profile's; else what their card shares with you (BLG-597).
+      const inRoom = Boolean(peer?.usage || peer?.usages?.length);
+      const usage = usageViews(inRoom ? peer : card?.usages?.length ? { usages: [...card.usages] } : undefined, defaultAgentOf(peer))[0];
       const chat = chatTopic(`dm:${f.peerId}`);
       return {
         peerId: clip(f.peerId, 200),
