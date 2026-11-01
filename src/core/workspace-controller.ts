@@ -579,6 +579,17 @@ export class WorkspaceController {
     return ws.id;
   }
 
+  /** Other worktrees' folders a worktree's Claude works in too (set by the board: an epic across repos, BLG-561). */
+  private alsoIn: (workspaceId: string) => readonly string[] = () => [];
+
+  /** Say which other worktrees a worktree's Claude works in too. → stop. */
+  setAlsoIn(fn: (workspaceId: string) => readonly string[]): () => void {
+    this.alsoIn = fn;
+    return () => {
+      if (this.alsoIn === fn) this.alsoIn = () => [];
+    };
+  }
+
   /** Where Claude runs for a workspace conversation: its folder, its own resumable session. */
   place(channel: string): AgentPlace | undefined {
     const id = workspaceIdOf(channel);
@@ -592,9 +603,12 @@ export class WorkspaceController {
     // A conversation that picked no agent runs on yours (the project's own, else Settings' default).
     const agent = ws.agent ?? this.followedAgent(ws.id);
     const runtime = agent?.runtime ?? this.deps.defaultRuntime?.() ?? SESSION_RUNTIME_DEFAULT;
+    // An epic's worktree: its sub-tasks' worktrees in other repos too (BLG-561), still there.
+    const also = ws.kind === 'worktree' && !ws.askOnly ? this.alsoIn(ws.id).filter((dir) => existsSync(dir)) : [];
     return {
       cwd: ws.path,
-      additionalDirectories: [],
+      additionalDirectories: also,
+      ...(also.length ? { alsoEdit: also } : {}),
       // Worktrees are disposable sandboxes, so edits there don't need approval.
       autoEdit: ws.kind === 'worktree',
       // A project's main folder is questions only: work happens in worktrees.

@@ -518,6 +518,9 @@ export const blocking = (board: BoardState, issue: Issue): Issue[] => board.issu
 
 export const childrenOf = (board: BoardState, issue: Issue): Issue[] => board.issues.filter((i) => i.parent === issue.id).sort(byRank);
 
+/** The other repos an epic's unfinished sub-tasks run in: Start makes a worktree in each too (BLG-561). */
+export const reposAlong = (board: BoardState, epic: Issue): string[] => [...new Set(childrenOf(board, epic).filter((k) => k.projectId !== epic.projectId && isStartable(k)).map((k) => k.projectId))];
+
 /** An epic: a task with sub-tasks (worked out from the board, never stored). */
 export const isEpic = (board: Pick<BoardState, 'issues'>, issue: Pick<Issue, 'id'>): boolean => board.issues.some((i) => i.parent === issue.id);
 

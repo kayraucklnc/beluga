@@ -134,7 +134,30 @@ export function reposPrompt(board: Pick<BoardState, 'projects'>, boardId: string
     `This work's board is "${boardName(board, boardId, repoName)}"${prefix ? ` (keys ${prefix}-…)` : ''}, and it covers ${repos.length === 1 ? 'the repo' : 'these repos'}: ${names.join(', ')}.`,
     'Each task on it runs in one repo, where its worktree is made. task_create puts a task on this board, running in',
     'this repo; for work that belongs in another of its repos, pass project (that repo\'s name), and split work that',
-    'spans repos into an epic with one sub-task per repo. task_list shows each task\'s repo.',
+    'spans repos into an epic with one sub-task per repo: starting the epic makes a worktree in each of their repos,',
+    'and one agent works across them. task_list shows each task\'s repo.',
+  ].join('\n');
+}
+
+/** One of an epic's other worktrees (BLG-561): its repo's name, folder, branch, and the sub-tasks it does. */
+export interface AlongWorktree {
+  readonly repo: string;
+  readonly path: string;
+  readonly branch?: string;
+  readonly keys: readonly string[];
+}
+
+/**
+ * A run in an epic's worktree whose sub-tasks run in other repos (BLG-561): those repos' worktrees,
+ * which it works in too, and how their work goes out. Empty when there are none.
+ */
+export function alongPrompt(epicKey: string, along: readonly AlongWorktree[]): string {
+  if (!along.length) return '';
+  return [
+    '',
+    `This worktree does ${epicKey}, an epic across repos. Its sub-tasks in other repos have worktrees of their own, made with this one, and you work in them too: read and edit their files directly, no need to ask.`,
+    ...along.map((w) => `  - ${w.repo}: ${w.path}${w.branch ? ` (branch ${w.branch})` : ''}, for ${w.keys.join(', ')}`),
+    'Change each repo only in its worktree here, never its main folder. Commit in each one on its own branch (git -C <its folder> …): each repo\'s work goes out as its own pull request, which moves its sub-tasks along.',
   ].join('\n');
 }
 

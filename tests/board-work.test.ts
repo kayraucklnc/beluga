@@ -171,6 +171,43 @@ describe('starting a task’s worktree', () => {
     for (const words of ['Admins refund orders.', '- [ ] Partial refunds', 'Stripe refunds API.', '- Refunds go through the queue']) expect(prompt).toContain(words);
   });
 
+  it('an epic across repos (BLG-561): a worktree in each repo its sub-tasks run in, one Claude working in all of them', async () => {
+    const { board, work, asked, store } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Fees', status: 'todo' }, work.me());
+    const here = board.create({ projectId: 'api', title: 'Fee API', parent: epic.key }, work.me());
+    const page = board.create({ projectId: 'land', title: 'Fee page', parent: epic.key }, work.me());
+    const copy = board.create({ projectId: 'land', title: 'Fee copy', parent: epic.key }, work.me());
+    const id = await work.start(epic.key, { claude: true });
+    const all = store.getState().projects.flatMap((p) => p.workspaces);
+    const there = all.find((w) => w.projectId === 'land')!;
+    expect(all.map((w) => [w.projectId, w.name])).toEqual([['api', 'bob-1-fees'], ['land', 'bob-1-fees']]);
+    // landing's sub-tasks follow its worktree (its pull request moves them); the one in api goes with the epic.
+    expect(board.need(page.key)).toMatchObject({ worktrees: [there.id], status: 'in_progress' });
+    expect(board.need(copy.key)).toMatchObject({ worktrees: [there.id], status: 'in_progress' });
+    expect(board.need(here.key).worktrees).toEqual([]);
+    expect(work.alsoIn(id).map((w) => w.id)).toEqual([there.id]);
+    expect(work.alsoIn(there.id)).toEqual([]);
+    expect(asked[0]![0]).toContain('Its sub-tasks run in landing too');
+    // Every run there is told where, and how the work goes out.
+    const brief = work.forRun(`ws:${id}`, 'p-me')!.brief;
+    expect(brief).toContain(`landing: ${there.path} (branch ${there.branch}), for ${page.key}, ${copy.key}`);
+    expect(brief).toContain('its own pull request');
+    expect(work.forRun(`ws:${there.id}`, 'p-me')!.brief).not.toContain('an epic across repos');
+    // Its landing work finished: nothing more to work in there.
+    board.update(page.key, { status: 'done' }, work.me());
+    board.update(copy.key, { status: 'done' }, work.me());
+    expect(work.alsoIn(id)).toEqual([]);
+  });
+
+  it('an epic whose sub-tasks all run in its own repo starts one worktree, as before', async () => {
+    const { board, work, store } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Fees' }, work.me());
+    board.create({ projectId: 'api', title: 'Fee API', parent: epic.key }, work.me());
+    const id = await work.start(epic.key);
+    expect(store.getState().projects.flatMap((p) => p.workspaces).map((w) => w.id)).toEqual([id]);
+    expect(work.alsoIn(id)).toEqual([]);
+  });
+
   it('Start keeps a task someone else has as theirs, and without Claude asks nobody', async () => {
     const { board, work, asked } = setup();
     const theirs = board.create({ projectId: 'api', title: 'Theirs', assignee: { kind: 'person', id: 'p-ann', name: 'Ann' } }, work.me());

@@ -424,6 +424,11 @@ export interface AgentPlace {
   readonly syncMain?: { readonly branch: string; readonly upstream: string };
   /** With askOnly: a hidden worktree Claude may edit to fix a conflict there (see policy.ts). */
   readonly fixup?: string;
+  /**
+   * Other worktrees this one works in too (an epic across repos, BLG-561): in `additionalDirectories`,
+   * and edited without asking like its own folder when `autoEdit`.
+   */
+  readonly alsoEdit?: readonly string[];
   /** Continue After Merge: this worktree's earlier work went out in this pull request, merged into `into`. */
   readonly shipped?: { readonly number: number; readonly url?: string; readonly into: string };
 }

@@ -282,3 +282,15 @@ describe('a plan’s Claude fixing a conflict in a hidden worktree', () => {
     expect(decideTool('Edit', { file_path: '/k/workspaces/.bases/app/kld-10-base/src/a.ts' }, main)).toBe('deny');
   });
 });
+
+describe('an epic’s worktree working in its sub-tasks’ worktrees in other repos (BLG-561)', () => {
+  const epic = { cwd: '/k/workspaces/app/blg-1-pay', roots: ['/k/workspaces/app/blg-1-pay', '/k/workspaces/api/blg-1-pay'], autoEdit: true, scope: 'full' as const, alsoEdit: ['/k/workspaces/api/blg-1-pay'] };
+
+  it('edits there like its own folder, nowhere else; secrets stay refused', () => {
+    expect(decideTool('Edit', { file_path: '/k/workspaces/api/blg-1-pay/src/fees.ts' }, epic)).toBe('allow');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/app/blg-1-pay/src/fees.ts' }, epic)).toBe('allow');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/api/other/src/fees.ts' }, epic)).toBe('ask');
+    expect(decideTool('Write', { file_path: '/k/workspaces/api/blg-1-pay/.env' }, epic)).toBe('deny');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/api/blg-1-pay/src/fees.ts' }, { ...epic, autoEdit: false })).toBe('ask');
+  });
+});

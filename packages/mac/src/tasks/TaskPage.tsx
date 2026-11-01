@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, boardName, boardOf, isArchived, isEpic, progressOf, isFinished, issueById, taskProof, worktreeDoing } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, boardName, boardOf, isArchived, isEpic, progressOf, isFinished, isOpen, issueById, reposAlong, taskProof, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
@@ -297,6 +297,12 @@ function useTaskWorktree(issue: Issue): { readonly ws: Workspace | undefined; re
 function WorktreeLinks({ issue, ws, live, secondary }: { issue: Issue; ws: Workspace | undefined; live: Workspace | undefined; secondary?: boolean }) {
   const { openWorktree } = useTaskActions();
   const api = useApi();
+  // An epic across repos (BLG-561): the repos of its sub-tasks' worktrees it works in too.
+  const also = useApp((s) =>
+    live
+      ? [...new Set(s.board.issues.filter((k) => k.parent === issue.id && k.projectId !== issue.projectId && isOpen(k.status) && s.projects.some((p) => p.workspaces.some((w) => w.id === worktreeOf(k) && !w.archived))).map((k) => s.projects.find((p) => p.id === k.projectId)?.name ?? ''))].filter(Boolean).join(', ')
+      : '',
+  );
   if (live) {
     return (
       <>
@@ -309,6 +315,7 @@ function WorktreeLinks({ issue, ws, live, secondary }: { issue: Issue; ws: Works
         <span className={t.nextInfo}>
           <span className={t.mono}>{live.name}</span>
           {issue.branch ? <span className={t.nextBranch}>on {issue.branch}</span> : null}
+          {also ? <span className={t.nextBranch}>also in {also}</span> : null}
         </span>
       </>
     );
@@ -342,6 +349,10 @@ function NextStep({ issue }: { issue: Issue }) {
   // Its GitHub issue investigated: Fix It (there) is the one main action.
   const fixFirst = useInvestigated(issue);
   const { who, start: startWith, items } = useTaskStart(issue);
+  // An epic across repos (BLG-561): Start makes a worktree in each of its sub-tasks' repos too, one agent on all.
+  const along = useApp((s) => reposAlong(s.board, issue).map((r) => s.projects.find((p) => p.id === r)?.name ?? r).join('\u0000'));
+  const repo = useApp((s) => s.projects.find((p) => p.id === issue.projectId)?.name ?? 'its repo');
+  const others = along ? along.split('\u0000') : [];
   // One click: a new worktree named after it, In Progress, its agent on it with its brief, and you there (BLG-55).
   // Start with… (BLG-506): another agent, this start only.
   const start = async (agent?: AgentRef): Promise<void> => {
@@ -365,7 +376,11 @@ function NextStep({ issue }: { issue: Issue }) {
               {starting ? 'Starting…' : 'Start'}
             </Button>
           </SplitButton>
-          <span className={t.nextInfo}>A new worktree from the latest origin, with {who} working on {issue.key}{issue.brief.goal ? ' from this brief' : ''}</span>
+          <span className={t.nextInfo}>
+            {others.length
+              ? `A worktree in ${[repo, ...others].slice(0, -1).join(', ')} and ${others.at(-1)} from the latest origin, with ${who} working on ${issue.key} across them`
+              : `A new worktree from the latest origin, with ${who} working on ${issue.key}${issue.brief.goal ? ' from this brief' : ''}`}
+          </span>
         </>
       )}
       <span className={t.grow} />

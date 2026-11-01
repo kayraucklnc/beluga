@@ -107,6 +107,8 @@ export interface PolicyContext {
    * branches a task starts from. Files there may be edited (nothing else changes).
    */
   readonly fixup?: string;
+  /** With autoEdit: other worktrees this run works in too (an epic across repos), edited like `cwd`. */
+  readonly alsoEdit?: readonly string[];
   /** A guest invited into one project asked: they never reach the room through your Claude. */
   readonly guest?: boolean;
   /** Your own Claude, on your own computer: a .env file asks you (Decision 'secret') instead of being refused. */
@@ -217,7 +219,7 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
     if (others && !ctx.roots.some((r) => within(r, target))) return 'deny';
     // Someone else's request: a file that makes code run later (a git hook, npm scripts…) asks you.
     if (others && runsCode(target)) return 'ask';
-    if (ctx.autoEdit && within(ctx.cwd, target)) return 'allow';
+    if (ctx.autoEdit && [ctx.cwd, ...(ctx.alsoEdit ?? [])].some((d) => within(d, target))) return 'allow';
     if (ctx.fixup && within(ctx.fixup, target)) return 'allow';
     return 'ask';
   }
