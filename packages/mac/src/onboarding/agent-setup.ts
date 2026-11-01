@@ -78,6 +78,17 @@ export function agentRows(runtimes: readonly RuntimeChoice[], checked: boolean):
   });
 }
 
+/** How often the agents are asked again while one is still being installed or signed in to. */
+export const AGENT_RECHECK_MS = 5_000;
+
+/**
+ * Whether an agent could turn ready any moment now (Codex installing, a sign-in in Terminal or in
+ * Beluga's own terminal), so it's worth asking again on its own. A local model waits for Set Up….
+ */
+export function awaitingAgent(rows: readonly AgentRow[]): boolean {
+  return rows.some((r) => r.id !== 'local' && r.state !== undefined && r.state !== 'ready');
+}
+
 /**
  * Who should be your agent once they're found: yours, when it's ready; else the first that is
  * (Claude Code before Codex before a local model); undefined when none is (yours stays).

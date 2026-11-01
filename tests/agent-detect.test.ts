@@ -10,7 +10,7 @@ import { Store, initialState } from '../src/core/store.js';
 import { Workbench, withRuntimeStatus } from '../src/core/workbench.js';
 import type { WorkspaceController } from '../src/core/workspace-controller.js';
 import { type RuntimeChoice, runtimeChoices } from '../src/shared/agent-runtimes.js';
-import { agentRows, pickDefault } from '../packages/mac/src/onboarding/agent-setup.js';
+import { agentRows, awaitingAgent, pickDefault } from '../packages/mac/src/onboarding/agent-setup.js';
 import { STEPS, groupOf, inTour, stepBy } from '../packages/mac/src/onboarding/onboarding-model.js';
 
 /** Your agents, found (BLG-507): Claude Code's sign-in, every runtime's state kept and merged, and onboarding's rows. */
@@ -176,5 +176,14 @@ describe("onboarding's Your agents step", () => {
     expect(pickDefault(agentRows(choices(), true), 'codex')).toBe('codex');
     expect(pickDefault(agentRows(choices({ claude: { available: false, state: 'signed_out' } }), true), 'claude')).toBe('codex');
     expect(pickDefault(agentRows(choices({ claude: { available: false, state: 'signed_out' }, codex: { available: false, state: 'missing' } }), true), 'claude')).toBeUndefined();
+  });
+
+  it('keeps looking on its own while Codex or Claude is missing or signed out, not for a local model', () => {
+    expect(awaitingAgent(agentRows(choices({ codex: { available: false, state: 'missing' } }), true))).toBe(true);
+    expect(awaitingAgent(agentRows(choices({ claude: { available: false, state: 'signed_out' } }), true))).toBe(true);
+    // All ready but the local model (no endpoint): nothing to wait for.
+    expect(awaitingAgent(agentRows(choices(), true))).toBe(false);
+    // Not asked yet: the first look is already on its way.
+    expect(awaitingAgent(agentRows(choices({ codex: { available: false } }), false))).toBe(false);
   });
 });
