@@ -182,7 +182,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
                 ) : null}
                 <div className={s.bubble} title={time(item.ts)}>
                   <Folding>
-                    <Markdown text={text} paths localImages mentions={mentions} tasks />
+                    <Markdown text={text} paths localImages mentions={mentions} tasks typed />
                   </Folding>
                 </div>
               </div>
@@ -217,7 +217,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
             {text ? (
               <div className={cx(s.theirBubble, ends && s.theirTail)}>
                 <Folding>
-                  <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} tasks={mine} />
+                  <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} tasks={mine} typed />
                 </Folding>
               </div>
             ) : null}

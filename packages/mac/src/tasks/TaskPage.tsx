@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, boardName, boardOf, isArchived, isEpic, progressOf, isFinished, isOpen, issueById, reposAlong, taskProof, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, boardName, boardOf, isArchived, isEpic, progressOf, isFinished, isOpen, isStartable, issueById, reposAlong, taskProof, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
-import { Select } from '../components/Select.js';
-import { YOUR_AGENT, useAgentEntries } from '../components/agent-options.js';
+import { useApi, useApp } from '../lib/beluga.js';
+import { runtimeMark } from '@beluga/shared/agent-marks.js';
+import { agentPicker, pickedAgent } from '@beluga/shared/agent-picker.js';
+import { agentName } from '@beluga/shared/agent-label.js';
+import { myRuntime, pickerState } from '../chat/ModelPicker.js';
+import { useMyAgentName } from '../lib/agent-words.js';
 import { SplitButton } from '../components/SplitButton.js';
 import type { AgentRef } from '@beluga/protocol.js';
 import { useTaskStart } from './use-task-start.js';
-import { agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { usePlanActions } from '../plans/use-plans.js';
 import { ActivityFeed } from './Activity.js';
 import { Brief } from './Brief.js';
@@ -571,24 +573,37 @@ function Properties({ issue }: { issue: Issue }) {
 }
 
 /**
- * Who works the task (BLG-498): your default agent, or an agent and model of its own, each with its
- * mark. It takes effect at the next start: a worktree already on it keeps its agent (the toast says so).
+ * Who works the task, shown, never changed here (BLG-569): with a worktree on it, the agent and model
+ * running there (a click opens its conversation, where they're changed); before it starts, the one
+ * that will (Start › Start with another agent picks another for that start).
  */
 function AgentProp({ issue }: { issue: Issue }) {
-  const { api, act } = useTaskActions();
-  const { client } = useBeluga();
-  const runtimes = useApp((s) => s.runtimes);
-  const agents = useAgentEntries();
-  const pick = async (v: string): Promise<void> => {
-    const said = await act(() => api.setAgent(issue.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes)));
-    if (typeof said === 'string') toast(client, said, 'success');
-  };
+  const { live } = useTaskWorktree(issue);
+  const { openWorktree } = useTaskActions();
+  const { who } = useTaskStart(issue);
+  const mine = useMyAgentName();
+  const running = useApp((s) => (live ? pickedAgent(agentPicker(pickerState(s), `ws:${live.id}`, myRuntime(s.prefs))) : undefined), sameAgent);
+  if (running && live) {
+    return (
+      <Prop label="Agent">
+        <button type="button" className={t.propValue} onClick={() => openWorktree(live.id)} title={`Running in ${live.name}: change it in its conversation`} aria-label={`Agent: ${agentName(running, { model: true })}, in ${live.name}`}>
+          <Icon name={runtimeMark(running.runtime)} size={13} />
+          {agentName(running, { model: true })}
+        </button>
+      </Prop>
+    );
+  }
+  if (!isStartable(issue)) return null;
   return (
-    <Prop label="Agent">
-      <Select label="Agent and model that work this task" size="small" value={issue.agent ? choiceForAgent(issue.agent) : YOUR_AGENT} options={agents} onChange={(v) => void pick(v)} />
+    <Prop label="Agent" quiet>
+      <span className={t.propStatic} title="Works it when it starts: Start › Start with another agent picks another">
+        {who === 'your agent' ? `Your agent (${mine})` : who}
+      </span>
     </Prop>
   );
 }
+
+const sameAgent = (a: AgentRef | undefined, b: AgentRef | undefined): boolean => a?.runtime === b?.runtime && a?.label === b?.label && a?.model === b?.model;
 
 /** A due date: the Mac's date picker from a plain button, and a way to clear it. */
 function DuePicker({ issue, late, text }: { issue: Issue; late: boolean; text: string | undefined }) {

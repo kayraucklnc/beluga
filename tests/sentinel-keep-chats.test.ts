@@ -37,7 +37,7 @@ describe('Your Mac: a sentinel run’s chat', () => {
   it('is never refused by Open chats, nor counted against yours', () => {
     const s = store(30);
     const m = mac(s);
-    for (let i = 0; i < 45; i++) m.newChat({ run: true });
+    for (let i = 0; i < 45; i++) m.newChat({ auto: true });
     // 29 of your own still fit beside the first.
     for (let i = 0; i < 29; i++) m.newChat();
     expect(() => m.newChat()).toThrow(/30 Your Mac chats are open/);
@@ -47,10 +47,10 @@ describe('Your Mac: a sentinel run’s chat', () => {
     const s = store(30);
     const m = mac(s);
     const mine = m.newChat();
-    const run = m.newChat({ run: true });
+    const run = m.newChat({ auto: true });
     const chats = s.getState().assistant;
     expect(chats.active).toBe(mine);
-    expect(chats.chats.find((c) => c.id === run)?.run).toBe(true);
+    expect(chats.chats.find((c) => c.id === run)?.auto).toBe(true);
     expect(tabChats(chats).map((c) => c.id)).not.toContain(run);
     m.openChat(run);
     expect(tabChats(s.getState().assistant).map((c) => c.id)).toContain(run);
@@ -59,10 +59,10 @@ describe('Your Mac: a sentinel run’s chat', () => {
   it('runs on the agent its step chose, and remembers it across a restart', () => {
     const dir = tmp();
     const s = store(30);
-    const id = mac(s, dir).newChat({ run: true, agent: CODEX });
+    const id = mac(s, dir).newChat({ auto: true, agent: CODEX });
     const again = mac(store(30), dir);
     expect(again.place(`mac:assistant:${id}`).agent).toEqual(CODEX);
-    expect(again.chats().chats.find((c) => c.id === id)?.run).toBe(true);
+    expect(again.chats().chats.find((c) => c.id === id)?.auto).toBe(true);
     // Your own chats run your default.
     expect(again.place(`mac:assistant:${again.newChat()}`).agent?.runtime).toBe('claude');
   });

@@ -20,7 +20,7 @@ export function AssistantNav() {
   const selected = useApp((s) => s.view.kind === 'assistant' || s.view.kind === 'phone');
   const signal = useApp((s) => {
     // A sentinel run's chats are Sentinel's (Unread names the sentinel when one needs you).
-    const own = s.assistant.chats.filter((c) => !c.run);
+    const own = s.assistant.chats.filter((c) => !c.auto);
     const channels = own.length ? own.map((c) => c.channel) : [ASSISTANT_CHANNEL];
     return channels.map((c) => signalOf(s, c)).reduce((a, b) => (RANK[b.level] > RANK[a.level] ? b : a));
   }, sameDeep);

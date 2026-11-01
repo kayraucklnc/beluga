@@ -177,7 +177,8 @@ function places(session: Session): SentinelPlaces | undefined {
     macChat: (run) => {
       const mac = assistantOf(session);
       if (!mac) return undefined;
-      return { channel: assistantChannel(mac.newChat(run ? { run: true, ...(run.agent ? { agent: run.agent } : {}) } : {})) };
+      // Beluga's own: never refused by your Open chats limit, never takes your tab (BLG-568); a run's on the agent its step chose.
+      return { channel: assistantChannel(mac.newChat({ auto: true, ...(run?.agent ? { agent: run.agent } : {}) })) };
     },
     putAway: async (channel) => {
       if (channel.startsWith('ws:')) {
@@ -188,8 +189,8 @@ function places(session: Session): SentinelPlaces | undefined {
       const mac = assistantOf(session);
       const id = assistantChatOf(channel);
       const chats = mac?.chats();
-      // Only a run's own, and never the one you have open.
-      if (mac && id && chats && chats.active !== id && chats.chats.some((c) => c.id === id && c.run)) await mac.deleteChat(id);
+      // Only one of Beluga's own, and never the one you have open.
+      if (mac && id && chats && chats.active !== id && chats.chats.some((c) => c.id === id && c.auto)) await mac.deleteChat(id);
     },
     madeChanges: async (workspaceId) => {
       const ws = ctl.manager.find(workspaceId);

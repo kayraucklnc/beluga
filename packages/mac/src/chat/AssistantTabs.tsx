@@ -29,7 +29,7 @@ export function AssistantTabs() {
   }, [shown, active, all, api]);
   const open = shown ?? active;
   // A sentinel run's chat is its run's (BLG-566): a tab only while it's the one open (Open Chat on the run).
-  const chats = all.filter((c) => !c.run || c.id === open);
+  const chats = all.filter((c) => !c.auto || c.id === open);
   if (!chats.length) return null;
   const fail = (err: unknown): void => toast(client, err instanceof Error ? err.message : String(err), 'error');
   return (
@@ -54,7 +54,7 @@ function ChatTab({ chat, open, only, onOpen, onDelete }: { chat: AssistantChat; 
     <div className={cx(s.tab, open && s.tabOn)}>
       <Tip label={signal.tip || title}>
         <button type="button" role="tab" aria-selected={open} className={s.tabMain} onClick={onOpen}>
-          <Icon name={chat.run ? 'sentinel' : 'chat'} size={12} className={s.tabIcon} />
+          <Icon name={chat.auto ? 'sentinel' : 'chat'} size={12} className={s.tabIcon} />
           <span className={s.tabTitle}>{title}</span>
           {open ? null : <SignalMark signal={signal} />}
         </button>

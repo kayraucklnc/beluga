@@ -87,6 +87,37 @@ describe('Your Mac’s tools', () => {
     await expect(a.tools().startWorktree({ project: 'nope', message: 'x' })).rejects.toThrow(/no project called nope/);
   });
 
+  it('archives a worktree by id or name, never a main folder or chat, and asks before stopping a working Claude (BLG-565)', async () => {
+    const store = new Store(initialState('room', 'auto'));
+    const ws = (id: string, name: string, kind: string, more: object = {}) => ({ id, projectId: 'p1', projectRoot: '/Users/k/beluga', name, path: `/x/${id}`, kind, createdAt: 1, external: false, ...more });
+    store.dispatch({
+      type: 'projects',
+      projects: [{ id: 'p1', name: 'beluga', root: '/Users/k/beluga', base: 'main', workspaces: [ws('main-1', 'beluga', 'main'), ws('wt-1', 'login', 'worktree'), ws('wt-2', 'busy', 'worktree'), ws('wt-3', 'old', 'worktree', { archived: true })] }],
+    } as never);
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r1', requester: ME, event: 'started', text: '', ts: 1, channel: 'ws:wt-2', itemId: 'i1' });
+    const archived: string[] = [];
+    const { a } = assistant(store, tmp(), { archiveWorktree: async (id) => (archived.push(id), id !== 'wt-fail') });
+    const tools = a.tools();
+    expect(await tools.archiveWorktree({ worktree: 'wt-1' })).toMatch(/Archived the worktree "login" in beluga.*restored/);
+    expect(await tools.archiveWorktree({ worktree: 'LOGIN' })).toMatch(/"login"/);
+    await expect(tools.archiveWorktree({ worktree: 'main-1' })).rejects.toThrow(/main folder of beluga/);
+    await expect(tools.archiveWorktree({ worktree: 'wt-3' })).rejects.toThrow(/already archived/);
+    await expect(tools.archiveWorktree({ worktree: 'nope' })).rejects.toThrow(/no worktree nope.*list_work/);
+    await expect(tools.archiveWorktree({ worktree: 'wt-2' })).rejects.toThrow(/still working.*ask the owner/);
+    expect(archived).toEqual(['wt-1', 'wt-1']);
+    expect(await tools.archiveWorktree({ worktree: 'wt-2', confirmed: true })).toMatch(/"busy"/);
+    expect(archived).toEqual(['wt-1', 'wt-1', 'wt-2']);
+    // Without the app it says so, and nothing is archived.
+    await expect(assistant(store).a.tools().archiveWorktree({ worktree: 'wt-1' })).rejects.toThrow(/needs the Beluga app/);
+  });
+
+  it('when the archive fails it says so', async () => {
+    const store = new Store(initialState('room', 'auto'));
+    store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'beluga', root: '/r', base: 'main', workspaces: [{ id: 'wt-1', projectId: 'p1', projectRoot: '/r', name: 'login', path: '/x', kind: 'worktree', createdAt: 1, external: false }] }] } as never);
+    const { a } = assistant(store, tmp(), { archiveWorktree: async () => false });
+    await expect(a.tools().archiveWorktree({ worktree: 'wt-1' })).rejects.toThrow(/Couldn't archive "login".*back in the sidebar/);
+  });
+
   it('what it starts reads as links: worktree:, plan: and task: in its answer', () => {
     expect(readInline('worktree:wt-1a2b3c4d-5e6')).toEqual({ kind: 'worktree', id: 'wt-1a2b3c4d-5e6' });
     expect(readInline('plan:pl_0123456789ab')).toEqual({ kind: 'plan', id: 'pl_0123456789ab' });

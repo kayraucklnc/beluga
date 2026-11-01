@@ -7,10 +7,11 @@ import type { MacTools } from './types.js';
  * the phone and the Mac, not tied to any project (server `beluga_mac`). It looks at this Mac (a
  * screenshot, device info), says what's here (projects, worktrees, what runs) and starts work:
  * a worktree with Claude on it, a task from the board, a plan. What it starts it names in its
- * answer as `worktree:<id>`, `task:<KEY>` or `plan:<id>`, which both screens draw as links.
+ * answer as `worktree:<id>`, `task:<KEY>` or `plan:<id>`, which both screens draw as links. It
+ * also archives a worktree you ask it to (BLG-565), the same lossless archive as the app's.
  */
 
-export const MAC_TOOL_NAMES = ['screenshot', 'device_info', 'list_work', 'start_worktree', 'start_task', 'start_plan'].map((n) => `mcp__beluga_mac__${n}`);
+export const MAC_TOOL_NAMES = ['screenshot', 'device_info', 'list_work', 'start_worktree', 'start_task', 'start_plan', 'archive_worktree'].map((n) => `mcp__beluga_mac__${n}`);
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 
@@ -65,6 +66,15 @@ export function createMacToolDefs(mac: MacTools) {
       'Start a plan in a project: its own conversation where Claude drafts milestones and tasks for the owner to approve. Returns its id: name it in your answer as `plan:<id>`.',
       { project: z.string().min(1).max(200).describe('The project’s name (from list_work)'), goal: z.string().min(1).max(8000).describe('What the plan is for, in a few sentences') },
       (a) => guarded(async () => words(await mac.startPlan({ project: a.project, goal: a.goal }))),
+    ),
+    tool(
+      'archive_worktree',
+      'Archive a worktree the owner asked you to, as the app’s Archive does: its branch, conversation and uncommitted work are kept and it can be restored any time; its dependencies and builds are freed. Only worktrees (not a project’s main folder or a chat). If its Claude is still working, it refuses: ask the owner, then call again with confirmed: true.',
+      {
+        worktree: z.string().min(1).max(200).describe('The worktree’s id from list_work (or its exact name)'),
+        confirmed: z.boolean().optional().describe('true only after the owner said yes to stopping a Claude still working in it'),
+      },
+      (a) => guarded(async () => words(await mac.archiveWorktree({ worktree: a.worktree, ...(a.confirmed ? { confirmed: true } : {}) }))),
     ),
   ];
 }

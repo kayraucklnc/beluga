@@ -412,6 +412,8 @@ describe('the views of a known Mac', () => {
     expect(tasks.projects[0]!.groups[1]!.tasks[0]).toMatchObject({ topic: 'task:i2', priority: 'high', assignee: 'you', checks: { done: 1, total: 3 } });
     const page = TaskPageView.parse(viewOf(state, ctx, 'task:i1'));
     expect(page).toMatchObject({ key: 'LND-1', status: 'in_review', conv: 'conv:ws:w1', worktree: 'auth', project: 'landing' });
+    // BLG-569: a worktree on it: the agent running there, shown (it's changed in that conversation).
+    expect(page.agent).toEqual({ runtime: 'claude', label: 'Claude' });
     expect(page.goal).toEqual({ text: 'Only signed-in users pay:\n\n[[code:0]]', code: [{ lang: 'ts', lines: 1 }] });
     expect(page.acceptance).toEqual([
       { text: 'Logged-out users get 401', state: 'done' },
