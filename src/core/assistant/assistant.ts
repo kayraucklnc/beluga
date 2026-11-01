@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, promises as fs, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { claudeConfigDir, dropSession } from '../../agent/runtime/claude/claude-sessions.js';
+import { dropAgentSession } from '../../agent/runtime/drop-session.js';
 import type { AgentPlace, MacTools } from '../../agent/types.js';
 import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, CHAT_ID, FIRST_CHAT, THIS_COMPUTER, type AssistantChats, assistantChannel, assistantChatOf } from '../../shared/assistant.js';
 import { SCRATCH_DIR, listScratch } from '../../workspaces/scratch.js';
@@ -50,6 +50,8 @@ export interface AssistantDeps {
   readonly startPlan?: (projectId: string, goal: string) => Promise<{ readonly id: string }>;
   /** Claude Code's own folder (~/.claude): a deleted chat's transcript goes from there too. */
   readonly claudeDir?: string;
+  /** Codex's own folder (~/.codex): a deleted chat's thread goes from there too. */
+  readonly codexDir?: string;
   readonly now?: () => number;
 }
 
@@ -256,7 +258,7 @@ export class MacAssistant {
     const at = this.list.chats.findIndex((c) => c.id === id);
     if (at < 0) return;
     const channel = assistantChannel(id);
-    const sessionId = this.saved.get(id)?.sessionId;
+    const { sessionId, runtime } = this.saved.get(id) ?? {};
     const rest = this.list.chats.filter((c) => c.id !== id);
     // The last one: a fresh first chat in its place (its channel is the phone's Ask your Mac).
     const chats = rest.length ? rest : [{ id: FIRST_CHAT, createdAt: this.now }];
@@ -266,15 +268,10 @@ export class MacAssistant {
     this.deps.store.dispatch({ type: 'clear', channel });
     this.deps.store.dispatch({ type: 'context_reset', channel });
     await fs.rm(this.chatDir(id), { recursive: true, force: true });
-    if (sessionId) await this.dropTranscript(sessionId);
+    if (sessionId) await dropAgentSession(this.workDir, sessionId, runtime, { ...(this.deps.claudeDir ? { claude: this.deps.claudeDir } : {}), ...(this.deps.codexDir ? { codex: this.deps.codexDir } : {}) });
     for (const c of chats) if (!this.saved.has(c.id)) this.fresh(c.id);
     this.save(this.list);
     for (const c of chats) this.saver.loaded(assistantChannel(c.id));
-  }
-
-  /** Claude Code's own record of a deleted chat's conversation (~/.claude/projects/<its folder>/<session>.jsonl). */
-  private async dropTranscript(sessionId: string): Promise<void> {
-    await dropSession(this.workDir, sessionId, this.deps.claudeDir ?? claudeConfigDir());
   }
 
   /** Your default agent now (BLG-503): Your Mac's chats run on it; an "On Your Mac" step's chat on the agent the step chose. */
