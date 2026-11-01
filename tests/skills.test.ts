@@ -1,8 +1,11 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { frontmatter, listSkills } from '../src/core/claude-code/skills.js';
+import type { Session } from '../src/core/session.js';
+import { API } from '../src/ipc/api.js';
+import { HANDLERS } from '../src/ipc/handlers.js';
 import { suggest } from '../src/ui/suggest.js';
 
 const write = (file: string, text: string): void => {
@@ -12,6 +15,28 @@ const write = (file: string, text: string): void => {
 
 /** Claude's skills and custom commands for the / list (BLG-217). */
 describe('listSkills', () => {
+  it('lists project skills and custom commands before a new chat exists', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'skills-draft-'));
+    const cwd = path.join(root, 'repo');
+    write(path.join(cwd, '.claude/skills/deploy/SKILL.md'), '---\nname: deploy\ndescription: Deploy the app\n---\nDeploy.');
+    write(path.join(cwd, '.claude/commands/sync.md'), 'Sync the branch');
+    vi.stubEnv('BELUGA_CLAUDE_HOME', path.join(root, 'home'));
+    try {
+      const args = API['claudeCode.skills'].args.parse(['draft', cwd]);
+      const session = { workspaces: { inChannel: () => undefined } } as unknown as Session;
+      const skills = await HANDLERS['claudeCode.skills'](session, ...args);
+      expect(skills).toEqual([
+        { name: 'deploy', description: 'Deploy the app', kind: 'skill', source: 'project' },
+        { name: 'sync', description: 'Sync the branch', kind: 'command', source: 'project' },
+      ]);
+      expect(suggest('/dep', { peers: [], selfId: 'me', skills })).toEqual([
+        { label: '/deploy', value: '/deploy ', hint: 'Deploy the app', enter: 'complete', kind: 'skill' },
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("reads the project's, yours and your enabled plugins' skills and commands", async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'skills-'));
     const home = path.join(root, 'home');
