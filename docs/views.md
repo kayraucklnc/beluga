@@ -59,7 +59,9 @@ Several tasks are a fenced `beluga-tasks` block, one key per line (or a JSON arr
 
 None of these are required. The agent uses them when they say something faster than words, the way it uses a table or a graph.
 
-Every card also has **Copy as CSV**, **Copy as JSON** and **Open in Full Window** (on hover and in the right-click menu).
+Every card also has **Open in Full Window** and **Copy View Spec** (the block's own JSON), on hover and in the right-click menu.
+
+A card with rows has a **•••** button (and the same in its right-click menu) with **Copy as** and **Save as**: Markdown (columns padded so it lines up in plain text too), CSV, TSV (pastes into a sheet's cells), JSON (an array of the rows) and SQL Inserts. They take raw values under the column keys (`48210`, `true`); tick **Values as Shown** to take what the table shows under its headings (`$48,210`, `Yes`), and it's remembered. **Save as** opens the Mac's Save panel in Downloads, named after the card's title (`customers-by-revenue.csv`).
 
 A table has **Copy Table** in its toolbar, one click: every row in the order you're looking at it (sorted, searched, filtered; every page, not just this one). It goes on the clipboard as an HTML table, so Sheets, Numbers, Excel, Docs and Notion paste it as a table, and as Markdown for its plain text (a chat, a terminal, GitHub). A Markdown table that stays as written (it has links) copies the same way, from what's drawn. On the phone, a table's **Copy** chip copies it as Markdown. A source running on your Mac copies the page it has.
 

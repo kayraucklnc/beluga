@@ -6,6 +6,7 @@
 //! keeping Beluga's daemon running. Everything Beluga does happens in the daemon.
 
 mod daemon;
+mod export;
 mod focus;
 mod menu;
 mod popup;
@@ -282,6 +283,7 @@ pub fn run() {
             system_idle_seconds,
             take_pending_links,
             focus_window,
+            export::save_export,
             sounds::sound_install,
             sounds::sound_prune,
             sounds::sound_play_system,
