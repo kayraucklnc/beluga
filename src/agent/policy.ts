@@ -39,10 +39,10 @@ const ALWAYS_OK = new Set([
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).
   ...['task_define', 'task_get', 'task_list', 'task_create', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
   // Sentinels (core/sentinel): only your own runs have them; a new one starts paused until you turn it on,
-  // and a change to what one can do pauses it. sentinel_remove isn't here: deleting one asks you.
+  // and a change to what one can do pauses it. sentinel_remove and sentinel_delete_runs aren't here: deleting asks you.
   // sentinel_test and sentinel_try_source only read: a database read-only, a file, an address without your
   // variables; a command (or an address carrying a $VAR) waits for your yes.
-  ...['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_update', 'sentinel_run', 'sentinel_test', 'sentinel_try_source', 'sentinel_pause'].map((n) => `mcp__beluga_sentinel__${n}`),
+  ...['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_update', 'sentinel_run', 'sentinel_test', 'sentinel_try_source', 'sentinel_pause', 'sentinel_runs'].map((n) => `mcp__beluga_sentinel__${n}`),
   // Dashboards and numbers (core/sentinel, §10): only your own runs have them; they arrange your
   // dashboards' tiles and read the numbers (a tile removed takes nothing kept with it).
   // dashboard_remove isn't here: deleting a dashboard asks you.
@@ -65,7 +65,7 @@ const ALWAYS_OK = new Set([
  * your own Claude asks you first even when it otherwise never asks (Approvals › Never), once, with
  * no Always. The card reaches the phone as any approval does.
  */
-export const ALWAYS_ASK_YOU: ReadonlySet<string> = new Set(['mcp__beluga_sentinel__sentinel_remove', 'mcp__beluga_dashboard__dashboard_remove']);
+export const ALWAYS_ASK_YOU: ReadonlySet<string> = new Set(['mcp__beluga_sentinel__sentinel_remove', 'mcp__beluga_sentinel__sentinel_delete_runs', 'mcp__beluga_dashboard__dashboard_remove']);
 
 /**
  * Shell commands that mention credential stores are refused outright. A name counts when it isn't

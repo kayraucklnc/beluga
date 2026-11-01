@@ -142,6 +142,10 @@
   width: auto;
   color: var(--text-3);
 }
+/* A row with a disclosure before its icon (a sentinel under Sentinel, BLG-570): the icon slot widens for both. */
+.foldRow .rowIcon {
+  width: auto;
+}
 /* The disclosure triangle, then the project's icon (like Finder's sidebar and Xcode's navigator). */
 .projectIcon {
   display: inline-flex;

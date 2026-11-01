@@ -81,8 +81,21 @@ export interface SentinelPlaces {
   projectChat(projectId: string, title: string): Promise<SentinelPlace | undefined>;
   /** A new quiet worktree. */
   worktree(projectId: string, name: string): Promise<SentinelPlace | undefined>;
-  /** A new chat in Your Mac. */
-  macChat(): SentinelPlace | undefined;
+  /**
+   * A new chat in Your Mac. `run`: a run's own (BLG-566): it doesn't take your open tab nor count
+   * toward Open chats, and runs on the agent its step chose (else your default).
+   */
+  macChat(run?: { readonly agent?: AgentRef | undefined }): SentinelPlace | undefined;
+  /**
+   * Put a run's chat away, as its sentinel keeps them (BLG-566): a project chat is archived (it can be
+   * restored), a Your Mac one deleted (its report and outputs stay with the run). Never a worktree.
+   */
+  putAway?(channel: string): Promise<unknown>;
+  /**
+   * Delete a run's chat for good, as you asked (BLG-577): a project chat and its conversation, a Your
+   * Mac chat; its agent stops first. Never a worktree.
+   */
+  deleteChat?(channel: string): Promise<unknown>;
   /** Whether a worktree has commits or changes of its own (undefined: can't tell, so it stays). */
   madeChanges(workspaceId: string): Promise<boolean | undefined>;
   /** Archive a worktree quietly (nothing of yours is lost). */
@@ -851,7 +864,7 @@ export class SentinelRunner {
     if (!places) return 'Agent conversations need the Beluga app';
     const s = active.sentinel;
     let place: SentinelPlace | undefined;
-    if (step.where === 'mac') place = places.macChat();
+    if (step.where === 'mac') place = places.macChat({ agent: stepAgent(step) });
     else {
       if (!s.projectId) return `it needs a project: pick one on the sentinel’s page, or have the agent work on ${ASSISTANT_TITLE}`;
       const at = this.deps.now();

@@ -530,6 +530,7 @@ export const PHONE: Record<Method, Side> = {
   'sentinel.create': 'mac',
   'sentinel.update': 'mac',
   'sentinel.remove': 'mac',
+  'sentinel.runDelete': 'mac',
   'sentinel.duplicate': 'mac',
   'sentinel.stop': 'mac',
   // Claude changing a sentinel (the page's box, Describe it) is the Mac's: the phone has no editor.

@@ -56,7 +56,12 @@ export interface AssistantChat {
   readonly id: string;
   readonly channel: string;
   readonly createdAt: number;
+  /** Beluga's own (BLG-568: a sentinel's run or ask): found from its run, not a tab of yours (BLG-566), not counted in Open chats. */
+  readonly auto?: true;
 }
+
+/** Your own chats, the tabs: Beluga's own are shown only while open (Open Chat on a sentinel's run). */
+export const tabChats = (a: AssistantChats): readonly AssistantChat[] => a.chats.filter((c) => !c.auto || c.id === a.active);
 
 /** Your Mac's chats, in tab order, and the one open (persisted in ~/.beluga/assistant/chats.json). */
 export interface AssistantChats {

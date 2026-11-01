@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, promises as fs, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { claudeConfigDir, dropSession } from '../../agent/runtime/claude/claude-sessions.js';
+import { dropAgentSession } from '../../agent/runtime/drop-session.js';
+import { chosenAgent } from '../settings.js';
 import type { AgentPlace } from '../../agent/types.js';
 import { HistorySaver } from '../history-saver.js';
 import { type LogItem, type Store, settleRun } from '../store.js';
@@ -27,6 +28,14 @@ export interface SentinelChatDeps {
   readonly now?: () => number;
   /** Claude Code's own folder (~/.claude): a deleted chat's transcript goes from there too. */
   readonly claudeDir?: string;
+  /** Codex's own folder (~/.codex): a deleted chat's thread goes from there too. */
+  readonly codexDir?: string;
+}
+
+/** A chat's agent session: its id and the agent it is of (none: Claude's, from before BLG-571). */
+interface Saved {
+  readonly sessionId?: string;
+  readonly runtime?: string;
 }
 
 interface ChatsFile {
@@ -42,7 +51,7 @@ export class SentinelChats {
   readonly workDir: string;
   private readonly root: string | undefined;
   private list: ChatsFile;
-  private readonly sessions = new Map<string, string | undefined>();
+  private readonly sessions = new Map<string, Saved>();
   private readonly saver: HistorySaver | undefined;
   private readonly unsubscribe: () => void;
   private lastLog: readonly LogItem[] | undefined;
@@ -117,10 +126,10 @@ export class SentinelChats {
     return { chats: [{ id: FIRST_SENTINEL_CHAT, createdAt: this.now }], active: FIRST_SENTINEL_CHAT };
   }
 
-  private readState(id: string): string | undefined {
-    if (!this.root) return undefined;
-    const saved = readJson<{ sessionId?: unknown }>(this.chatFile(id, 'state.json'), {});
-    return typeof saved.sessionId === 'string' ? saved.sessionId : undefined;
+  private readState(id: string): Saved {
+    if (!this.root) return {};
+    const saved = readJson<{ sessionId?: unknown; runtime?: unknown }>(this.chatFile(id, 'state.json'), {});
+    return { ...(typeof saved.sessionId === 'string' ? { sessionId: saved.sessionId } : {}), ...(typeof saved.runtime === 'string' ? { runtime: saved.runtime } : {}) };
   }
 
   private save(list: ChatsFile): void {
@@ -147,7 +156,7 @@ export class SentinelChats {
     let id = '';
     do id = randomBytes(5).toString('hex');
     while (this.has(id) || id === FIRST_SENTINEL_CHAT);
-    this.sessions.set(id, undefined);
+    this.sessions.set(id, {});
     this.save({ chats: [...this.list.chats, { id, createdAt: this.now }], active: id });
     this.saver?.loaded(sentinelChatChannel(id));
     return id;
@@ -170,12 +179,12 @@ export class SentinelChats {
 
   /** A fresh Claude conversation in that chat next time. */
   private forget(id: string): void {
-    this.sessions.set(id, undefined);
+    this.sessions.set(id, {});
     if (this.root) writeJson(this.chatFile(id, 'state.json'), {});
   }
 
   /**
-   * Delete a chat for good: its messages, its folder, its Claude transcript. The one beside it opens
+   * Delete a chat for good: its messages, its folder, its agent's record (Claude's transcript, Codex's thread). The one beside it opens
    * if it was the open one; deleting the last leaves a fresh empty first chat. Stopping its run first
    * is the caller's.
    */
@@ -183,7 +192,7 @@ export class SentinelChats {
     const at = this.list.chats.findIndex((c) => c.id === id);
     if (at < 0) return;
     const channel = sentinelChatChannel(id);
-    const sessionId = this.sessions.get(id);
+    const { sessionId, runtime } = this.sessions.get(id) ?? {};
     const rest = this.list.chats.filter((c) => c.id !== id);
     const chats = rest.length ? rest : [{ id: FIRST_SENTINEL_CHAT, createdAt: this.now }];
     const active = this.list.active !== id && rest.length ? this.list.active : chats[Math.min(at, chats.length - 1)]!.id;
@@ -192,15 +201,10 @@ export class SentinelChats {
     this.deps.store.dispatch({ type: 'clear', channel });
     this.deps.store.dispatch({ type: 'context_reset', channel });
     if (this.root) await fs.rm(path.dirname(this.chatFile(id, 'x')), { recursive: true, force: true });
-    if (sessionId) await this.dropTranscript(sessionId);
-    for (const c of chats) if (!this.sessions.has(c.id)) this.sessions.set(c.id, undefined);
+    if (sessionId) await dropAgentSession(this.workDir, sessionId, runtime, { ...(this.deps.claudeDir ? { claude: this.deps.claudeDir } : {}), ...(this.deps.codexDir ? { codex: this.deps.codexDir } : {}) });
+    for (const c of chats) if (!this.sessions.has(c.id)) this.sessions.set(c.id, {});
     this.save(this.list);
     for (const c of chats) this.saver?.loaded(sentinelChatChannel(c.id));
-  }
-
-  /** Claude Code's own record of a deleted chat (~/.claude/projects/<its folder>/<session>.jsonl). */
-  private async dropTranscript(sessionId: string): Promise<void> {
-    await dropSession(this.workDir, sessionId, this.deps.claudeDir ?? claudeConfigDir());
   }
 
   /**
@@ -215,16 +219,21 @@ export class SentinelChats {
       if (id !== FIRST_SENTINEL_CHAT) return undefined;
       this.save({ ...this.list, chats: [{ id, createdAt: this.now }, ...this.list.chats] });
     }
-    const resume = this.sessions.get(id);
+    // Your default agent, named here so its session is known to be its (another agent's can't be picked up: it starts afresh).
+    const agent = chosenAgent(this.deps.store.getState().prefs);
+    const was = this.sessions.get(id);
+    const resume = (was?.runtime ?? 'claude') === agent.runtime ? was?.sessionId : undefined;
     return {
       cwd: this.workDir,
       additionalDirectories: [],
       autoEdit: true,
+      agent,
       ...(resume ? { resume } : {}),
       onSession: (next) => {
-        if (!this.has(id) || next === this.sessions.get(id)) return;
-        this.sessions.set(id, next);
-        if (this.root) writeJson(this.chatFile(id, 'state.json'), { sessionId: next });
+        if (!this.has(id) || next === this.sessions.get(id)?.sessionId) return;
+        const saved = { sessionId: next, runtime: agent.runtime };
+        this.sessions.set(id, saved);
+        if (this.root) writeJson(this.chatFile(id, 'state.json'), saved);
       },
     };
   }

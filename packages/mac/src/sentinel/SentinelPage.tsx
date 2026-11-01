@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ACCESS, ACCESS_INFO, type Access, CLAUDE_CHANGED, CLAUDE_CHANGED_BANNER, FIRST_SENTINEL_CHAT, sentinelChatChannel, NOTIFY_WHERE, type RunSummary, type Sentinel, type SentinelPatch, TIME_LIMITS, accessRank, runsOf, scheduleSentence } from '@beluga/core/sentinel/model.js';
+import { ACCESS, ACCESS_INFO, type Access, CLAUDE_CHANGED, CLAUDE_CHANGED_BANNER, DEFAULT_KEEP_CHATS, KEEP_CHATS, KEEP_CHATS_INFO, type KeepChats, FIRST_SENTINEL_CHAT, sentinelChatChannel, NOTIFY_WHERE, type RunSummary, type Sentinel, type SentinelPatch, TIME_LIMITS, accessRank, runsOf, scheduleSentence } from '@beluga/core/sentinel/model.js';
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { recipeById } from '@beluga/core/sentinel/recipes.js';
 import { Icon } from '../components/Icon.js';
@@ -389,6 +389,17 @@ function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatc
       <Prop label="Pause after">
         <Select label="Pause after" size="small" value={String(item.limits.pauseAfter)} options={pauseAfter.map((n) => ({ value: String(n), label: pauseAfterLabel(n) }))} onChange={(v) => save({ limits: { pauseAfter: Number(v) } })} />
       </Prop>
+      {claudeSteps ? (
+        <Prop label="Keep chats">
+          <Select<KeepChats>
+            label="Which runs’ chats to keep"
+            size="small"
+            value={item.keepChats ?? DEFAULT_KEEP_CHATS}
+            options={KEEP_CHATS.map((k) => ({ value: k, label: KEEP_CHATS_INFO[k].label, description: KEEP_CHATS_INFO[k].description }))}
+            onChange={(keepChats) => save({ keepChats })}
+          />
+        </Prop>
+      ) : null}
       <Prop label="Notify">
         <Select label="Notify" size="small" value={item.notify} options={NOTIFY_WHERE.map((n) => ({ value: n, label: NOTIFY_LABEL[n], description: n === 'off' ? 'Only failures and pausing still tell you' : 'When a run ends (a Notify step says more)' }))} onChange={(notify) => save({ notify })} />
       </Prop>

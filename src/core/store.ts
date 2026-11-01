@@ -1218,6 +1218,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'sentinel_put':
     case 'sentinel_remove':
     case 'sentinel_run':
+    case 'sentinel_runs_gone':
     case 'sentinel_ask':
     case 'sentinel_trouble':
     case 'sentinel_webhook':

@@ -2,7 +2,8 @@ import { belugaHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import { assistantOf } from '../assistant/registry.js';
-import { assistantChannel } from '../../shared/assistant.js';
+import { busyChannels } from '../board/work.js';
+import { assistantChannel, assistantChatOf } from '../../shared/assistant.js';
 import { commandEnv, fetchSource } from '../views/sources.js';
 import type { Source } from '../../shared/view-spec.js';
 import { gatewayOf } from '../gateway/registry.js';
@@ -174,11 +175,33 @@ function places(session: Session): SentinelPlaces | undefined {
       const ws = await ctl.startWorktree(projectId, '', (p) => session.nameTask(p), { quiet: true, name });
       return ws ? { channel: `ws:${ws.id}`, workspaceId: ws.id } : undefined;
     },
-    macChat: () => {
+    macChat: (run) => {
       const mac = assistantOf(session);
       if (!mac) return undefined;
-      // Beluga's own: never refused by your Open chats limit, never takes your tab (BLG-568).
-      return { channel: assistantChannel(mac.newChat({ auto: true })) };
+      // Beluga's own: never refused by your Open chats limit, never takes your tab (BLG-568); a run's on the agent its step chose.
+      return { channel: assistantChannel(mac.newChat({ auto: true, ...(run?.agent ? { agent: run.agent } : {}) })) };
+    },
+    putAway: async (channel) => {
+      if (channel.startsWith('ws:')) {
+        const ws = ctl.manager.find(channel.slice(3));
+        if (ws && !ws.archived && ws.kind === 'chat') await ctl.archive(ws.id, false, { quiet: true });
+        return;
+      }
+      const mac = assistantOf(session);
+      const id = assistantChatOf(channel);
+      const chats = mac?.chats();
+      // Only one of Beluga's own, and never the one you have open.
+      if (mac && id && chats && chats.active !== id && chats.chats.some((c) => c.id === id && c.auto)) await mac.deleteChat(id);
+    },
+    deleteChat: async (channel) => {
+      if (busyChannels(session.store.getState().log).has(channel)) session.host.stopRun(channel);
+      if (channel.startsWith('ws:')) {
+        const ws = ctl.manager.find(channel.slice(3));
+        if (ws && ws.kind === 'chat') await ctl.remove(ws.id, { quiet: true });
+        return;
+      }
+      const id = assistantChatOf(channel);
+      if (id) await assistantOf(session)?.deleteChat(id);
     },
     madeChanges: async (workspaceId) => {
       const ws = ctl.manager.find(workspaceId);

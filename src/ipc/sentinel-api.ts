@@ -29,6 +29,9 @@ export const SENTINEL_API = {
   'sentinel.pause': { args: z.tuple([id, z.boolean()]) },
   // Its whole index (the last 200 runs), newest first, without outputs.
   'sentinel.runs': { args: z.tuple([id]) },
+  // Delete what a run left (BLG-577): `chat` its agents' conversations, `run` those and the run itself
+  // (its folder and its line in the history). Not while it runs.
+  'sentinel.runDelete': { args: z.tuple([id, z.enum(['chat', 'run'])]) },
   // One run: its steps' outputs (the first 16 KB each) and its report's text → RunDetail.
   'sentinel.runGet': { args: z.tuple([id]) },
   // Your Claude changes it from your words (the page's box; Describe it is create, then this) → { channel }.

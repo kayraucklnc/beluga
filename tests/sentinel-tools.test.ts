@@ -21,8 +21,8 @@ describe('beluga_sentinel', () => {
     const s = setup();
     const outside = createSentinelToolDefs(s.sentinels.forRun('ws:else', 'p-me')!.tools);
     expect(outside.map((d) => `mcp__beluga_sentinel__${d.name}`)).toEqual(SENTINEL_TOOL_NAMES.slice(1));
-    // Deleting one asks you (the approval gate); everything else never asks.
-    for (const name of SENTINEL_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false })).toBe(name.endsWith('sentinel_remove') ? 'ask' : 'allow');
+    // Deleting one, or its runs (BLG-577), asks you (the approval gate); everything else never asks.
+    for (const name of SENTINEL_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false })).toBe(name.endsWith('sentinel_remove') || name.endsWith('sentinel_delete_runs') ? 'ask' : 'allow');
     // A friend's runs get nothing.
     expect(s.sentinels.forRun('ws:else', 'p-friend')).toBeUndefined();
 
