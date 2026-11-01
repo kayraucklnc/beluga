@@ -153,3 +153,27 @@ test('the tour explains Sentinel: a sentence becomes a sentinel, then real ones 
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(welcome.getByRole('heading', { name: 'Know what every project earns.' })).toBeVisible();
 });
+
+test('the tour’s table opens in a full window over the welcome, and Continue still goes on after it', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/');
+  const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
+  await welcome.getByRole('button', { name: /Get Started/ }).click();
+  await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
+  // Your agents, then the tour's first two steps, then the table.
+  for (let i = 0; i < 3; i++) await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  const table = welcome.getByRole('figure', { name: /Churned last month/ });
+  await expect(table).toBeVisible({ timeout: 15_000 });
+  await table.hover();
+  await table.getByRole('button', { name: 'Open in Full Window' }).click();
+  // Over the welcome, not hidden under it (where its modal took every click, Continue's too).
+  const full = page.getByRole('dialog', { name: 'Churned last month' });
+  await expect(full).toBeVisible();
+  // (Under it, it's hidden yet still takes the clicks: Continue's spot lands on the hidden table.)
+  const z = async (el: typeof full): Promise<number> => Number(await el.evaluate((e) => getComputedStyle(e).zIndex));
+  expect(await z(full)).toBeGreaterThan(await z(page.locator('[data-welcome]')));
+  await full.getByRole('button', { name: 'Close' }).click();
+  await expect(full).toHaveCount(0);
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(table).toHaveCount(0);
+});
