@@ -51,14 +51,17 @@ function collect({ tag, out }) {
   const conf = JSON.parse(readFileSync(path.join(root, 'packages/mac/src-tauri/tauri.conf.json'), 'utf8'));
   const files = walk(bundle);
   const { offered, update } = pickBuilt(os, files);
-  if (!update) throw new Error(`No ${os === 'win32' ? 'installer' : 'AppImage'} in ${bundle}: did tauri build run?`);
-  if (!existsSync(`${update}.sig`)) throw new Error(`${path.basename(update)} isn't signed: is TAURI_SIGNING_PRIVATE_KEY set?`);
+  if (!offered.length) throw new Error(`Nothing to offer in ${bundle}: did tauri build run?`);
   mkdirSync(out, { recursive: true });
   for (const f of offered) copyFileSync(f, path.join(out, assetName(path.basename(f), conf.productName)));
-  const name = assetName(path.basename(update), conf.productName);
-  copyFileSync(`${update}.sig`, path.join(out, `${name}.sig`));
-  const key = platformKey(os, process.arch);
-  writeFileSync(path.join(out, `${key}.json`), `${JSON.stringify({ key, version: conf.version, signature: readFileSync(`${update}.sig`, 'utf8').trim(), url: assetUrl(tag, name) }, null, 2)}\n`);
+  // Installed copies update from the signed build (the AppImage, the Windows installer): without
+  // its signature (a run that didn't sign) the packages are still offered, and latest.json skips it.
+  if (update && existsSync(`${update}.sig`)) {
+    const name = assetName(path.basename(update), conf.productName);
+    copyFileSync(`${update}.sig`, path.join(out, `${name}.sig`));
+    const key = platformKey(os, process.arch);
+    writeFileSync(path.join(out, `${key}.json`), `${JSON.stringify({ key, version: conf.version, signature: readFileSync(`${update}.sig`, 'utf8').trim(), url: assetUrl(tag, name) }, null, 2)}\n`);
+  } else console.warn(`release-desktop: no signed update for ${os}; installed copies won't update to this one`);
   console.log(`Collected for ${key}:\n${readdirSync(out).map((f) => `  ${f}`).join('\n')}`);
 }
 
@@ -70,9 +73,10 @@ export function platformsOf(entries) {
 function publish({ tag, dir }) {
   const files = walk(dir);
   const entries = files.filter((f) => /\/(linux|windows)-[\w]+\.json$/.test(f.replaceAll('\\', '/'))).map((f) => JSON.parse(readFileSync(f, 'utf8')));
-  if (!entries.length) throw new Error(`No builds in ${dir}`);
   const uploads = files.filter((f) => !f.endsWith('.json'));
+  if (!uploads.length) throw new Error(`No builds in ${dir}`);
   execFileSync('gh', ['release', 'upload', tag, ...uploads, '--repo', REPO, '--clobber'], { stdio: 'inherit' });
+  if (!entries.length) return console.log(`Uploaded to ${tag}; nothing signed for updates, so latest.json stays as it was`);
   const existing = releasedLatest(tag);
   const version = entries[0].version;
   const latest = mergeLatest(existing, { version, notes: existing?.notes ?? '', pub_date: existing?.pub_date ?? new Date().toISOString(), platforms: platformsOf(entries) });
