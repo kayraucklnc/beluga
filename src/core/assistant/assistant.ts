@@ -48,6 +48,8 @@ export interface AssistantDeps {
   readonly startTask?: (key: string) => Promise<string>;
   /** A plan drafted in its own conversation (plans' create) → its id. */
   readonly startPlan?: (projectId: string, goal: string) => Promise<{ readonly id: string }>;
+  /** Archive a worktree (workspace-controller's archive) → whether it was. */
+  readonly archiveWorktree?: (id: string) => Promise<boolean>;
   /** Claude Code's own folder (~/.claude): a deleted chat's transcript goes from there too. */
   readonly claudeDir?: string;
   readonly now?: () => number;
@@ -59,14 +61,24 @@ interface Saved {
   readonly runtime?: string;
 }
 
+/** One chat in chats.json; `auto`: Beluga opened it on its own (a sentinel's run or ask), not you. */
+interface ChatEntry {
+  readonly id: string;
+  readonly createdAt: number;
+  readonly auto?: true;
+}
+
 /** What chats.json holds: the chats in tab order, and the one open. */
 interface ChatsFile {
-  readonly chats: ReadonlyArray<{ readonly id: string; readonly createdAt: number }>;
+  readonly chats: readonly ChatEntry[];
   readonly active: string;
 }
 
 /** The most items kept of its history (as a worktree's). */
 const KEEP = 500;
+
+/** The most chats Beluga opened on its own kept at once: past it, the oldest idle ones go (BLG-568). */
+export const AUTO_CHATS_KEPT = 20;
 
 /**
  * Your Mac's chats (BLG-102): several conversations at once, tabs on the Mac. Each has its own
@@ -158,7 +170,7 @@ export class MacAssistant {
   private migrate(): ChatsFile {
     const listed = readJson<Partial<ChatsFile> | undefined>(this.file('chats.json'), undefined);
     const raw = Array.isArray(listed?.chats) ? listed.chats : [];
-    const chats = raw.filter((c, i) => typeof c?.id === 'string' && CHAT_ID.test(c.id) && raw.findIndex((x) => x?.id === c.id) === i).map((c) => ({ id: c.id, createdAt: typeof c.createdAt === 'number' ? c.createdAt : 0 }));
+    const chats = raw.filter((c, i) => typeof c?.id === 'string' && CHAT_ID.test(c.id) && raw.findIndex((x) => x?.id === c.id) === i).map((c): ChatEntry => ({ id: c.id, createdAt: typeof c.createdAt === 'number' ? c.createdAt : 0, ...(c.auto === true ? { auto: true } : {}) }));
     if (chats.length) return { chats, active: chats.some((c) => c.id === listed?.active) ? listed!.active! : chats[0]!.id };
     mkdirSync(this.chatDir(FIRST_CHAT), { recursive: true, mode: 0o700 });
     for (const name of ['state.json', 'history.json']) {
@@ -201,18 +213,38 @@ export class MacAssistant {
     this.saved.set(id, {});
   }
 
-  /** A new chat, after the others, open now → its id. */
-  newChat(): string {
-    // How many chats at once is yours to choose (Settings › Agent › Open chats; 0: no limit).
-    const limit = this.deps.store.getState().prefs.chatLimit;
-    if (!chatFits(this.list.chats.length, limit)) throw new Error(chatLimitMessage(this.list.chats.length, limit, 'Your Mac chats'));
+  /**
+   * A new chat, after the others → its id. Yours opens now, within your limit (Settings › Agent ›
+   * Open chats; 0: no limit), which counts only the chats you opened. `auto` (BLG-568): Beluga's
+   * own, for a sentinel's run or ask. It is never refused (a sentinel never fails on your tabs),
+   * leaves the tab you have open alone, and only the newest AUTO_CHATS_KEPT of them are kept.
+   */
+  newChat(opts: { readonly auto?: boolean } = {}): string {
+    if (!opts.auto) {
+      const limit = this.deps.store.getState().prefs.chatLimit;
+      const yours = this.list.chats.filter((c) => !c.auto).length;
+      if (!chatFits(yours, limit)) throw new Error(chatLimitMessage(yours, limit, 'Your Mac chats'));
+    }
     let id = '';
     do id = randomBytes(5).toString('hex');
     while (this.has(id) || id === FIRST_CHAT);
     this.fresh(id);
-    this.save({ chats: [...this.list.chats, { id, createdAt: this.now }], active: id });
+    const chat: ChatEntry = { id, createdAt: this.now, ...(opts.auto ? { auto: true } : {}) };
+    this.save({ chats: [...this.list.chats, chat], active: opts.auto ? this.list.active : id });
     this.saver.loaded(assistantChannel(id));
+    if (opts.auto) void this.dropOldAuto(id).catch(() => undefined);
     return id;
+  }
+
+  /** Past AUTO_CHATS_KEPT of Beluga's own chats, the oldest go: never the one just made, one working now or the one open. */
+  private async dropOldAuto(made: string): Promise<void> {
+    const auto = this.list.chats.filter((c) => c.auto);
+    const extra = auto.length - AUTO_CHATS_KEPT;
+    if (extra <= 0) return;
+    const busy = busyChannels(this.deps.store.getState().log);
+    const idle = auto.filter((c) => c.id !== made && c.id !== this.list.active && !busy.has(assistantChannel(c.id)));
+    const oldest = [...idle].sort((a, b) => a.createdAt - b.createdAt).slice(0, extra);
+    for (const c of oldest) await this.deleteChat(c.id);
   }
 
   /** Open a chat (which one is open is kept across restarts). */
@@ -368,7 +400,31 @@ export class MacAssistant {
         const plan = await this.deps.startPlan(p.id, goal);
         return `Started a plan in ${p.name}: its agent is drafting the milestones and tasks for the owner to approve. Name it in your answer as \`plan:${plan.id}\`.`;
       },
+      archiveWorktree: async ({ worktree, confirmed }) => {
+        if (!this.deps.archiveWorktree) throw new Error('Archiving needs the Beluga app');
+        const { ws, project } = this.worktree(worktree);
+        if (!confirmed && busyChannels(this.deps.store.getState().log).has(`ws:${ws.id}`)) {
+          throw new Error(`Claude is still working in "${ws.name}". Archiving stops it: ask the owner first, and call again with confirmed: true only if they say yes.`);
+        }
+        if (!(await this.deps.archiveWorktree(ws.id))) throw new Error(`Couldn't archive "${ws.name}" (Beluga showed the owner why); it's back in the sidebar as it was.`);
+        return `Archived the worktree "${ws.name}" in ${project}: its branch, conversation and uncommitted work are kept, and it can be restored any time from the project's archived worktrees. Say so in a line, naming it by its name.`;
+      },
     };
+  }
+
+  /** A worktree the owner named, by id or (unique) name, that can be archived. */
+  private worktree(ref: string): { ws: Workspace; project: string } {
+    const want = ref.trim().toLowerCase();
+    const all = this.deps.store.getState().projects.filter((p) => p.root).flatMap((p) => p.workspaces.map((ws) => ({ ws, project: p.name })));
+    const byId = all.find((x) => x.ws.id === ref.trim());
+    const byName = all.filter((x) => x.ws.kind === 'worktree' && !x.ws.archived && x.ws.name.toLowerCase() === want);
+    if (!byId && byName.length > 1) throw new Error(`Several worktrees are called ${ref}: ${byName.map((x) => `${x.ws.id} (${x.project})`).join(', ')}. Use its id.`);
+    const found = byId ?? byName[0];
+    if (!found) throw new Error(`There's no worktree ${ref} here. list_work shows them with their ids.`);
+    if (found.ws.kind !== 'worktree') throw new Error(`"${found.ws.name}" is ${found.ws.kind === 'main' ? 'the main folder of ' + found.project : 'a chat'}, not a worktree: only worktrees are archived.`);
+    if (found.ws.archived) throw new Error(`"${found.ws.name}" is already archived.`);
+    if (found.ws.pending) throw new Error(`"${found.ws.name}" is still being made: try again in a moment.`);
+    return found;
   }
 }
 
@@ -390,6 +446,9 @@ export function assistantBrief(): string {
     '  the plans. Check it before starting anything or writing a task, and to answer "what\'s running?".',
     '- start_worktree: a new worktree in a project with its own agent on a first message you write as a complete,',
     '  self-contained task. Do not do project work yourself here: start a worktree for it.',
+    '- archive_worktree: archive a worktree the owner asked you to (its id from list_work). Nothing is lost and it',
+    '  can be restored. If its Claude is still working, ask the owner before you call it again with confirmed: true.',
+    '  Never archive with git or rm yourself: only this keeps it restorable.',
     '- The board (mcp__beluga_board__*): task_create (name the repo it runs in as project; board for a board that',
     '  covers several repos, as list_work shows), board_create (a board for work across a few repos, when none',
     '  covers them yet), task_update, task_list…; start_task',

@@ -33,6 +33,10 @@ export function launchAssistant(host: { readonly session: Session; readonly stor
       if (!plans) throw new Error('Plans need the Beluga app');
       return plans.create({ projectId, goal }, { quiet: true });
     },
+    archiveWorktree: async (id) => {
+      if (!session.workspaces) throw new Error('Archiving needs the Beluga app');
+      return session.workspaces.archive(id);
+    },
   });
   attachAssistant(session, assistant);
   return () => {

@@ -66,7 +66,7 @@ Each step has an `id`, a `name` the window shows ("Read what changed"), and its 
 **Where the agent runs** (`where`):
 - `project` — a new chat in the project's main folder (`newChat`, quiet), where the agent only reads (ask-only). For briefs, triage, reviews.
 - `worktree` — a new worktree named `sentinel/<slug>-<yymmdd>` (`startWorktree`, quiet). Edits, commits, tests. A worktree whose run made no commit is archived when the run ends; one with commits stays, with its pull request if a `pr` step opened one. The run's **later steps share this worktree** (`pr`, `merge`, a second agent step).
-- `mac` — a new chat in Your Mac (`assistant.newChat`), for things about the Mac itself (screenshots, disk, apps).
+- `mac` — a new chat in Your Mac (`assistant.newChat`), for things about the Mac itself (screenshots, disk, apps). It is Beluga's own (`auto` in chats.json, BLG-568): never refused by your Open chats limit (which counts only the chats you open), it doesn't take the tab you have open, and only the newest 20 such chats are kept (older idle ones are deleted; one working or open stays). An hourly sentinel used to fail every run once 30 were open.
 
 ### Access (`access`)
 

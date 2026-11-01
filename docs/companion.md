@@ -663,7 +663,8 @@ Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `ass
   the phone as an output, and the agent sees a smaller copy; macOS's Screen Recording permission still
   applies), `device_info` (the gateway's), `list_work` (projects, worktrees and chats with ids, what
   runs, plans), `start_worktree` (a project, a first message, plan first), `start_task` (a board
-  task in its own worktree), `start_plan`; and the board's tools (`task_create` in a named project,
+  task in its own worktree), `start_plan`, `archive_worktree` (BLG-565: a worktree by id or name, the
+  same lossless archive as the Mac's; one with Claude still working waits until you say yes); and the board's tools (`task_create` in a named project,
   `task_update`…). Starting is quiet: the Mac's window stays where it is.
 - **Links.** What it starts it names as `worktree:<id>`, `task:<KEY>` or `plan:<id>` in inline code;
   both screens draw a pill that opens it (`src/shared/render/inline-model.ts`).
