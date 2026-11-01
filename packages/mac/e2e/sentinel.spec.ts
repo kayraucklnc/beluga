@@ -564,8 +564,10 @@ test('the Sentinel chat: its own conversation about all of Sentinel; a delete as
   // Clear empties it (the chat stays); New Chat makes another beside it, the picker goes between them.
   await chat.getByRole('button', { name: 'More for this chat' }).click();
   await page.getByRole('menuitem', { name: /^Clear/ }).click();
-  // Empty again, it offers what to ask: first, Claude looks at your projects and suggests (BLG-333).
+  // Empty again, it offers what to ask: what it builds, with examples naming your projects, and
+  // Claude looking at your projects to suggest (BLG-333, BLG-590).
   await expect(chat.getByRole('button', { name: 'Suggest Some for Me' })).toBeVisible();
+  await chat.getByRole('radio', { name: 'Watchers' }).click();
   await expect(chat.getByRole('button', { name: /^A Morning Brief for / })).toBeVisible();
   await shoot(page, 'chat-empty');
   await chat.getByRole('button', { name: 'New Chat', exact: true }).click();

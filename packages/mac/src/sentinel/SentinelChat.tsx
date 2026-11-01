@@ -7,7 +7,7 @@ import { ChatLog } from '../chat/ChatLog.js';
 import { Composer } from '../chat/Composer.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
-import { Button, Empty, EmptyActions, IconButton, Tip } from '../components/ui.js';
+import { Empty, IconButton, Segmented, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
@@ -30,22 +30,71 @@ import home from './home.module.css';
 
 type Starter = { readonly label: string; readonly icon: Parameters<typeof Icon>[0]['name']; readonly prompt: string };
 
-/**
- * What to ask, when you don't know (BLG-333): first, Claude looks and suggests; then offers that
- * name your own projects; with sentinels already, what they found.
- */
-function startersFor(projects: readonly string[], has: boolean): Starter[] {
-  const [one, two] = projects;
-  const all: Starter[] = [
-    { label: 'Suggest Some for Me', icon: 'sparkles', prompt: 'Look at my projects and what they use, and suggest three watchers that would help me, each in one plain line. Set them up, with a board for their numbers, when I say yes.' },
+/** What your agent makes here (BLG-590): newcomers don't know, so the empty chat shows each with examples. */
+type Kind = 'dashboard' | 'watcher' | 'pipeline';
+const KINDS: ReadonlyArray<{ value: Kind; label: string; icon: Parameters<typeof Icon>[0]['name']; line: string }> = [
+  { value: 'dashboard', label: 'Dashboards', icon: 'gauge', line: 'Any numbers, charts or tables you care about, kept fresh on their own.' },
+  { value: 'watcher', label: 'Watchers', icon: 'sentinel', line: 'On a schedule or when something happens, it looks and tells you.' },
+  { value: 'pipeline', label: 'Pipelines', icon: 'link', line: 'Steps in a row: fetch, have the agent work on it, then tell you or open a pull request.' },
+];
+
+/** The first line, whatever kind is picked: your agent looks and suggests; with sentinels already, what they found. */
+function leadsFor(has: boolean): Starter[] {
+  return [
+    { label: 'Suggest Some for Me', icon: 'sparkles', prompt: 'Look at my projects and what they use, and suggest three things you could build for me (a dashboard, a watcher or a pipeline), each in one plain line. Set them up when I say yes.' },
     ...(has ? [{ label: 'What Did They Find?', icon: 'sentinel', prompt: 'What did my sentinels find this week? Lead with anything that needs me.' } satisfies Starter] : []),
-    one
-      ? ({ label: `A Morning Brief for ${one}`, icon: 'clock', prompt: `Every weekday morning, tell me on my phone what changed in ${one} and what needs me first.` } satisfies Starter)
-      : ({ label: 'A Morning Brief', icon: 'clock', prompt: 'Every weekday morning, tell me on my phone what changed and what needs me first.' } satisfies Starter),
-    ...(two ? [{ label: `Fix ${two}’s Failing Tests`, icon: 'wrench', prompt: `When the tests fail on GitHub for ${two}, have the agent fix it in a new worktree and open a pull request for me to merge.` } satisfies Starter] : []),
-    { label: 'Make Me a Board', icon: 'gauge', prompt: 'Make me a board with the numbers that matter for my projects, and set up what keeps them fresh.' },
   ];
-  return all.slice(0, 4);
+}
+
+/** Examples of each kind, naming your own projects when there are some. */
+function examplesFor(kind: Kind, projects: readonly string[]): Starter[] {
+  const [one, two] = projects;
+  if (kind === 'dashboard') {
+    return [
+      { label: one ? `${one} at a Glance` : 'My Projects at a Glance', icon: 'gauge', prompt: `Make me a dashboard for ${one ?? 'my projects'} with the numbers that matter (open issues, pull requests, failing checks, and anything else you find), kept fresh.` },
+      { label: 'My Open Pull Requests', icon: 'gauge', prompt: 'Make me a dashboard of my open pull requests across my projects, by project, kept fresh every hour.' },
+      { label: 'Revenue per Day', icon: 'gauge', prompt: 'Put my revenue per day this month on a dashboard, kept fresh every morning.' },
+    ];
+  }
+  if (kind === 'watcher') {
+    return [
+      { label: one ? `A Morning Brief for ${one}` : 'A Morning Brief', icon: 'clock', prompt: `Every weekday morning, tell me on my phone what changed in ${one ?? 'my projects'} and what needs me first.` },
+      { label: 'When My Site Goes Down', icon: 'pulse', prompt: 'Check my website every 5 minutes and tell me on my phone the moment it stops answering, and when it’s back.' },
+      { label: 'New Issues on GitHub', icon: 'sentinel', prompt: `When a new issue opens on GitHub for ${one ?? 'one of my projects'}, tell me on my phone in one line what it’s about.` },
+    ];
+  }
+  return [
+    { label: two ? `Fix ${two}’s Failing Tests` : 'Fix Failing Tests', icon: 'wrench', prompt: `When the tests fail on GitHub for ${two ?? 'one of my projects'}, have the agent fix it in a new worktree and open a pull request for me to merge.` },
+    { label: 'Review Each Pull Request', icon: 'link', prompt: 'When a pull request opens, have the agent review it, then tell me on my phone what it found.' },
+    { label: 'A Weekly Report', icon: 'link', prompt: 'Every Friday afternoon, gather what changed in my projects this week, have the agent write a short report, and send it to my phone.' },
+  ];
+}
+
+/**
+ * The empty chat: what your agent builds here, picked by kind, with a few examples to tap, and
+ * "Suggest Some for Me" first. Tapping one sends it, as if you'd typed it.
+ */
+function Starts({ projects, has, send }: { projects: readonly string[]; has: boolean; send: (prompt: string) => void }) {
+  const [kind, setKind] = useState<Kind>('dashboard');
+  const picked = KINDS.find((k) => k.value === kind)!;
+  const pill = (x: Starter, lead?: boolean) => (
+    <button key={x.label} type="button" className={home.idea} data-lead={lead || undefined} onClick={() => send(x.prompt)}>
+      <Icon name={x.icon} size={13} />
+      {x.label}
+    </button>
+  );
+  return (
+    <div className={s.starts} data-testid="sentinel-starts">
+      <Segmented<Kind> radio label="What your agent can make" value={kind} options={KINDS.map(({ value, label, icon }) => ({ value, label, icon }))} onChange={setKind} />
+      <p className={s.startsLine}>{picked.line}</p>
+      <div className={home.ideas} role="group" aria-label={`${picked.label} to ask for`}>
+        {examplesFor(kind, projects).map((x) => pill(x))}
+      </div>
+      <div className={home.ideas} role="group" aria-label="Or let it look first">
+        {leadsFor(has).map((x, i) => pill(x, i === 0))}
+      </div>
+    </div>
+  );
 }
 
 /** Ask Sentinel's width beside the page: dragged by its left edge, kept on this Mac. */
@@ -142,7 +191,7 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
   const name = names[chats.findIndex((c) => c.id === id)] ?? 'New chat';
   const projectNames = useApp((st) => st.projects.filter((p) => p.root && !p.error).map((p) => p.name).join('\n'));
   const hasSentinels = useApp((st) => st.sentinel.items.length > 0);
-  const starters = useMemo(() => startersFor(projectNames ? projectNames.split('\n') : [], hasSentinels), [projectNames, hasSentinels]);
+  const projects = useMemo(() => (projectNames ? projectNames.split('\n') : []), [projectNames]);
   const open = (chat: string): void => {
     void a.act(() => api.sentinel.chatOpen(chat));
     actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat, ...here } });
@@ -178,7 +227,7 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
         {onClose ? (
           <span className={s.chatTitle}>
             <Icon name="claude" size={13} />
-            <span className={s.chatTitleText}>Ask Sentinel</span>
+            <span className={s.chatTitleText}>Your Agent</span>
           </span>
         ) : null}
         {/* Always the picker (with New Chat in it), so going between chats never hides behind ⋯. */}
@@ -195,7 +244,7 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
             <Icon name="chevronDown" size={10} />
           </button>
         </PickMenu>
-        {busy ? <span className={s.chatBusy}>Your agent is working</span> : null}
+        {busy ? <span className={s.chatBusy}>Working…</span> : null}
         <span className={s.grow} />
         <Tip label="A new conversation beside this one">
           <IconButton icon="plus" label="New Chat" onClick={() => void fresh()} />
@@ -211,18 +260,10 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
           channel={channel}
           empty={
             <Empty
-              icon="sentinel"
-              title="Ask Sentinel"
-              detail="Say what you’d like watched, in your own words, or let your agent look at your projects and suggest."
-              action={
-                <EmptyActions>
-                  {starters.map((t) => (
-                    <Button key={t.label} icon={t.icon} onClick={() => actions.submit(t.prompt)}>
-                      {t.label}
-                    </Button>
-                  ))}
-                </EmptyActions>
-              }
+              icon="claude"
+              title="Ask your agent to build it"
+              detail="Say what you want to see or keep an eye on, in your own words. It sets it up for you; nothing runs until you turn it on."
+              action={<Starts projects={projects} has={hasSentinels} send={(prompt) => actions.submit(prompt)} />}
             />
           }
         />

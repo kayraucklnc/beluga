@@ -34,3 +34,37 @@
   color: var(--text-3);
   font-size: 0.9rem;
 }
+
+/* A fork coming over, in the header: a quiet button's look, a thin bar filling along its foot. */
+.progress {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  overflow: hidden;
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+  font-size: 0.96rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+.bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--hairline);
+}
+.bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width var(--dur) linear;
+}

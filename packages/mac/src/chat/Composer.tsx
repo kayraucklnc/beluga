@@ -87,7 +87,7 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
   if (v.kind === 'draft_worktree') return `What should ${agent} work on in the new worktree?`;
   if (v.kind === 'search') return 'Search every conversation';
   if (v.kind === 'assistant') return 'Ask your Mac anything';
-  if (v.kind === 'sentinel_chat') return 'Ask Sentinel: “what did my sentinels find?”, “watch my open pull requests”…';
+  if (v.kind === 'sentinel_chat') return 'Ask for a dashboard, a watcher or a pipeline: “chart my signups”, “tell me when my site is down”…';
   if (v.kind === 'workspace') {
     const ws = state.projects.flatMap((x) => x.workspaces).find((w) => w.id === v.id);
     if (ws?.askOnly) return `Ask about ${state.projects.find((x) => x.root && x.workspaces.includes(ws))?.name ?? 'this project'}…`;

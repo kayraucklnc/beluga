@@ -5,7 +5,7 @@ import { Linking, ScrollView, Text, View } from 'react-native';
 import { GestureDetector, usePanGesture, usePinchGesture, useSimultaneousGestures } from 'react-native-gesture-handler';
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import Svg, { Defs, G, Marker, Path, Rect, Text as SvgText } from 'react-native-svg';
-import { type ElkInput, type ElkOutput, type Graph, type GraphNode, KIND_ICON, KIND_NAME, STATUS_INFO, connections, elkGraph, neighborhood, nodeBoxes, placesOf, roundedPath, routesOf, stepFocus } from '../../lib/render';
+import { type ElkInput, type ElkOutput, type Graph, type GraphNode, KIND_ICON, KIND_NAME, STATUS_INFO, backEdges, connections, elkGraph, neighborhood, nodeBoxes, placeLabels, placesOf, roundedPath, routesOf, stepFocus } from '../../lib/render';
 import { color, elevation, spring, svgFont, type } from '../../lib/theme';
 import { Sheet } from '../Sheet';
 import { haptic, Pill, Press, T, type Tone, toneBg, toneInk } from '../ui';
@@ -79,7 +79,8 @@ export function GraphCard({ graph, full }: { readonly graph: Graph; /** Full scr
   }, [graph]);
 
   const places = useMemo(() => (laid ? placesOf(laid.out) : undefined), [laid]);
-  const routes = useMemo(() => (laid ? routesOf(laid.out) : undefined), [laid]);
+  // Lines turned back for the layout point where they go again; labels find a free spot on their line.
+  const routes = useMemo(() => (laid ? placeLabels(routesOf(laid.out, backEdges(graph)), new Map(graph.edges.flatMap((e) => (e.label ? [[e.id, e.label] as const] : []))), nodeBoxes(laid.out)) : undefined), [laid, graph]);
   // Absolute places (ELK's are relative to their group).
   const abs = useMemo(() => {
     if (!laid) return new Map<string, { x: number; y: number; width: number; height: number }>();

@@ -226,4 +226,26 @@ describe('what Claude is told about building from data (BLG-304)', () => {
   });
 });
 
+describe('the Sentinel chat builds instead of answering in the chat (BLG-590)', () => {
+  const brief = sentinelChatBrief([], [], '', RECIPES);
+
+  it('names the three things it makes: dashboards, watchers and pipelines', () => {
+    expect(brief).toMatch(/a dashboard/);
+    expect(brief).toMatch(/a watcher/);
+    expect(brief).toMatch(/a pipeline/);
+  });
+
+  it('turns a question about data into a sentinel, a test run and a tile, without being asked', () => {
+    expect(brief).toMatch(/build it without being asked/);
+    expect(brief).toMatch(/Keep the numbers step/);
+    expect(brief).toMatch(/sentinel_test so it fills now/);
+    expect(brief).toMatch(/tile on a dashboard/);
+  });
+
+  it('keeps tables and charts out of the chat, after the views it is told about everywhere else', () => {
+    expect(brief).toMatch(/Don’t put a table, chart or view in this chat/);
+    expect(brief).toMatch(/mcp__beluga_view__show/);
+  });
+});
+
 void until;

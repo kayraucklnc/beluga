@@ -27,6 +27,7 @@ import { ASSISTANT_API } from './assistant-api.js';
 import { VOICE_API } from './voice-api.js';
 import { TERMINAL_IMPORT_API } from './terminal-import-api.js';
 import { AGENT_TERM_API } from './agent-term-api.js';
+import { HANDOFF_MODES } from '../shared/agent-handoff.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -81,6 +82,7 @@ export const PrefsPatch = z
     hiddenButtons: z.array(z.string().max(40)).max(40),
     friendWorktrees: z.enum(['ask', 'off']),
     chatClaude: z.enum(['everyone', 'trusted', 'off']),
+    shareUsage: z.enum(['trusted', 'everyone', 'off']),
     shell: z.string().max(200).optional(),
     shellLogin: bool,
     shellArgs: z.array(z.string().max(200)).max(20),
@@ -299,8 +301,11 @@ export const API = {
   'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000), opt(bool)),
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
-  /** A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent (nullish: over the socket a null arrives as undefined, see daemon/dispatch.ts). */
-  'workbench.setAgent': args(channel, AgentRef.nullish()),
+  /**
+   * A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent (nullish: over the socket a null arrives as undefined, see daemon/dispatch.ts).
+   * Then, when the new agent can't read the session (BLG-592): 'quiet' switches now and sends the recent conversation with your next message; 'note' (left out) has the old agent write a handoff note first.
+   */
+  'workbench.setAgent': args(channel, AgentRef.nullish(), opt(z.enum(HANDOFF_MODES))),
   'workbench.createPr': args(id, opt(str)),
   // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message, trouble? }.
   // https: push this once over HTTPS with gh's login (the SSH key isn't working; origin stays as it is).
@@ -310,7 +315,8 @@ export const API = {
   // A fix from a GitHub trouble card (BLG-213), then Create PR again ('pr', 'pr_draft'), Merge into its base ('merge_base') or nothing ('none') → { ok, message, trouble? }.
   'workbench.gitFix': args(id, z.enum(['push_https', 'use_https', 'install_gh', 'gh_login', 'add_ssh_key', 'check_host', 'retry']), opt(z.enum(['pr', 'pr_draft', 'merge_base', 'none']))),
   // A failed run's card when Claude Code isn't signed in: `claude auth login` in your shell `id` (shell:N), then Claude goes on in `channel` → { ok, message }.
-  'workbench.signInClaude': args(id, channel),
+  // How: 'claudeai' (a Claude subscription, the default) or 'console' (an Anthropic Console account, API billing).
+  'workbench.signInClaude': args(id, channel, opt(z.enum(['claudeai', 'console']))),
   'workbench.fixChecks': args(id),
   'workbench.resolvePrConflicts': args(id),
   'workbench.continueAfterMerge': args(id),

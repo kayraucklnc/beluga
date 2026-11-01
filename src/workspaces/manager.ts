@@ -1112,6 +1112,12 @@ export class WorkspaceManager {
     this.patchRecord(id, { agent: undefined, model: undefined, effort: undefined, ...agentFields(agent) });
   }
 
+  /** After a quiet switch, the agent it came from (BLG-592); undefined once its recent conversation went along. */
+  setCarry(id: string, from: string | undefined): void {
+    this.require(id);
+    this.patchRecord(id, { carryFrom: from });
+  }
+
   /** Pick the thinking effort for one workspace's conversation (undefined: Settings'). */
   setEffort(id: string, effort: Effort | undefined): void {
     this.require(id);

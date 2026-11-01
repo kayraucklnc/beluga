@@ -341,9 +341,10 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         ? [{ label: 'Open Worktree', icon: 'branch' as const, onSelect: () => openWorktree(worktree) }]
         : startable
           ? [
-              { label: 'Start', icon: 'play' as const, hint: `A new worktree, ${ownAgent(issue) ? agentName(ownAgent(issue)) : 'your agent'} working on it`, onSelect: () => startIt(issue, ownAgent(issue)) },
-              startWithMenu(issue),
-              { label: 'Start Worktree Only', icon: 'branch' as const, hint: 'Without the agent', onSelect: () => void act(() => api.start(issue.id, {})) },
+              // Its agent is still writing it: starting waits for the brief (BLG-598).
+              { label: 'Start', icon: 'play' as const, hint: issue.drafting ? 'Once its brief is written' : `A new worktree, ${ownAgent(issue) ? agentName(ownAgent(issue)) : 'your agent'} working on it`, disabled: Boolean(issue.drafting), onSelect: () => startIt(issue, ownAgent(issue)) },
+              { ...startWithMenu(issue), disabled: Boolean(issue.drafting) },
+              { label: 'Start Worktree Only', icon: 'branch' as const, hint: 'Without the agent', disabled: Boolean(issue.drafting), onSelect: () => void act(() => api.start(issue.id, {})) },
             ]
           : []),
       // Finished (or canceled) work starts again only deliberately: back to Ready, then Start.

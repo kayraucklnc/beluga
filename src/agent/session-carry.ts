@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { SESSION_RUNTIME_DEFAULT, resumable } from '../shared/agent-handoff.js';
 import { claudeConfigDir, encodeProjectDir, pathVariants } from './runtime/claude/claude-sessions.js';
 
 /**
@@ -27,19 +28,7 @@ export function carrySession(sessionId: string, fromDir: string, toDir: string, 
   }
 }
 
-/** The runtime a stored session id belongs to when none was recorded: everything before BLG-445 was Claude's. */
-export const SESSION_RUNTIME_DEFAULT = 'claude';
-
-/**
- * Can a run on `runtime` resume a session `made` (the runtime that made it) left? Its own, always.
- * A local model runs Claude Code too, on your same ~/.claude, so it also picks up Claude's
- * conversations (no handoff). Not the other way: a local model's turns can hold thinking without
- * Anthropic's signatures, which Claude's API may refuse, so Claude starts fresh (with a handoff) after one.
- */
-export function resumable(made: string | undefined, runtime: string): boolean {
-  const by = made ?? SESSION_RUNTIME_DEFAULT;
-  return by === runtime || (runtime === 'local' && by === SESSION_RUNTIME_DEFAULT);
-}
+export { SESSION_RUNTIME_DEFAULT, resumable } from '../shared/agent-handoff.js';
 
 /**
  * The session a run on `runtime` may resume: a stored one only when a runtime that can read it made

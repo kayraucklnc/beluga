@@ -7,6 +7,7 @@ import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
 import { MOCK_GRAPH_ANSWER } from './mock-graphs.js';
 import { mockTerminal } from './mock-terminal.js';
+import { RunFailedError, classifyRun } from '../shared/run-failure.js';
 import { MOCK_VIEWS_ANSWER } from './mock-views.js';
 
 interface Script {
@@ -761,7 +762,9 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       return slugify(prompt);
     },
     draftTask: async (text, ctx) => {
-      await new Promise((r) => setTimeout(r, (ctx.look ? 6000 : 1500) * pace));
+      // "Take your time" in what you wrote: slow enough, at any pace, to watch the task being written (BLG-598).
+      const watch = /take your time/i.test(text) ? 5000 : 0;
+      await new Promise((r) => setTimeout(r, Math.max(watch, (ctx.look ? 6000 : 1500) * pace)));
       return mockDraft(text, ctx);
     },
     describeProject: async (_dir, project) => {
@@ -804,6 +807,8 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   async function runScript(input: AgentRunInput): Promise<string> {
     const script = SCRIPTS.find((s) => s.match.test(input.prompt)) ?? FALLBACK;
     if (/^\/compact/.test(input.prompt.trim())) return context.compact(input, (ms) => sleep(ms * pace, input.signal));
+    // Claude Code's sign-in ran out mid-run (BLG-589): the failed card offers Sign In's choices.
+    if (/^sign-in expired$/i.test(input.prompt.trim())) throw new RunFailedError(classifyRun({ result: 'Failed to authenticate: Auth session expired and could not be refreshed', apiError: 'authentication_failed' }));
     // Updating main (the one thing a main-folder run may change): what real Claude would report.
     if (input.place?.syncMain) return mockSyncMain(input, input.place.syncMain, pace);
     // A sentinel's run (core/sentinel): its brief, before the main folder's "move it to a worktree".

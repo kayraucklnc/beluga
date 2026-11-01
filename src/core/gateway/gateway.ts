@@ -1,10 +1,11 @@
 import { type AgentRef, CLAUDE_AGENT, defaultAgentOf } from '../../protocol.js';
+import { usagesOf } from '../../agent/usage.js';
 import { randomBytes } from 'node:crypto';
 import type { AgentBackend } from '../../agent/types.js';
 import { type NoticeEvent, presenceQuiet } from '../notify.js';
 import { type Action, type Store, peerName } from '../store.js';
 import { type TrustLevel, defaultTrust } from '../trust.js';
-import { type Capabilities, Decision, type DecisionInput, type Rule, offersFor } from './access.js';
+import { type Capabilities, Decision, type DecisionInput, type Rule, offersFor, sharesUsageWith } from './access.js';
 import { TaskBook } from './book.js';
 import type { SystemPort } from './device.js';
 import { type GatewayState, type PeerCard, type TaskFile, type TaskView, isFinal } from './model.js';
@@ -1008,7 +1009,7 @@ export class Gateway {
   }
 
   private onCard(from: string, msg: PeerCardMsg): void {
-    const card: PeerCard = { trust: msg.trust, offers: msg.offers, projects: msg.projects, claude: msg.claude, at: this.now(), ...(msg.note ? { note: msg.note } : {}) };
+    const card: PeerCard = { trust: msg.trust, offers: msg.offers, projects: msg.projects, claude: msg.claude, at: this.now(), ...(msg.note ? { note: msg.note } : {}), ...(msg.usages?.length ? { usages: msg.usages } : {}) };
     this.book.putCard(from, card);
     this.deps.store.dispatch({ type: 'gw_card', peerId: from, card });
   }
@@ -1031,11 +1032,14 @@ export class Gateway {
     const note = state.gateway.note;
     const projects = this.deps.projects().slice(0, 60);
     const claude = Boolean(this.deps.agent());
+    // Your plan usage, for those you share it with (Settings › Friends; BLG-597).
+    const usages = usagesOf(state.peers.find((p) => p.peerId === self) ?? state.self).slice(0, 8);
     for (const id of people) {
       if (!this.courier.reach(id)) continue;
       const trust = this.trustFor(id);
       const offers = offersFor(this.rules.capabilities(), trust);
-      const card: PeerCardMsg = { t: 'card', trust, offers, projects: offers.includes('project') ? [...projects] : [], claude, ...(note ? { note } : {}) };
+      const shared = usages.length && sharesUsageWith(state.prefs.shareUsage, trust) ? { usages: [...usages] } : {};
+      const card: PeerCardMsg = { t: 'card', trust, offers, projects: offers.includes('project') ? [...projects] : [], claude, ...(note ? { note } : {}), ...shared };
       const key = JSON.stringify(card);
       if (this.told.get(id) === key) continue;
       if (this.courier.send(id, card, false)) this.told.set(id, key);
