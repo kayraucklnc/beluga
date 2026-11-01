@@ -48,6 +48,8 @@ export interface AssistantDeps {
   readonly startTask?: (key: string) => Promise<string>;
   /** A plan drafted in its own conversation (plans' create) → its id. */
   readonly startPlan?: (projectId: string, goal: string) => Promise<{ readonly id: string }>;
+  /** Archive a worktree (workspace-controller's archive) → whether it was. */
+  readonly archiveWorktree?: (id: string) => Promise<boolean>;
   /** Claude Code's own folder (~/.claude): a deleted chat's transcript goes from there too. */
   readonly claudeDir?: string;
   readonly now?: () => number;
@@ -368,7 +370,31 @@ export class MacAssistant {
         const plan = await this.deps.startPlan(p.id, goal);
         return `Started a plan in ${p.name}: its agent is drafting the milestones and tasks for the owner to approve. Name it in your answer as \`plan:${plan.id}\`.`;
       },
+      archiveWorktree: async ({ worktree, confirmed }) => {
+        if (!this.deps.archiveWorktree) throw new Error('Archiving needs the Beluga app');
+        const { ws, project } = this.worktree(worktree);
+        if (!confirmed && busyChannels(this.deps.store.getState().log).has(`ws:${ws.id}`)) {
+          throw new Error(`Claude is still working in "${ws.name}". Archiving stops it: ask the owner first, and call again with confirmed: true only if they say yes.`);
+        }
+        if (!(await this.deps.archiveWorktree(ws.id))) throw new Error(`Couldn't archive "${ws.name}" (Beluga showed the owner why); it's back in the sidebar as it was.`);
+        return `Archived the worktree "${ws.name}" in ${project}: its branch, conversation and uncommitted work are kept, and it can be restored any time from the project's archived worktrees. Say so in a line, naming it by its name.`;
+      },
     };
+  }
+
+  /** A worktree the owner named, by id or (unique) name, that can be archived. */
+  private worktree(ref: string): { ws: Workspace; project: string } {
+    const want = ref.trim().toLowerCase();
+    const all = this.deps.store.getState().projects.filter((p) => p.root).flatMap((p) => p.workspaces.map((ws) => ({ ws, project: p.name })));
+    const byId = all.find((x) => x.ws.id === ref.trim());
+    const byName = all.filter((x) => x.ws.kind === 'worktree' && !x.ws.archived && x.ws.name.toLowerCase() === want);
+    if (!byId && byName.length > 1) throw new Error(`Several worktrees are called ${ref}: ${byName.map((x) => `${x.ws.id} (${x.project})`).join(', ')}. Use its id.`);
+    const found = byId ?? byName[0];
+    if (!found) throw new Error(`There's no worktree ${ref} here. list_work shows them with their ids.`);
+    if (found.ws.kind !== 'worktree') throw new Error(`"${found.ws.name}" is ${found.ws.kind === 'main' ? 'the main folder of ' + found.project : 'a chat'}, not a worktree: only worktrees are archived.`);
+    if (found.ws.archived) throw new Error(`"${found.ws.name}" is already archived.`);
+    if (found.ws.pending) throw new Error(`"${found.ws.name}" is still being made: try again in a moment.`);
+    return found;
   }
 }
 
@@ -390,6 +416,9 @@ export function assistantBrief(): string {
     '  the plans. Check it before starting anything or writing a task, and to answer "what\'s running?".',
     '- start_worktree: a new worktree in a project with its own agent on a first message you write as a complete,',
     '  self-contained task. Do not do project work yourself here: start a worktree for it.',
+    '- archive_worktree: archive a worktree the owner asked you to (its id from list_work). Nothing is lost and it',
+    '  can be restored. If its Claude is still working, ask the owner before you call it again with confirmed: true.',
+    '  Never archive with git or rm yourself: only this keeps it restorable.',
     '- The board (mcp__beluga_board__*): task_create (name the repo it runs in as project; board for a board that',
     '  covers several repos, as list_work shows), board_create (a board for work across a few repos, when none',
     '  covers them yet), task_update, task_list…; start_task',

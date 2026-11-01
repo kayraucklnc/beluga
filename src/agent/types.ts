@@ -341,6 +341,8 @@ export interface MacTools {
   startWorktree(input: { readonly project: string; readonly message: string; readonly name?: string; readonly plan?: boolean }): Promise<string>;
   startTask(key: string): Promise<string>;
   startPlan(input: { readonly project: string; readonly goal: string }): Promise<string>;
+  /** Archive a worktree (by id or name), losslessly as the Archive button does; `confirmed` once the owner said yes to stopping its Claude. */
+  archiveWorktree(input: { readonly worktree: string; readonly confirmed?: boolean }): Promise<string>;
 }
 
 /** A message sent into a live run: while it waits on its background agents, or steering it. */
