@@ -18,3 +18,8 @@
   color: var(--text-3);
   font-size: 12px;
 }
+.rowEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

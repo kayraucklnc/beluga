@@ -1,4 +1,3 @@
-import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CLAUDE_CHANGED, FIRST_SENTINEL_CHAT, MAX_RUN_AT_ONCE, RUN_STATE_INFO, type RunSummary, type Sentinel, type SentinelState, lastRunOf, pausedWords, sentinelChatChannel } from '@beluga/core/sentinel/model.js';
 import { Icon } from '../components/Icon.js';
@@ -113,7 +112,6 @@ function useAsk(): (text?: string) => void {
 // ---------------------------------------------------------------- lived in
 
 function Lived({ state, scope, setScope, board, setBoard }: { state: SentinelState; scope: string | undefined; setScope: (s: string | undefined) => void; board: string | undefined; setBoard: (id: string) => void }) {
-  const uiPrefs = usePrefs();
   const allProjects = useApp((st) => st.projects);
   const projects = useMemo(() => allProjects.filter((p) => p.root && !p.error), [allProjects]);
   const a = useSentinelActions();
@@ -158,7 +156,6 @@ function Lived({ state, scope, setScope, board, setBoard }: { state: SentinelSta
       onSelect: () => undefined,
     },
     ...(folder ? [{ label: 'Open the Runs Folder', icon: 'folder' as const, hint: 'Each run’s outputs and report', onSelect: () => a.openFolder(folder) }] : []),
-    { label: 'Show Sentinels in the Sidebar', checked: uiPrefs.sentinelRows, hint: 'The ones that are on, with their runs’ chats', separate: true, onSelect: () => setPrefs({ sentinelRows: !uiPrefs.sentinelRows }) },
   ];
   const projectOf = (id: string | undefined) => projects.find((p) => p.id === id);
   return (

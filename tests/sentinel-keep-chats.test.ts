@@ -6,7 +6,7 @@ import { MacAssistant } from '../src/core/assistant/assistant.js';
 import { pretendSystem } from '../src/core/gateway/demo-system.js';
 import { SentinelChats } from '../src/core/sentinel/chat.js';
 import { type RunSummary, type Sentinel, keepsChat, sentinelChatChannel } from '../src/core/sentinel/model.js';
-import { sidebarSentinels } from '../packages/mac/src/sentinel/sentinel-model.js';
+import { needsALook, sidebarSentinels } from '../packages/mac/src/sentinel/sentinel-model.js';
 import type { SentinelPlaces } from '../src/core/sentinel/runner.js';
 import { ToolDraftSchema, ToolPatchSchema } from '../src/core/sentinel/tool-draft.js';
 import { fromToolDraft } from '../src/core/sentinel/sentinels.js';
@@ -244,6 +244,12 @@ describe('the sidebar’s sentinels', () => {
     expect(side.map((x) => x.sentinel.id)).toEqual(['b', 'a', 'w', 'n']);
     expect(side[0]).toMatchObject({ failed: true, live: false, needs: false });
     expect(side.find((x) => x.sentinel.id === 'w')?.needs).toBe(true);
+  });
+
+  it('folded, only those that need a look: running, waiting for you, or the last run failed', () => {
+    const items = [item('a', 'Quiet'), item('b', 'Broke'), item('c', 'Going'), item('w', 'Waits', true)];
+    const runs = [run('r1', 'a', 10, 'done'), run('r2', 'b', 20, 'failed'), run('r3', 'c', 30, 'running'), run('r4', 'w', 5, 'needs-you')];
+    expect(sidebarSentinels({ items, runs }).filter(needsALook).map((x) => x.sentinel.id)).toEqual(['c', 'b', 'w']);
   });
 
   it('its chats: newest first, none of a run whose chat was put away, a Your Mac chat too', () => {

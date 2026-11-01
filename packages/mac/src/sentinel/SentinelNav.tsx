@@ -4,13 +4,12 @@ import { Icon } from '../components/Icon.js';
 import { Dot, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useUi } from '../lib/beluga.js';
-import { usePrefs } from '../lib/prefs.js';
 import { Row } from '../layout/sidebar-parts.js';
 import { DotMark } from '../layout/signal-marks.js';
 import { sameDeep } from '../lib/stable.js';
 import { ago } from '../tasks/tasks-model.js';
 import { useClock } from '../lib/window-active.js';
-import { SIDE_CHATS, type SideChat, type SideSentinel, anyRunning, iconOf, isSentinelView, sidebarLine, sidebarSentinels } from './sentinel-model.js';
+import { SIDE_CHATS, type SideChat, type SideSentinel, anyRunning, iconOf, isSentinelView, needsALook, sidebarLine, sidebarSentinels } from './sentinel-model.js';
 import { useSentinelActions } from './use-sentinel.js';
 import g from '../layout/project-groups.module.css';
 import side from '../layout/Sidebar.module.css';
@@ -22,11 +21,21 @@ export { isSentinelView };
  * The sidebar's Sentinel row, always there under Work: the one row for the whole section (its
  * Sentinels, Dashboard and Chat tabs are on its page). Its line (the row's hint): how many watch
  * and when the next runs, or "Paused after 3 failures" with the problem mark; a live dot while a run goes.
- * The sentinels that are on follow it, each with its runs' chats (SentinelSideRows).
+ * The sentinels follow it (SentinelSideRows): folded (the default), only those that need a look;
+ * unfolded with its triangle, every one that's on.
  */
 export function SentinelNav() {
   const actions = useActions();
   const { line, live, selected } = useApp((st) => ({ line: sidebarLine(st.sentinel), live: anyRunning(st.sentinel), selected: isSentinelView(st.view.kind) }), sameDeep);
+  const all = useUi((u) => u.collapsed.includes(ROWS_KEY));
+  const counts = useApp((st) => (st.sentinel.enabled ? sidebarSentinels(st.sentinel) : []).reduce((c, x) => ({ on: c.on + 1, quiet: c.quiet + (needsALook(x) ? 0 : 1) }), { on: 0, quiet: 0 }), sameDeep);
+  const toggle = (): void => actions.run({ type: 'toggle_fold', key: ROWS_KEY });
+  const fold = counts.quiet ? (
+    <button type="button" className={g.foldButton} aria-expanded={all} aria-label={all ? 'Show only the sentinels that need a look' : `Show all ${counts.on} sentinels that are on`} title={all ? 'Show only the ones that need a look' : `Show all ${counts.on} that are on`} onClick={(e) => (e.stopPropagation(), toggle())}>
+      <Icon name="chevronRight" size={9} className={cx(g.disclosure, all && g.disclosureOpen)} />
+    </button>
+  ) : null;
+  const mark = live ? <Dot tone="claude" live /> : line.problem ? <Icon name="alert" size={12} className={s.alert} /> : null;
   return (
     <>
       <Row
@@ -35,15 +44,25 @@ export function SentinelNav() {
         detail={line.text}
         selected={selected}
         onClick={() => actions.run({ type: 'view', view: { kind: 'sentinel' } })}
-        trailing={live ? <Dot tone="claude" live /> : line.problem ? <Icon name="alert" size={12} className={s.alert} /> : null}
+        trailing={mark || fold ? <span className={s.rowEnd}>{mark}{fold}</span> : null}
+        onKeyDown={(e) => {
+          // → shows every sentinel, ← only those that need a look (as a project folds).
+          if (counts.quiet && e.target === e.currentTarget && ((e.key === 'ArrowRight' && !all) || (e.key === 'ArrowLeft' && all))) {
+            e.preventDefault();
+            toggle();
+          }
+        }}
         data-sentinel-row=""
         aria-current={selected ? 'page' : undefined}
         data-problem={line.problem || undefined}
       />
-      <SentinelSideRows />
+      <SentinelSideRows all={all} />
     </>
   );
 }
+
+/** Every sentinel that's on shows under the Sentinel row while this key is in the folds; else only those that need a look. */
+const ROWS_KEY = 'sentinel-rows';
 
 /** A sentinel's chats are unfolded under it while this key is in the folds (folded by default). */
 const chatsKey = (id: string): string => `sentinel-chats:${id}`;
@@ -56,18 +75,17 @@ function channelOf(view: View, active: string): string | undefined {
 }
 
 /**
- * Under the Sentinel row (BLG-570), as running plans are under Work: the sentinels that are on, each
- * opening its page, and unfolding to the chats its runs kept (Keep chats on its page), newest
- * first. Off with Sentinel's ⋯ › Show Sentinels in the Sidebar.
+ * Under the Sentinel row (BLG-570), as running plans are under Work: the sentinels, each opening its
+ * page and unfolding to the chats its runs kept (Keep chats on its page), newest first. `all`: every
+ * one that's on; else only those running, waiting for you, or whose last run failed.
  */
-export function SentinelSideRows() {
-  const shown = usePrefs().sentinelRows;
+export function SentinelSideRows({ all }: { all: boolean }) {
   const enabled = useApp((st) => st.sentinel.enabled);
   const items = useApp((st) => sidebarSentinels(st.sentinel), sameDeep);
-  if (!shown || !enabled) return null;
+  if (!enabled) return null;
   return (
     <>
-      {items.map((x) => (
+      {(all ? items : items.filter(needsALook)).map((x) => (
         <SentinelSideRow key={x.sentinel.id} item={x} />
       ))}
     </>

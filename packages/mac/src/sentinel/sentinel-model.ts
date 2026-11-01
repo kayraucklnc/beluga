@@ -947,6 +947,9 @@ export interface SideSentinel {
   readonly chats: readonly SideChat[];
 }
 
+/** Folded, the Sentinel row keeps these under it: running, waiting for you, or its last run failed. */
+export const needsALook = (x: Pick<SideSentinel, 'live' | 'needs' | 'failed'>): boolean => x.live || x.needs || x.failed;
+
 /** The chats a sentinel row unfolds to at most; the rest are on its page. */
 export const SIDE_CHATS = 5;
 
