@@ -48,6 +48,11 @@ describe('slash command routing', () => {
     expect(calls).toEqual([{ method: 'session.submit', args: [text, { channel: 'draft', urgent: false }] }]);
   });
 
+  it.each(['/dialogue stop', '/dialogue claude codex talk about caching, 6 turns'])('keeps the dialogue command %s on the session path', (text) => {
+    const calls = submitFrom({ kind: 'draft', projectId: 'chats', back: { kind: 'overview' } }, text);
+    expect(calls).toEqual([{ method: 'session.submit', args: [text, { channel: 'draft', urgent: false }] }]);
+  });
+
   it('keeps skills in an existing chat on the session path', () => {
     const calls = submitFrom({ kind: 'workspace', id: 'chat-one', tab: 'chat' }, '/deploy staging');
     expect(calls).toEqual([{ method: 'session.submit', args: ['/deploy staging', { channel: 'ws:chat-one', urgent: false }] }]);

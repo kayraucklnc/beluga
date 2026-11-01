@@ -351,9 +351,9 @@ export function runCommand(session: Session, name: string, args: readonly string
   }
 }
 
-/** Whether Beluga handles this command, including its aliases. */
+/** Whether Beluga handles this command, including its aliases and `/dialogue`, which Session.submit takes before the command list. */
 export function isBelugaCommand(name: string): boolean {
-  return COMMANDS.some((command) => command.name === name) || COMMAND_ALIASES.has(name);
+  return name === 'dialogue' || COMMANDS.some((command) => command.name === name) || COMMAND_ALIASES.has(name);
 }
 
 /** Workspace commands act on the workspace you're looking at (or its project). */
