@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
 import { labelDef, labelsFor } from '../src/core/board/labels.js';
-import { type Actor, type Issue, asksPrivate, boardForRepo, boardOf, filterIssues, isEpic, isOwnBoard, issueForWorkspace, reposOf } from '../src/core/board/model.js';
+import { type Actor, type Issue, asksPrivate, boardOf, filterIssues, isVisiting, showsOn, isEpic, isOwnBoard, issueForWorkspace, reposOf } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -73,20 +73,34 @@ describe('boards and repos, many to many (BLG-500)', () => {
     expect(a).toMatchObject({ projectId: 'land', board: id });
     expect(filterIssues(store.getState().board, { boardId: id }).map((i) => i.title).sort()).toEqual(['Hero', 'Pricing API']);
     expect(filterIssues(store.getState().board, { boardId: id, repos: ['api'] }).map((i) => i.title)).toEqual(['Pricing API']);
-    // The repos' own boards stay empty: their work is on Launch Week now.
+    // On Launch Week, not on the repos' own boards, though those show them as visitors (BLG-559).
     expect(filterIssues(store.getState().board, { boardId: 'api' })).toEqual([]);
-    expect(boardForRepo(store.getState().board, 'land')).toBe(id);
+    expect(filterIssues(store.getState().board, { boardId: 'api', visiting: true }).map((i) => i.title)).toEqual(['Pricing API']);
+    expect([showsOn(b, 'api'), isVisiting(b, 'api'), isVisiting(b, id), showsOn(b, 'land')]).toEqual([true, true, false, false]);
     expect(() => board.createBoard({ name: 'x', repos: [] })).toThrow(/one repo/);
     expect(() => board.createBoard({ name: 'Other', repos: ['api'], prefix: 'LW' })).toThrow(/already/);
   });
 
-  it('new work in a repo goes on its own board while that has tasks, else on a board that covers it', () => {
+  it('new work in a repo goes on its own board when no one names one, even when another board covers it (BLG-560)', () => {
     const { board, store } = setup();
-    board.create({ projectId: 'api', title: 'Old' }, me);
     const id = board.createBoard({ name: 'Launch', repos: ['api', 'land'] });
-    expect(board.create({ projectId: 'api', title: 'Next' }, me).key).toBe('BOB-2');
-    expect(board.create({ projectId: 'land', title: 'Hero' }, me)).toMatchObject({ board: id, key: 'LNC-1' });
-    expect(boardForRepo(store.getState().board, 'api')).toBe('api');
+    board.create({ projectId: 'land', board: id, title: 'On Launch' }, me);
+    const next = board.create({ projectId: 'land', title: 'Next' }, me);
+    expect(next.board).toBeUndefined();
+    expect(boardOf(next)).toBe('land');
+    expect(board.create({ projectId: 'land', board: id, title: 'Named' }, me).key).toBe('LNC-2');
+    expect(filterIssues(store.getState().board, { boardId: id }).map((i) => i.title).sort()).toEqual(['Named', 'On Launch']);
+  });
+
+  it('a repo’s board archives and empties what it shows, visitors too (BLG-559)', () => {
+    const { board, store } = setup();
+    const id = board.createBoard({ name: 'Launch', repos: ['api', 'land'] });
+    const t = board.create({ projectId: 'land', board: id, title: 'Hero' }, me);
+    board.update(t.key, { status: 'done' }, me);
+    expect(board.archiveDone(me, 'api')).toBe(0);
+    expect(board.archiveDone(me, 'land')).toBe(1);
+    expect(board.emptyArchive(id)).toBe(1);
+    expect(store.getState().board.issues).toEqual([]);
   });
 
   it('moving a task to another repo keeps its board and key, and says so', () => {

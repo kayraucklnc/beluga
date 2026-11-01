@@ -14,8 +14,8 @@ import { type AgentRef, defaultAgentOf } from '../../protocol.js';
 import { chosenAgent } from '../settings.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
-import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine, reposPrompt } from './prompt.js';
-import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, boardForRepo, boardName, boardOf, filterIssues, isArchived, isFinished, isOpen, isOwnBoard, issueForWorkspace, reposOf, titleFromName, worktreeDoing } from './model.js';
+import { aboutPrompt, alongPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine, reposPrompt } from './prompt.js';
+import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, boardName, boardOf, childrenOf, filterIssues, isArchived, isFinished, isOpen, isOwnBoard, isStartable, issueForWorkspace, reposOf, titleFromName, worktreeDoing, worktreeOf } from './model.js';
 
 /** How a name is written after "@" (as the message box completes it: src/ui/suggest.ts friendMention). */
 const handleOf = (name: string): string => `@${name.replace(/[^\p{L}\p{N}_.-]+/gu, '')}`;
@@ -74,6 +74,8 @@ export class BoardWork {
   constructor(private readonly deps: BoardWorkDeps) {
     this.board = deps.board;
     if (deps.controller) this.offs.push(deps.controller.onWorktree((e) => this.onWorktree(e)));
+    // An epic's worktree works in its sub-tasks' worktrees in other repos too (BLG-561).
+    if (deps.controller?.setAlsoIn) this.offs.push(deps.controller.setAlsoIn((id) => this.alsoIn(id).map((w) => w.path)));
     // Proof made in a worktree outlives it: kept before its folder goes (proof-files.ts).
     if (deps.controller?.onWorktreeGoing) this.offs.push(deps.controller.onWorktreeGoing((ws) => void this.board.keepProofs(ws.path)));
     // After the action that caused it has reached everyone (never inside its dispatch).
@@ -212,11 +214,11 @@ export class BoardWork {
   }
 
   /**
-   * Where a task goes from a board's or a repo's id (the phone lists boards): a repo runs it on the
-   * board its work goes on; a board of its own runs it in its first repo.
+   * Where a task goes from a board's or a repo's id (the phone lists boards): a repo's on its own
+   * board; a board of its own runs it in its first repo.
    */
   private placeOf(id: string): { readonly projectId: string; readonly board: string } {
-    if (!isOwnBoard(id)) return { projectId: id, board: boardForRepo(this.board.state(), id) };
+    if (!isOwnBoard(id)) return { projectId: id, board: id };
     const repo = reposOf(this.board.state(), id)[0];
     if (!repo) throw new Error('That board covers no repo');
     return { projectId: repo, board: id };
@@ -227,7 +229,7 @@ export class BoardWork {
    * its labels; with `several` (BLG-319), who on its team a task can be for (you first); and who
    * the words' "@mia"s are, teammates and friends (BLG-342).
    */
-  private draftContext(projectId: string, text: string, look?: string, several = false, boardId = boardForRepo(this.board.state(), projectId)): DraftContext {
+  private draftContext(projectId: string, text: string, look?: string, several = false, boardId = projectId): DraftContext {
     const labels = labelsFor(this.board.state(), boardId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
     const about = this.board.state().projects[boardId]?.context?.text ?? this.board.state().projects[projectId]?.context?.text;
@@ -382,9 +384,65 @@ export class BoardWork {
       ...((opts.claude || opts.prompt) && !now.assignee && !now.plan ? { assignee: this.me() } : {}),
     };
     if (Object.keys(patch).length) this.board.update(issue.id, patch, this.me());
+    // An epic whose sub-tasks run in other repos: a worktree in each, and this one's Claude works in all of them.
+    const along = await this.startAlong(this.board.need(issue.id), name, opts.agent ?? issue.agent);
     if (opts.prompt) this.deps.askClaude(opts.prompt(this.board.need(issue.id), ws), `${WS}${ws.id}`, opts.shown);
-    else if (opts.claude) this.deps.askClaude(startPrompt(this.board.need(issue.id)), `${WS}${ws.id}`);
+    else if (opts.claude) this.deps.askClaude(startPrompt(this.board.need(issue.id), along.map((w) => this.repoName(w.projectId) ?? w.name)), `${WS}${ws.id}`);
     return ws.id;
+  }
+
+  /**
+   * An epic across repos (BLG-561): for each other repo its unfinished sub-tasks run in, a worktree
+   * there under the same name (quietly), linked to those sub-tasks, so its pull request moves them.
+   * The epic's worktree works in them too (`alsoIn`). A repo whose worktree can't be made is said
+   * and left out. → the worktrees made.
+   */
+  private async startAlong(epic: Issue, name: string, agent: AgentRef | undefined): Promise<Workspace[]> {
+    const controller = this.deps.controller!;
+    const live = (id: string): boolean => this.workspaces().some((w) => w.id === id && !w.archived);
+    const kids = childrenOf(this.board.state(), epic).filter((k) => k.projectId !== epic.projectId && isStartable(k) && !worktreeDoing(k, live));
+    const made: Workspace[] = [];
+    for (const repo of [...new Set(kids.map((k) => k.projectId))]) {
+      const [first, ...rest] = kids.filter((k) => k.projectId === repo);
+      const ticket = { projectId: repo, name, issueId: first!.id };
+      this.expecting.push(ticket);
+      let ws: Workspace | undefined;
+      try {
+        ws = await controller.newWorktree(repo, name, { quiet: true, ...(agent ? { agent } : {}) });
+      } catch (err) {
+        this.deps.toast?.(`Couldn’t make ${epic.key}’s worktree in ${this.repoName(repo) ?? 'its repo'}: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        const at = this.expecting.indexOf(ticket);
+        if (at >= 0) this.expecting.splice(at, 1);
+      }
+      if (!ws) continue;
+      if (this.board.need(first!.id).worktrees.at(-1) !== ws.id) this.board.linkWorktree(first!.id, ws.id, { branch: ws.branch, name: ws.name }, this.me());
+      for (const kid of rest) this.linkShared(kid.id, ws);
+      for (const kid of [first!, ...rest]) if (kid.status === 'backlog' || kid.status === 'todo') this.board.update(kid.id, { status: 'in_progress' }, this.me());
+      made.push(ws);
+    }
+    return made;
+  }
+
+  /** What a run in an epic's worktree is told about its other repos' worktrees (BLG-561). */
+  private alongNote(workspaceId: string, epic: Issue): string {
+    const kids = childrenOf(this.board.state(), epic);
+    return alongPrompt(
+      epic.key,
+      this.alsoIn(workspaceId).map((w) => ({ repo: this.repoName(w.projectId) ?? w.name, path: w.path, ...(w.branch ? { branch: w.branch } : {}), keys: kids.filter((k) => worktreeOf(k) === w.id).map((k) => k.key) })),
+    );
+  }
+
+  /**
+   * The other worktrees a worktree works in too (BLG-561): it does an epic, and these do its
+   * unfinished sub-tasks in other repos.
+   */
+  alsoIn(workspaceId: string): Workspace[] {
+    const state = this.board.state();
+    const epic = issueForWorkspace(state, workspaceId);
+    if (!epic || epic.worktrees.at(-1) !== workspaceId) return [];
+    const theirs = new Set(childrenOf(state, epic).filter((k) => k.projectId !== epic.projectId && isOpen(k.status)).map(worktreeOf));
+    return this.workspaces().filter((w) => w.id !== workspaceId && !w.archived && w.kind === 'worktree' && theirs.has(w.id));
   }
 
   /**
@@ -442,11 +500,12 @@ export class BoardWork {
     const tools = this.toolsFor(channel, issue, Boolean(opts.plan));
     const parallel = this.parallelNote(channel, issue);
     const projectId = this.runProject(channel, issue);
-    const boardId = issue ? boardOf(issue) : projectId ? boardForRepo(this.board.state(), projectId) : undefined;
+    const boardId = issue ? boardOf(issue) : projectId;
     const about = projectId ? aboutPrompt(this.board.state(), projectId, boardId) : '';
     // A board of several repos: where its tasks go, so a task made here lands in the right one.
     const repos = projectId && boardId ? reposPrompt(this.board.state(), boardId, projectId, this.repoName) : '';
-    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + repos + about + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
+    const along = channel.startsWith(WS) && issue ? this.alongNote(channel.slice(WS.length), issue) : '';
+    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + repos + along + about + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
     if (!opts.plan) return { tools, brief };
     this.pending.delete(channel);
     return {
@@ -714,7 +773,7 @@ export class BoardWork {
         // task's board and this repo's tasks (a board may cover several repos, a repo be on several boards).
         const asBoard = f.project ? boardByName(f.project) : undefined;
         const repo = f.project ? (asBoard ? undefined : projectByName(f.project)) : (current?.projectId ?? wsProject());
-        const onBoard = asBoard ?? (f.project ? repo : current ? boardOf(current) : repo ? boardForRepo(state(), repo) : undefined);
+        const onBoard = asBoard ?? (f.project ? repo : current ? boardOf(current) : repo);
         const found = filterIssues(state(), {
           scope: f.scope === 'mine' ? 'mine' : 'all',
           selfId: this.deps.selfId(),
@@ -728,7 +787,7 @@ export class BoardWork {
         if (input.board && !boardId) throw new Error(`There's no board called ${input.board}`);
         const projectId = input.project ? projectByName(input.project) : (parent?.projectId ?? current?.projectId ?? wsProject() ?? (boardId ? reposOf(state(), boardId)[0] : undefined));
         if (!projectId) throw new Error('Say which repo it runs in (project: its name)');
-        // On this task's board when it covers the repo (a sub-task goes on its parent's), else the board the repo's work goes on.
+        // On this task's board when it covers the repo (a sub-task goes on its parent's), else the repo's own.
         const onBoard = boardId ?? (parent ? boardOf(parent) : current && reposOf(state(), boardOf(current)).includes(projectId) ? boardOf(current) : undefined);
         const covered = onBoard ? reposOf(state(), onBoard).includes(projectId) : true;
         const brief: Partial<Record<BriefSection, string>> = {
@@ -835,9 +894,10 @@ const listOf = (input: string | readonly string[] | undefined): string | undefin
   return items.length ? items.map((l) => (/^[-*]\s/.test(l) ? l : `- ${l}`)).join('\n') : undefined;
 };
 
-/** What Claude is told when a task starts its worktree with Claude on it. */
-export function startPrompt(issue: Issue): string {
+/** What Claude is told when a task starts its worktree with Claude on it (`along`: the other repos an epic's worktrees were made in). */
+export function startPrompt(issue: Issue, along: readonly string[] = []): string {
   const lines = [`Work on ${issue.key}: ${issue.title}.`, `You're working on ${issue.key} in this worktree, on your own: carry it through to done.`];
+  if (along.length) lines.push(`Its sub-tasks run in ${andList(along)} too: a worktree there was made with this one, and you work in it as well (your instructions say where).`);
   const part = (label: string, text: string | undefined): void => {
     if (text?.trim()) lines.push('', label, text.trim());
   };

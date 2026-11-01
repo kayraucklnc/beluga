@@ -176,6 +176,12 @@ describe('WorkspaceController', () => {
     place.onSession('sess-1');
     expect(ctl.place(`ws:${ws.id}`)?.resume).toBe('sess-1');
     expect(ctl.place('room')).toBeUndefined();
+    // An epic's worktree (BLG-561): the board names other worktrees it works in; ones gone from disk are left out.
+    const stop = ctl.setAlsoIn((id) => (id === ws.id ? [repo, path.join(repo, 'gone')] : []));
+    expect(ctl.place(`ws:${ws.id}`)).toMatchObject({ additionalDirectories: [repo], alsoEdit: [repo] });
+    stop();
+    expect(ctl.place(`ws:${ws.id}`)).toMatchObject({ additionalDirectories: [] });
+    expect(ctl.place(`ws:${ws.id}`)?.alsoEdit).toBeUndefined();
     store.dispatch({ type: 'chat', id: 'm1', from: 'me', text: 'build it', ts: 1, byAgent: false, channel: `ws:${ws.id}` });
     await waitFor(() => ctl.manager.loadHistory(ws.id).length === 1, 3000);
     ctl.stop();

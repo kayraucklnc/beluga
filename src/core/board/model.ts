@@ -357,20 +357,15 @@ export function reposOf(board: Pick<BoardState, 'projects'>, boardId: string): r
   return isOwnBoard(boardId) ? more : [boardId, ...more.filter((r) => r !== boardId)];
 }
 
-/** Boards that cover a repo: its own first, then the others that name it. */
-export function boardsWithRepo(board: Pick<BoardState, 'projects'>, projectId: string): string[] {
-  return [projectId, ...Object.keys(board.projects).filter((id) => id !== projectId && reposOf(board, id).includes(projectId))];
-}
-
 /**
- * The board new work in a repo goes on when no one says which: the repo's own board, unless it has
- * nothing on it and another board covers the repo (its work moved there).
+ * Whether a board shows a task: every board shows the tasks on it, and a repo's own board also shows
+ * every task that runs in its repo from another board (a shade back, saying which board it's on), so
+ * nothing that runs in a repo goes missing from the repo's board.
  */
-export function boardForRepo(board: Pick<BoardState, 'projects' | 'issues'>, projectId: string): string {
-  const [own, ...others] = boardsWithRepo(board, projectId);
-  if (!others.length || board.issues.some((i) => boardOf(i) === own && !isArchived(i))) return own!;
-  return others[0]!;
-}
+export const showsOn = (issue: Pick<Issue, 'board' | 'projectId'>, boardId: string): boolean => boardOf(issue) === boardId || (!isOwnBoard(boardId) && issue.projectId === boardId);
+
+/** A task a board shows that's on another board (its repo's own board showing it, see `showsOn`). */
+export const isVisiting = (issue: Pick<Issue, 'board' | 'projectId'>, boardId: string): boolean => boardOf(issue) !== boardId && showsOn(issue, boardId);
 
 /** A board's name: its own, else its repo's (`repoName` finds a repo's name). */
 export function boardName(board: Pick<BoardState, 'projects'>, boardId: string, repoName: (projectId: string) => string | undefined): string {
@@ -523,6 +518,9 @@ export const blocking = (board: BoardState, issue: Issue): Issue[] => board.issu
 
 export const childrenOf = (board: BoardState, issue: Issue): Issue[] => board.issues.filter((i) => i.parent === issue.id).sort(byRank);
 
+/** The other repos an epic's unfinished sub-tasks run in: Start makes a worktree in each too (BLG-561). */
+export const reposAlong = (board: BoardState, epic: Issue): string[] => [...new Set(childrenOf(board, epic).filter((k) => k.projectId !== epic.projectId && isStartable(k)).map((k) => k.projectId))];
+
 /** An epic: a task with sub-tasks (worked out from the board, never stored). */
 export const isEpic = (board: Pick<BoardState, 'issues'>, issue: Pick<Issue, 'id'>): boolean => board.issues.some((i) => i.parent === issue.id);
 
@@ -555,6 +553,8 @@ export interface IssueFilter {
   readonly scope?: 'mine' | 'active' | 'backlog' | 'all' | 'archived';
   /** On this board. */
   readonly boardId?: string;
+  /** With `boardId` a repo's own board: also the tasks running in its repo from other boards (`showsOn`). */
+  readonly visiting?: boolean;
   /** Running in one of these repos (project ids). */
   readonly repos?: readonly string[];
   readonly query?: string;
@@ -579,7 +579,7 @@ export function filterIssues(board: BoardState, f: IssueFilter = {}): Issue[] {
   const now = f.now ?? Date.now();
   const within = f.closedWithin ?? WEEK;
   return board.issues
-    .filter((i) => (f.boardId ? boardOf(i) === f.boardId : true))
+    .filter((i) => (!f.boardId ? true : f.visiting ? showsOn(i, f.boardId) : boardOf(i) === f.boardId))
     .filter((i) => (f.repos ? f.repos.includes(i.projectId) : true))
     .filter((i) => (f.scope === 'archived') === isArchived(i))
     .filter((i) => {

@@ -13,7 +13,7 @@ import { useClock } from '../plans/use-plans.js';
 import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
 import { doneCount, dueText, onIt, onItTip, onItWords, toggleOpened } from './tasks-model.js';
-import { RepoChip, useSeveralRepos } from './boards.js';
+import { OnBoardChip, RepoChip, useSeveralRepos, useVisitingFrom } from './boards.js';
 import type { AppState, LogItem } from '@beluga/core/store.js';
 import { revealSubTasks, setTasksPrefs, tuckSubTasks, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import { teammatesOf, workingOn } from '@beluga/core/team/model.js';
@@ -46,6 +46,8 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const progress = { done, total };
   // On a board of several repos: which one it runs in.
   const several = useSeveralRepos(issue);
+  // On a repo's board from another board: which one it lives on.
+  const from = useVisitingFrom(issue);
   // The epic it's part of (its parent).
   const epicKey = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.key : undefined));
   const epicTitle = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.title : undefined));
@@ -129,7 +131,8 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
         </Tip>
       ) : null}
       <IssueMark issue={issue} compact={compact} />
-      {several ? <RepoChip projectId={issue.projectId} compact={compact} /> : null}
+      {from ? <OnBoardChip boardId={from} compact={compact} /> : null}
+      {several && !from ? <RepoChip projectId={issue.projectId} compact={compact} /> : null}
       {labels ? issue.labels.slice(0, compact ? 3 : 4).map((l) => <LabelChip key={l} label={l} projectId={boardOf(issue)} iconOnly={compact} />) : null}
       {due ? (
         <span className={cx(t.due, due.late && STATUS_INFO[issue.status].open && t.dueLate)}>

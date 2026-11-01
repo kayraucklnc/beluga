@@ -428,6 +428,15 @@ describe('the views of a known Mac', () => {
     expect(viewOf(state, ctx, 'task:nope')).toBeUndefined();
   });
 
+  it('tasks: a repo’s board also lists what runs in it from a board of several, saying which board (BLG-559)', () => {
+    const launch = { prefix: 'LNC', next: 2, name: 'Launch', repos: ['p1'] };
+    const more = { ...state, board: { ...state.board, projects: { ...state.board.projects, board_l: launch }, issues: [...state.board.issues, issue('v1', 'LNC-1', 'Hero copy', 'todo', { board: 'board_l' })] } };
+    const tasks = TasksView.parse(viewOf(more, ctx, 'tasks'));
+    const find = (board: string) => tasks.projects.find((p) => p.id === board)?.groups.flatMap((g) => g.tasks).find((t) => t.key === 'LNC-1');
+    expect(find('p1')).toMatchObject({ onBoard: 'Launch' });
+    expect(find('board_l')?.onBoard).toBeUndefined();
+  });
+
   it('tasks: the ones the lists leave out go by key, title and status, so a key in words is a chip (BLG-109)', () => {
     expect(TasksView.parse(viewOf(state, ctx, 'tasks')).others).toBeUndefined();
     const old = (n: number): Issue => issue(`d${n}`, `LND-${10 + n}`, `Done long ago ${n}`, 'done', { updatedAt: T0 + n, closedAt: T0 + n } as Partial<Issue>);

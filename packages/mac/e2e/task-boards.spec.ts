@@ -72,3 +72,82 @@ test('a board for two repos: tasks in each, a filter by repo, and a task moved b
   await expect(page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: 'landing' })).toBeVisible();
   await shot(page, '05-task-repo');
 });
+
+test('a repo’s board shows what runs in it from a board of several, saying which board, a click away (BLG-559)', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('button', { name: /^Board: / }).click();
+  await page.getByRole('menuitem', { name: 'New Board…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Board' });
+  await sheet.getByLabel('Name').fill('Copy Week');
+  await sheet.getByRole('checkbox', { name: /landing/ }).click();
+  await sheet.getByRole('button', { name: 'Create Board' }).click();
+  await expect(page.getByRole('button', { name: 'Board: Copy Week' })).toBeVisible();
+  await page.getByRole('button', { name: 'New Task', exact: true }).first().click();
+  const make = page.getByRole('dialog', { name: 'New Task' });
+  await make.getByRole('button', { name: 'Write title and goal myself' }).click();
+  await make.getByLabel('Title').fill('Hero copy');
+  await make.getByRole('combobox', { name: 'Repo' }).click();
+  await page.getByRole('option', { name: 'landing', exact: true }).click();
+  await make.getByRole('button', { name: 'Create Task' }).click();
+  await expect(make).toBeHidden();
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+
+  // landing's own board: Hero copy is there, saying it's on Copy Week.
+  await page.getByRole('button', { name: 'Board: Copy Week' }).click();
+  await page.getByRole('menuitem', { name: /^landing/ }).click();
+  await expect(page.getByRole('button', { name: 'Board: landing' })).toBeVisible();
+  const board = page.getByRole('list', { name: 'Board' });
+  await expect(board).toContainText('Hero copy');
+  const card = board.getByRole('button', { name: /Hero copy$/ });
+  const chip = card.getByRole('button', { name: 'On the Copy Week board' });
+  await expect(chip).toBeVisible();
+  await shot(page, '06-visiting-on-repo-board');
+  // The chip opens Copy Week, where it's at home (no chip).
+  await chip.click();
+  await expect(page.getByRole('button', { name: 'Board: Copy Week' })).toBeVisible();
+  await expect(board).toContainText('Hero copy');
+  await expect(card.getByRole('button', { name: 'On the Copy Week board' })).toHaveCount(0);
+});
+
+test('an epic across repos says so before Start, and after it works in each repo’s worktree (BLG-561)', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('button', { name: /^Board: / }).click();
+  await page.getByRole('menuitem', { name: 'New Board…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Board' });
+  await sheet.getByLabel('Name').fill('Fees Week');
+  await sheet.getByRole('checkbox', { name: /landing/ }).click();
+  await sheet.getByRole('button', { name: 'Create Board' }).click();
+  await expect(page.getByRole('button', { name: 'Board: Fees Week' })).toBeVisible();
+  await page.getByRole('button', { name: 'New Task', exact: true }).first().click();
+  const make = page.getByRole('dialog', { name: 'New Task' });
+  await make.getByRole('button', { name: 'Write title and goal myself' }).click();
+  await make.getByLabel('Title').fill('Fees everywhere');
+  await make.getByRole('combobox', { name: 'Repo' }).click();
+  await page.getByRole('option', { name: 'bob-api', exact: true }).click();
+  await make.getByRole('button', { name: 'Create Task' }).click();
+  await expect(make).toBeHidden();
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+  await page.getByRole('row', { name: /Fees everywhere/ }).click();
+
+  // A sub-task, moved to run in landing.
+  await page.getByLabel('New sub-task').fill('Fee page');
+  await page.getByLabel('New sub-task').press('Enter');
+  await page.getByText('Fee page', { exact: true }).click();
+  await page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: 'bob-api' }).click();
+  await page.getByRole('menuitem', { name: /^landing/ }).click();
+  await expect(page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: 'landing' })).toBeVisible();
+
+  // Back on the epic: Start says it works across both repos.
+  await openTasks(page);
+  await page.getByRole('row', { name: /Fees everywhere/ }).click();
+  await expect(page.getByText('A worktree in bob-api and landing from the latest origin')).toBeVisible();
+  await shot(page, '07-epic-across-repos');
+
+  // Started: a worktree in each repo, and the epic's page says it works in landing's too.
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(sidebar(page).getByText(/fees-everywhere/).first()).toBeVisible();
+  await openTasks(page);
+  await page.getByRole('row', { name: /Fees everywhere/ }).click();
+  await expect(page.getByText('also in landing')).toBeVisible();
+  await shot(page, '08-epic-started-across-repos');
+});

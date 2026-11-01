@@ -181,7 +181,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const syncMain = askOnly ? place?.syncMain : undefined;
       // A hidden worktree to fix a conflict in (a plan's head Claude, in its main-folder conversation).
       const fixup = place?.fixup;
-      const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, dotenv: Boolean(input.canUseSecret) && !input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
+      const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, dotenv: Boolean(input.canUseSecret) && !input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}), ...(place?.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
       // How the run ends, when it fails: Claude Code's stderr, a limit that said no, an API error.
       const stderr: string[] = [];
       const keepStderr = (data: string): void => keepLines(stderr, data, STDERR_KEEP);
