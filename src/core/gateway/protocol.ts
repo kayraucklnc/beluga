@@ -1,4 +1,4 @@
-import { AgentRef } from '../../protocol.js';
+import { AgentRef, ProviderUsage } from '../../protocol.js';
 import { z } from 'zod';
 
 /**
@@ -222,6 +222,8 @@ export const PeerCardMsg = z.object({
   projects: z.array(z.string().min(1).max(80)).max(60).default([]),
   /** My Claude is on. */
   claude: z.boolean().default(true),
+  /** How much of my plans I have left, one per provider (BLG-597): only to people I share it with. */
+  usages: z.array(ProviderUsage).max(8).optional(),
 });
 export type PeerCardMsg = z.infer<typeof PeerCardMsg>;
 

@@ -336,7 +336,9 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log, secret?}`, `task_cancel`,
   `task_question {id, qid, questions}` / `task_answer {id, qid, answers? | skip}`,
   `file_get {id, ref, offset}` / `file_chunk {id, ref, offset, b64, eof, error?}`, and `card` (your
-  trust in them, what your Beluga offers them, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
+  trust in them, what your Beluga offers them, your projects, your "Ask me for…" note, and how much
+  of your plans is left per provider, only to those Settings › Friends › Who sees your usage allows:
+  people you trust by default, never anyone blocked). Each rides in a frame `{f, m}` that
   the other side acknowledges (`{ack}`): over a mesh link as `gw`, in a room as a `gateway` body
   sent to one person. Requests, results and cancels wait in `~/.beluga/tasks/outbox.json` until
   acknowledged (resent every 20 s while reachable, 7 days at most); updates and cards are only

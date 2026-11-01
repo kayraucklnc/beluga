@@ -1,4 +1,4 @@
-import type { AgentRef } from '../../protocol.js';
+import type { AgentRef, ProviderUsage } from '../../protocol.js';
 import { type Capabilities, DEFAULT_CAPABILITIES, type Rule } from './access.js';
 import type { DialogueEnvelope, Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
 
@@ -143,6 +143,8 @@ export interface PeerCard {
   readonly offers: readonly Need[];
   readonly projects: readonly string[];
   readonly claude: boolean;
+  /** Their plan usage, per provider, when they share it with you (BLG-597). */
+  readonly usages?: readonly ProviderUsage[];
   readonly at: number;
 }
 
