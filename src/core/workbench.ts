@@ -577,13 +577,14 @@ export class Workbench {
   /**
    * Claude Code isn't signed in on this Mac: `claude auth login` in one of your shells (`key`, a
    * global shell the screen picked, so it shows it), and once it ends well the Claude that stopped
-   * in `channel` goes on where it left off.
+   * in `channel` goes on where it left off. `how`: a Claude subscription (the default) or an
+   * Anthropic Console account, the first two of Claude Code's own /login choices.
    */
-  async signInClaude(key: string, channel: string): Promise<{ ok: boolean; message: string }> {
+  async signInClaude(key: string, channel: string, how: 'claudeai' | 'console' = 'claudeai'): Promise<{ ok: boolean; message: string }> {
     if (!isGlobalShell(key)) return { ok: false, message: 'That isn’t one of your shells' };
     const ws = channel.startsWith('ws:') ? this.manager.find(channel.slice(3)) : undefined;
     this.closeTerminal(key);
-    const session = this.openSession(key, { path: ws?.path ?? os.homedir() }, `${shQuote(claudeCodeCommand())} auth login`);
+    const session = this.openSession(key, { path: ws?.path ?? os.homedir() }, `${shQuote(claudeCodeCommand())} auth login --${how}`);
     if (!session) return { ok: false, message: 'There’s no terminal here to run it in' };
     this.deps.store.dispatch({ type: 'terminal_name', id: key, name: 'Claude sign-in' });
     this.deps.toast('Sign in to Claude in your browser…');

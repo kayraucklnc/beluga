@@ -138,6 +138,7 @@ function ActionRows({ items, Item, Separator, kit = DROPDOWN_SUB }: { items: rea
                   <span className={s.label}>{it.label}</span>
                   <Icon name="chevronRight" size={10} className={s.subArrow} />
                 </span>
+                {it.hint ? <span className={`${s.hint} ${icons ? s.hintIndent : ''}`}>{it.hint}</span> : null}
               </kit.SubTrigger>
               <kit.Portal>
                 <kit.SubContent className={s.menu} sideOffset={2} alignOffset={-5} collisionPadding={8}>
