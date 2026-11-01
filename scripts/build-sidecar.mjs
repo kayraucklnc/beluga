@@ -92,8 +92,10 @@ const name = `node-v${NODE_VERSION}-${platform === 'win32' ? 'win' : platform}-$
 const archive = platform === 'win32' ? 'node.zip' : 'node.tar.gz';
 const inside = platform === 'win32' ? `${name}/node.exe` : `${name}/bin/node`;
 run('curl', ['-fsSL', '-o', path.join(tmp, archive), `https://nodejs.org/dist/v${NODE_VERSION}/${name}${platform === 'win32' ? '.zip' : '.tar.gz'}`]);
-// bsdtar (macOS, Windows 10 and later) reads zips too.
-run('tar', ['-xf', path.join(tmp, archive), '-C', tmp, inside]);
+// bsdtar (macOS, Windows 10 and later) reads zips too. On Windows, its own (System32's): Git Bash's
+// GNU tar, when it comes first on PATH, takes C:\ for a remote host.
+const tar = process.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+run(tar, ['-xf', path.join(tmp, archive), '-C', tmp, inside]);
 copyFileSync(path.join(tmp, inside), bin);
 chmodSync(bin, 0o755);
 rmSync(tmp, { recursive: true, force: true });

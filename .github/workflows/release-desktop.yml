@@ -52,13 +52,18 @@ jobs:
       - run: npm ci
         working-directory: packages/mac
       - name: Beluga's engine and Node, bundled
+        # PowerShell on Windows: its tar is Windows' own (Git Bash's GNU tar reads C:\ as a host).
+        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
         run: node scripts/build-sidecar.mjs
       - name: The app
         working-directory: packages/mac
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx tauri build
+          # linuxdeploy's strip is older than the binaries it strips (Node 24's): the AppImage skips it.
+          NO_STRIP: 'true'
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: npx tauri build --verbose
       - run: node scripts/release-desktop.mjs collect --tag "$TAG" --out release-out
       - uses: actions/upload-artifact@v4
         with:
