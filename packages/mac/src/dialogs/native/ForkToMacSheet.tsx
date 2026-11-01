@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import type { SharedFork } from '@beluga/core/friend-share-store.js';
 import { trustOf } from '@beluga/core/trust.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Field, FormSheet, TextInput } from '../../components/FormSheet.js';
 import { Icon, type IconName } from '../../components/Icon.js';
@@ -84,6 +86,41 @@ export function ForkToMacSheet({ owner, wsId, close }: { owner: string; wsId: st
 }
 
 /**
+ * A fork coming over, in the header: how much of it is here, with a bar that fills, then that it's
+ * being set up. Hover for the sizes and how many files are in it.
+ */
+function ForkProgress({ fork }: { fork: SharedFork }) {
+  const { total } = fork;
+  if (total === undefined) {
+    // A Mac on an older Beluga doesn't say how big it is.
+    return (
+      <Tip label="Its changes, Scratch and conversation are coming over">
+        <span className={s.progress} role="status">
+          <Icon name="laptop" size={14} />
+          Copying…
+        </span>
+      </Tip>
+    );
+  }
+  const received = Math.min(fork.received ?? 0, total);
+  const here = received >= total;
+  const pct = total ? Math.floor((received / total) * 100) : 100;
+  const files = fork.files ? `, ${fork.files} ${fork.files === 1 ? 'file' : 'files'}` : '';
+  const tip = here ? 'All here: making it a worktree of yours' : `${formatBytes(received)} of ${formatBytes(total)}: its commits${files} and the conversation`;
+  return (
+    <Tip label={tip}>
+      <span className={s.progress} role="progressbar" aria-label={here ? 'Setting up your fork' : 'Copying your fork'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+        <Icon name="laptop" size={14} />
+        {here ? 'Setting up…' : `Copying ${pct}%`}
+        <span className={s.bar} aria-hidden="true">
+          <span style={{ width: `${pct}%` }} />
+        </span>
+      </span>
+    </Tip>
+  );
+}
+
+/**
  * In a friend's worktree you work in (shared over the network), in its header: Fork to My Mac,
  * how far a fork got (waiting for their Mac, copying), and Open My Fork once it's made.
  */
@@ -104,12 +141,12 @@ export function ForkToMacButton({ owner, wsId }: { owner: string; wsId: string }
       </Tip>
     );
   }
-  if (fork?.state === 'asking' || fork?.state === 'copying') {
-    const label = fork.state === 'copying' ? 'Copying…' : online ? 'Packing…' : `Waiting for ${ownerName}’s Mac…`;
+  if (fork?.state === 'copying') return <ForkProgress fork={fork} />;
+  if (fork?.state === 'asking') {
     return (
-      <Tip label={fork.state === 'copying' ? 'Its changes, Scratch and conversation are coming over' : online ? `${ownerName}’s Mac is packing it` : 'It goes as soon as their Mac is back'}>
+      <Tip label={online ? `${ownerName}’s Mac is packing it` : 'It goes as soon as their Mac is back'}>
         <Button variant="quiet" icon="laptop" disabled aria-busy="true">
-          {label}
+          {online ? 'Packing…' : `Waiting for ${ownerName}’s Mac…`}
         </Button>
       </Tip>
     );
