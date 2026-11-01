@@ -67,7 +67,8 @@ export function submitTyped(c: SubmitContext, typed: string, urgent = false): vo
     }
   }
   if (latest.view.kind === 'draft_worktree' && !text.startsWith('/')) {
-    void api.workspaces.startWorktree(latest.view.projectId, text, terminal ? { terminal } : undefined);
+    const plan = latest.planMode.draft === true;
+    void api.workspaces.startWorktree(latest.view.projectId, text, terminal || plan ? { ...(terminal ? { terminal } : {}), ...(plan ? { plan } : {}) } : undefined);
     return;
   }
   const pending = ui.pending;
