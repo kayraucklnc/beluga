@@ -1,5 +1,5 @@
 import { dialogueHeader } from '../core/dialogues/view.js';
-import { agentPicker } from '../shared/agent-picker.js';
+import { agentPicker, pickedAgent } from '../shared/agent-picker.js';
 import { roomAgentTags } from '../shared/agent-tags.js';
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
@@ -992,6 +992,7 @@ export function taskPageView(state: DomainState, id: string, ctx?: ViewContext):
   const ws = i.worktrees.at(-1);
   const worktree = ws ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === ws)?.name : undefined;
   const { pr: _pr, ...rest } = summary;
+  const live = summary.conv ? pickedAgent(agentPicker(state, summary.conv.slice('conv:'.length), defaultAgentOf(state.self).runtime)) : undefined;
   return {
     ...rest,
     project: clip(project?.name ?? '', 200),
@@ -1014,8 +1015,9 @@ export function taskPageView(state: DomainState, id: string, ctx?: ViewContext):
     ...(worktree ? { worktree: clip(worktree, 200) } : {}),
     ...(i.pr ? { pr: { number: i.pr.number, state: i.pr.state, title: clip(plainLine(i.pr.title, 300), 300), checks: i.pr.checks } } : {}),
     moves: MOVES.filter((s) => s !== i.status).map((s) => ({ status: s, label: STATUS_INFO[s].label })),
-    // 1.35 (BLG-498): who works it (none: your default), and while it can still start, the list to change it from.
-    ...(i.agent ? { agent: agentRefView(i.agent) } : {}),
+    // Who works it (BLG-498), shown only (BLG-569): with a worktree on it, the agent and model running
+    // there (changed in its conversation); else its own (none: your default). The list is for Start with….
+    ...(live ? { agent: agentRefView(live) } : i.agent ? { agent: agentRefView(i.agent) } : {}),
     ...(isStartable(i) ? { agents: workPicker(state, i.agent) } : {}),
   };
 }

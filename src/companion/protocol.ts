@@ -711,7 +711,11 @@ export const TaskPageView = TaskSummary.extend({
   pr: z.object({ number: z.number().int().min(0), state: z.string().max(20), title: z.string().max(300), checks: z.string().max(20).optional() }).optional(),
   /** Where it may be moved from the phone (board.move), with their labels. */
   moves: z.array(z.object({ status: TaskStatus, label: z.string().max(40) })).max(10),
-  /** 1.35 (BLG-498): the agent that works it from its next start (none: your default), and while it can start, the list to change it from (`board.setAgent`). */
+  /**
+   * 1.35 (BLG-498): who works it (none: your default), and while it can start, every agent (for Start
+   * with…). BLG-569: with a worktree on it (`conv`), `agent` is the one running there, shown only (it's
+   * changed in that conversation); a newer phone no longer changes it from here (`board.setAgent`).
+   */
   agent: AgentRefView.optional(),
   agents: AgentPickerView.optional(),
 });

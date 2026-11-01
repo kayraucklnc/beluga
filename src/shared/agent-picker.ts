@@ -113,3 +113,9 @@ export function placeAgent(ws: { readonly agent?: AgentRef; readonly model?: str
   const { model: _m, ...ref } = base;
   return model ? { ...ref, model } : ref;
 }
+
+/** The agent and model a conversation runs on now, as an agent (what a task's page shows for its worktree). */
+export function pickedAgent(p: Pick<AgentPicker, 'runtime' | 'model' | 'groups'>): AgentRef {
+  const group = p.groups.find((g) => g.current);
+  return { runtime: p.runtime, label: group?.label ?? p.runtime, ...(p.model ? { model: p.model } : {}) };
+}
