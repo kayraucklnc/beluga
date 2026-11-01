@@ -452,7 +452,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     // Enter while an input method is composing (Japanese, Chinese…) picks the characters.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     // Shift-Tab switches between acting and planning first, as in Claude Code (not focus).
-    if (isShortcut('composer-mode', e) && channel !== 'draft' && !shared && !planHome) {
+    if (isShortcut('composer-mode', e) && !shared && !planHome) {
       e.preventDefault();
       setMode(nextMode(mode));
       return;
@@ -613,7 +613,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
                 <Icon name="chevronDown" size={9} />
               </button>
             </ActionsDropdown>
-          ) : channel !== 'draft' && !shared ? (
+          ) : !shared ? (
             <ActionsDropdown
               align="start"
               items={(['act', 'plan', 'tasks'] as const)
@@ -629,7 +629,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ) : null}
           {canRunHere && sharedWs ? <RunOnChip wsId={sharedWs.id} ownerName={state.sharedProjects.find((p) => p.owner === sharedWs.owner)?.ownerName ?? 'Their'} value={runOn} onChange={setRunOn} /> : null}
           {!shared ? <ModelPicker channel={channel} {...(draftProject ? { draft: worktree.agent, onDraft: (agent: AgentRef | undefined) => setWorktree({ ...worktree, agent }) } : {})} /> : null}
-          {!shared && channel !== 'draft' ? <McpChip /> : null}
+          {!shared ? <McpChip /> : null}
           {burning && state.prefs.effort === 'max' ? (
             <Tip label={`Max effort: ${agentHere} thinks as hard as it can`}>
               <span className={m.tag}>

@@ -43,7 +43,8 @@ export function submitTyped(c: SubmitContext, typed: string, urgent = false): vo
   }
   const terminal = c.toTerminal?.(channelOf(latest.view)) ?? false;
   if (latest.view.kind === 'draft' && !text.startsWith('/')) {
-    void (terminal ? api.workspaces.startChat(latest.view.projectId, text, latest.view.dir ?? null, { terminal }) : api.workspaces.startChat(latest.view.projectId, text, latest.view.dir));
+    const plan = latest.planMode.draft === true;
+    void (terminal || plan ? api.workspaces.startChat(latest.view.projectId, text, latest.view.dir ?? null, { ...(terminal ? { terminal } : {}), ...(plan ? { plan } : {}) }) : api.workspaces.startChat(latest.view.projectId, text, latest.view.dir));
     return;
   }
   if (latest.view.kind === 'draft_worktree' && !text.startsWith('/')) {
