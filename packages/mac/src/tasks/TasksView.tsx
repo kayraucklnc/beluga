@@ -11,7 +11,7 @@ import { TaskList } from './TaskList.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { PickMenu } from './PickMenu.js';
 import { type Display, SCOPES, ago, type Scope, assigneesIn, boardChoices, boardRepos, boardToShow, connected, doneCount, pickedRepos, reposLabel, scopeCounts, scoped, statusesFor, taskGraph, untucked } from './tasks-model.js';
-import { BoardMark, RepoStack } from './boards.js';
+import { BoardMark, RepoStack, useDeleteBoard } from './boards.js';
 import { useTaskFileDrop } from './use-task-drop.js';
 import { revealSubTasks, setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -42,6 +42,7 @@ export function TasksView() {
   const [query, setQuery] = useState('');
   const find = useRef<HTMLInputElement>(null);
   const { api, act, open, openList, openWorktreeTasks } = useTaskActions();
+  const deleteBoard = useDeleteBoard();
   const asked0 = view.kind === 'tasks' ? view.projectId : undefined;
   const boards = useMemo(() => boardChoices(board, projects, asked0 ?? prefs.board), [board, projects, asked0, prefs.board]);
   // `project` is the board shown: a repo's own board has the repo's id, so most of what follows reads the same.
@@ -234,6 +235,7 @@ export function TasksView() {
             { label: 'Open a Task for Every New Worktree', separate: true, checked: board.autoTasks, onSelect: () => void act(() => api.setAutoTasks(!board.autoTasks)) },
             { label: 'Archive Done Tasks', icon: 'archive', separate: true, disabled: !doneCount(board, project), onSelect: () => void act(() => api.archiveDone(project), 'Done tasks are in the Archive') },
             { label: 'Show Canceled Tasks', separate: true, checked: !prefs.folded.includes('canceled'), onSelect: () => setTasksPrefs({ folded: prefs.folded.includes('canceled') ? prefs.folded.filter((s) => s !== 'canceled') : [...prefs.folded, 'canceled'] }) },
+            ...(here.own ? [{ label: 'Delete Board…', icon: 'trash' as const, separate: true, danger: true, onSelect: () => deleteBoard(here.id) }] : []),
           ]}
         >
           <IconButton icon="more" label="Tasks Options" />

@@ -98,7 +98,8 @@ export const BOARD_API = {
   // Open a task for every new worktree (on by default).
   'board.setAutoTasks': { args: z.tuple([z.boolean()]) },
   // Boards and repos are many to many: a board of its own covering a few repos (→ its id), a board renamed or
-  // given other repos (a repo's own board too), and a board of its own removed once nothing is on it.
+  // given other repos (a repo's own board too), and a board of its own removed (its tasks go home to
+  // their repos' boards, keys kept → how many moved).
   'board.createBoard': { args: z.tuple([z.object({ name: z.string().min(1).max(60), repos, prefix: z.string().min(2).max(6).optional() })]) },
   'board.editBoard': { args: z.tuple([boardId, z.object({ name: z.string().max(60).optional(), repos: z.array(projectId).max(20).optional() })]) },
   'board.removeBoard': { args: z.tuple([boardId]) },

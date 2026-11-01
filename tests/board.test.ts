@@ -101,7 +101,32 @@ describe('boards and repos, many to many (BLG-500)', () => {
     expect(() => board.update(t.key, { projectId: 'nope' }, me)).toThrow(/project/);
   });
 
-  it('a board is renamed and given repos; one of its own goes only once it is empty', () => {
+  it('a board of its own, deleted with tasks on it: each goes home to its repo’s board, keys kept, families together', () => {
+    const { board, store } = setup();
+    const id = board.createBoard({ name: 'Launch', repos: ['api', 'land'] });
+    const page = board.create({ projectId: 'land', board: id, title: 'Pricing page' }, me);
+    const plans = board.create({ projectId: 'api', board: id, title: 'Plans endpoint' }, me);
+    const kid = board.create({ projectId: 'api', parent: page.id, title: 'Price API' }, me);
+    board.update(plans.key, { status: 'done' }, me);
+    board.archive(plans.key, me);
+    expect(board.removeBoard(id, me)).toBe(3);
+    const state = store.getState().board;
+    expect(state.projects[id]).toBeUndefined();
+    const get = (x: { id: string }) => state.issues.find((i) => i.id === x.id)!;
+    expect(boardOf(get(page))).toBe('land');
+    expect(get(page).board).toBeUndefined();
+    expect(boardOf(get(plans))).toBe('api');
+    expect(get(plans).key).toBe(plans.key);
+    // The sub-task stays with its parent, on land's board, which covers api from now on.
+    expect(boardOf(get(kid))).toBe('land');
+    expect(get(kid).parent).toBe(page.id);
+    expect(reposOf(state, 'land')).toContain('api');
+    expect(get(page).activity.at(-1)?.text).toMatch(/Launch was deleted/);
+    // Its prefix stays taken while its keys live on.
+    expect(() => board.createBoard({ name: 'Again', repos: ['api'], prefix: page.key.split('-')[0]! })).toThrow(/already start with/);
+  });
+
+  it('a board is renamed and given repos; one of its own can be deleted, a repo’s own cannot', () => {
     const { board, store } = setup();
     board.editBoard('api', { name: 'Payments', repos: ['land', 'api'] });
     expect(store.getState().board.projects.api).toMatchObject({ name: 'Payments', repos: ['land'] });
@@ -110,12 +135,9 @@ describe('boards and repos, many to many (BLG-500)', () => {
     expect(store.getState().board.projects.api).toEqual({ prefix: 'BOB', next: 1 });
     const id = board.createBoard({ name: 'Launch', repos: ['land'] });
     expect(() => board.editBoard(id, { repos: [] })).toThrow(/one repo/);
-    const t = board.create({ projectId: 'land', board: id, title: 'x' }, me);
-    expect(() => board.removeBoard(id)).toThrow(/still has tasks/);
-    board.remove(t.id);
-    board.removeBoard(id);
+    expect(board.removeBoard(id, me)).toBe(0);
     expect(store.getState().board.projects[id]).toBeUndefined();
-    expect(() => board.removeBoard('api')).toThrow(/Only a board you made/);
+    expect(() => board.removeBoard('api', me)).toThrow(/Only a board you made/);
   });
 
   it('keeps boards and where tasks run across a restart', () => {
