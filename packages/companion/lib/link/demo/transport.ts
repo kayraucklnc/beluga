@@ -243,7 +243,7 @@ export class DemoTransport implements Transport {
     }
     if (topic.startsWith('chat:')) {
       const c = w.chats.get(topic);
-      return c ? { topic, name: c.name, kind: c.kind, messages: c.messages, more: false, live: c.peer === 'mia' ? ['Mia'] : [], members: this.membersOf(topic) } : undefined;
+      return c ? { topic, name: c.name, kind: c.kind, messages: c.messages, more: false, live: c.peer === 'mia' ? ['Mia'] : [], members: this.membersOf(topic), ...(c.unread ? { unread: c.unread } : {}) } : undefined;
     }
     return undefined;
   }
@@ -539,6 +539,7 @@ export class DemoTransport implements Transport {
         if (chat) {
           chat.unread = 0;
           this.touch('chats');
+          this.touch(`chat:${str(0)}` as Topic);
         }
         return ok();
       }

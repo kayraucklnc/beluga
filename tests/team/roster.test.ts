@@ -94,4 +94,37 @@ describe('a team of three', () => {
     expect(names(kay, 'pk')).toEqual(['ata']);
     expect(mates(mia, 'pm')).toEqual([]);
   }, 120_000);
+
+  it('leaving while two friends on the team are still linking up: the late answer doesn’t put you back on it', async () => {
+    net = await crowd();
+    const ata = await teamMac(net, 'ata', [{ id: 'pa', name: 'api', repo: 'acme/api' }], withSync);
+    const kay = await teamMac(net, 'kay', [{ id: 'pk', name: 'api', repo: 'acme/api' }], withSync);
+    const mia = await teamMac(net, 'mia', [{ id: 'pm', name: 'api', repo: 'acme/api' }], withSync);
+    macs.push(ata, kay, mia);
+    await befriend(ata.person, kay.person);
+    await befriend(ata.person, mia.person);
+    await teamUp(ata, 'pa', kay, 'pk');
+    await teamUp(ata, 'pa', mia, 'pm');
+    await settle(() => names(kay, 'pk').length === 2 && names(mia, 'pm').length === 2);
+
+    // Kay's invite and answer to mia are held on the way: kay is linked with her, she isn't yet.
+    const held: Array<() => void> = [];
+    const send = kay.person.mesh.sendTeam.bind(kay.person.mesh);
+    kay.person.mesh.sendTeam = (peerId, payload) => {
+      const k = (payload as { m?: { k?: string } }).m?.k;
+      if (peerId !== mia.id || (k !== 'invite' && k !== 'accept')) return send(peerId, payload);
+      held.push(() => send(peerId, payload));
+      return true;
+    };
+    await befriend(kay.person, mia.person);
+    await settle(() => mates(kay, 'pk').find((m) => m.peerId === mia.id)?.indirect === undefined);
+    expect(held.length).toBeGreaterThan(0);
+
+    // She leaves, then what kay sent arrives.
+    mia.team.leave('pm');
+    for (const deliver of held.splice(0)) deliver();
+    await settle(() => names(kay, 'pk').length === 1 && names(ata, 'pa').length === 1);
+    expect(names(kay, 'pk')).toEqual(['ata']);
+    expect(mates(mia, 'pm')).toEqual([]);
+  }, 120_000);
 });

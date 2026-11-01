@@ -80,6 +80,27 @@ test('a chat with a friend opens scrolled all the way down', async ({ page }) =>
   await atBottom('bob');
 });
 
+test('what came in while you were away is marked when you come back, at the bottom (BLG-573)', async ({ page }) => {
+  await friend(page, 'bob').click();
+  const box = page.getByRole('textbox', { name: 'Message bob' });
+  await box.fill('Ping while I’m away');
+  await box.press('Enter');
+  // His answer lands while mia's chat is open: unread on his row.
+  await friend(page, 'mia').click();
+  await expect(friend(page, 'bob')).toHaveAccessibleName(/unread/, { timeout: 15_000 });
+  await friend(page, 'bob').click();
+  const log = page.getByRole('log', { name: 'Conversation with bob' });
+  await expect(log.getByText(/^(New message|\d+ new messages)$/)).toBeVisible();
+  await expect(log).toContainText('On it: “Ping while I’m away”');
+  await expect.poll(() => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThan(4);
+  await shot(page, 'unread-marked');
+  // Read now: the next visit has no line.
+  await friend(page, 'mia').click();
+  await friend(page, 'bob').click();
+  await expect(log).toContainText('On it: “Ping while I’m away”');
+  await expect(log.getByText(/^(New message|\d+ new messages)$/)).toHaveCount(0);
+});
+
 /** SHOTS=<folder>: save screenshots there. */
 const shot = async (page: Page, name: string): Promise<void> => {
   if (!process.env.SHOTS) return;

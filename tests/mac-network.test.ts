@@ -28,6 +28,8 @@ import {
   sortMembers,
   timeLeft,
   totalUnread,
+  unreadSince,
+  keepsFollowing,
   untilOf,
 } from '../packages/mac/src/network/net-model.js';
 
@@ -59,6 +61,29 @@ describe('conversations', () => {
     const b = msg('a', 2);
     const c = msg('a', 3);
     expect(mergeMessages([a, b], [b, c]).map((m) => m.ts)).toEqual([1, 2, 3]);
+  });
+
+  it('marks what came in since you last read: their last messages, up to where you came in (BLG-573)', () => {
+    const list = [msg('a', 1), msg('me', 2, { mine: true }), msg('a', 3), msg('b', 4), msg('me', 5, { mine: true })];
+    expect([...unreadSince(list, 2)]).toEqual(['a3', 'b4']);
+    expect([...unreadSince(list, 0)]).toEqual([]);
+    expect([...unreadSince(list, 9)]).toEqual(['a1', 'a3', 'b4']);
+    // What arrives while you're here was read as it came: the marks stay where you came in.
+    const later = [...list, msg('a', 6)];
+    expect([...unreadSince(later, 2, 'me5')]).toEqual(['a3', 'b4']);
+    expect([...unreadSince(later, 2, 'gone')]).toEqual(['b4', 'a6']);
+  });
+
+  it('keeps following the bottom until you scroll up, not when what grows under it pushes it (BLG-573)', () => {
+    const at = (top: number, height = 1000, client = 400) => ({ top, height, client });
+    expect(keepsFollowing(true, 600, at(600))).toBe(true);
+    // A picture loaded under the bottom: the log grew, scrollTop didn't move.
+    expect(keepsFollowing(true, 600, at(600, 1300))).toBe(true);
+    // You scrolled up.
+    expect(keepsFollowing(true, 600, at(500))).toBe(false);
+    expect(keepsFollowing(false, 500, at(520))).toBe(false);
+    // Back at the bottom.
+    expect(keepsFollowing(false, 500, at(580))).toBe(true);
   });
 
   it('labels days like Messages', () => {

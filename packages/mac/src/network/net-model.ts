@@ -273,6 +273,21 @@ export function mergeMessages(earlier: readonly MessageView[], latest: readonly 
   return [...earlier.filter((m) => !ids.has(m.id)), ...latest];
 }
 
+export { unreadLine, unreadSince } from '../../../../src/shared/unread.js';
+
+/** Close enough to the bottom of a log to count as there. */
+const BOTTOM_SLACK = 48;
+
+/**
+ * Whether a log keeps following the bottom after it scrolled (`before`: where it was): at the
+ * bottom it does; scrolled up, it stops; pushed by what grew under it (pictures loading), as it was.
+ */
+export function keepsFollowing(was: boolean, before: number, now: { readonly top: number; readonly height: number; readonly client: number }): boolean {
+  if (now.height - now.top - now.client < BOTTOM_SLACK) return true;
+  if (now.top < before) return false;
+  return was;
+}
+
 // ---- away when idle
 
 /** Minutes without using the Mac before your status turns to Away by itself. */

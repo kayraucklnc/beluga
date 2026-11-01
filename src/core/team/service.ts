@@ -298,6 +298,9 @@ export class TeamBoards {
       this.send(link.peerId, { k: 'leave', link: link.id, ...(all ? { all: true as const } : {}) });
       this.drop(link);
     }
+    // A teammate's link still on its way (asked, not yet accepted) goes too: its late accept gets a
+    // leave back instead of putting you on the team you just left.
+    if (all) this.withdrawAsked(projectId);
     const repo = this.repos.get(projectId)?.label ?? this.projectName(projectId);
     this.deps.toast?.(gone.length === 1 ? `You left the team with ${this.nameOf(gone[0]!.peerId)} on ${repo}` : `You left the team on ${repo}`, 'success');
   }
@@ -395,6 +398,15 @@ export class TeamBoards {
       this.deps.notify?.({ kind: 'people', tag: 'joined', title: `${m.name} joined the ${repo} team`, body: `${this.nameOf(link.peerId)} passed it on: their tasks for it stay in step with yours.`, key: `team-member:${link.projectId}:${m.peerId}:${m.since}` });
     }
     this.shareRoster(link.projectId, link.peerId);
+  }
+
+  /** Invites of mine to a project's team that wait for an answer: not offered again by themselves. */
+  private withdrawAsked(projectId: string): void {
+    const asked = Object.entries(this.offers).filter(([, o]) => o.projectId === projectId && o.state === 'asked');
+    if (!asked.length) return;
+    this.offers = { ...this.offers, ...Object.fromEntries(asked.map(([key, o]) => [key, { peerId: o.peerId, projectId, state: 'found' as const, at: this.now(), dismissed: true }])) };
+    this.save();
+    this.publish();
   }
 
   private drop(link: TeamLink): void {

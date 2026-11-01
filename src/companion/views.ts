@@ -1366,6 +1366,7 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
   const people = chatPeopleOf(state, conversation, dm, group);
   const waiting = waitingIn({ conversation, tasks: state.gateway.tasks, approvals: state.approvals });
   const note = offlineNote(people);
+  const unread = dm ? dm.unread : group?.active ? group.unread : 0;
   return {
     topic,
     name: clip(dm?.name ?? group?.name ?? 'Chat', 100),
@@ -1376,6 +1377,7 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
     members: chatMembers(state, dm, group, people),
     ...(waiting.length ? { waiting: waiting.slice(0, 10).map((w) => ({ text: clip(waitingLabel(w), 300), you: w.on === 'you', ...(w.target.kind === 'task' ? { task: clip(w.target.id, 200) } : {}) })) } : {}),
     ...(note ? { note: clip(note, 200) } : {}),
+    ...(unread ? { unread } : {}),
   };
 }
 

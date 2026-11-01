@@ -19,7 +19,7 @@ import { MessageFiles } from './ChatFiles.js';
 import { ChatTabs } from './ChatTabs.js';
 import { addBlobs, addPaths } from './attachments.js';
 import { type RunPlace, askedLine, authorLabel, channelName, channelWorld, isMain, liveIn, liveLine, runPlaces } from './chat-model.js';
-import { conversationOf, dayLabel, membersLine, mergeMessages, presenceLine, sameDay, shownState } from './net-model.js';
+import { conversationOf, dayLabel, keepsFollowing, membersLine, mergeMessages, presenceLine, sameDay, shownState, unreadLine, unreadSince } from './net-model.js';
 import { showWaiting, useChatPeople } from './use-chat-people.js';
 import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork, useSay } from './use-net.js';
@@ -416,24 +416,30 @@ function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
 /**
  * Keeps the log at the bottom while you're there; leaves it alone while you read further up.
  * Opening a conversation starts at the bottom, and stays there while what's drawn after the first
- * paint (pictures, code, task cards, the log's own height) grows under it.
+ * paint (pictures, code, task cards, the log's own height) grows under it. Only scrolling up lets
+ * go: what grows under the bottom moves no scroll position, so it never reads as you leaving it.
  */
 function useStickToBottom(dep: unknown, key: string) {
   const [log, ref] = useState<HTMLDivElement | null>(null);
   const stick = useRef(true);
   const shown = useRef(key);
+  const top = useRef(0);
+  const toBottom = (el: HTMLDivElement): void => {
+    el.scrollTop = el.scrollHeight;
+    top.current = el.scrollTop;
+  };
   useLayoutEffect(() => {
     // A new conversation starts at the bottom (reset here, before scrolling, not in a later effect).
     if (shown.current !== key) {
       shown.current = key;
       stick.current = true;
     }
-    if (log && stick.current) log.scrollTop = log.scrollHeight;
+    if (log && stick.current) toBottom(log);
   }, [dep, key, log]);
   useEffect(() => {
     if (!log || typeof ResizeObserver === 'undefined') return;
     const pin = (): void => {
-      if (stick.current) log.scrollTop = log.scrollHeight;
+      if (stick.current) toBottom(log);
     };
     const sizes = new ResizeObserver(pin);
     sizes.observe(log);
@@ -448,7 +454,9 @@ function useStickToBottom(dep: unknown, key: string) {
     };
   }, [log]);
   const onScroll = (): void => {
-    if (log) stick.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+    if (!log) return;
+    stick.current = keepsFollowing(stick.current, top.current, { top: log.scrollTop, height: log.scrollHeight, client: log.clientHeight });
+    top.current = log.scrollTop;
   };
   return { ref, onScroll };
 }
@@ -564,6 +572,12 @@ function Conversation({ id }: { id: string }) {
   }, [latest.length]);
   const messages = useMemo(() => mergeMessages(older.list, latest), [older.list, latest]);
   const more = latest.length >= KEPT && older.more;
+  // What was new when you came in, kept from the first look: the count goes to 0 as soon as the
+  // daemon sees this conversation shown (BLG-573).
+  const unreadNow = friend ? friend.unread : group?.active ? group.unread : 0;
+  const [entry, setEntry] = useState({ id, count: unreadNow, upTo: latest.at(-1)?.id });
+  if (entry.id !== id) setEntry({ id, count: unreadNow, upTo: latest.at(-1)?.id });
+  const unread = useMemo(() => (entry.id === id ? unreadSince(messages, entry.count, entry.upTo) : new Set<string>()), [messages, entry, id]);
   const { ref, onScroll } = useStickToBottom(messages, id);
   const writable = Boolean(friend || group?.active);
   const drop = useFileDrop(id, writable);
@@ -621,6 +635,8 @@ function Conversation({ id }: { id: string }) {
   const nameOf = (peerId: string): string => net.friends.find((f) => f.peerId === peerId)?.name ?? group?.members.find((m) => m.peerId === peerId)?.name ?? 'someone';
   const title = group ? channelName(net, group) : (friend?.name ?? '');
   const note = offlineNote(here);
+  const firstUnread = messages.find((m) => unread.has(m.id))?.id;
+  const lastUnread = messages.findLast((m) => unread.has(m.id))?.id;
 
   return (
     <div ref={drop.ref} className={cx(s.conversation, drop.over && s.dropping)} {...drop.html}>
@@ -643,7 +659,8 @@ function Conversation({ id }: { id: string }) {
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              {m.task ? offered.has(m.task.id) ? null : <TaskMessage id={m.task.id} plain={plain} {...(me ? { me } : {})} /> : plain}
+              {m.id === firstUnread ? <div className={s.unreadLine}>{unreadLine(unread.size)}</div> : null}
+              <div className={cx(unread.has(m.id) && s.unread, m.id === lastUnread && s.unreadEnd)}>{m.task ? offered.has(m.task.id) ? null : <TaskMessage id={m.task.id} plain={plain} {...(me ? { me } : {})} /> : plain}</div>
             </div>
           );
         })}
