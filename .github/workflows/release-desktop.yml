@@ -11,6 +11,13 @@ on:
       tag:
         description: The release's tag (v1.9.0-mac)
         required: true
+      updates:
+        description: Sign the updates (needs the TAURI_SIGNING_PRIVATE_KEY secrets to match the Mac's key); off, the installers can't update themselves
+        type: boolean
+        default: true
+      linux:
+        description: Linux packages to build
+        default: deb,rpm,appimage
 
 permissions:
   contents: write
@@ -36,6 +43,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+      - name: The release scripts as this workflow has them (a re-run for an older tag gets their fixes)
+        run: |
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout "$GITHUB_SHA" -- scripts/release-desktop.mjs scripts/release-mac.mjs scripts/build-sidecar.mjs
       - name: Linux's web view, tray and packaging libraries
         if: runner.os == 'Linux'
         run: |
@@ -52,13 +63,39 @@ jobs:
       - run: npm ci
         working-directory: packages/mac
       - name: Beluga's engine and Node, bundled
+        if: runner.os != 'Windows'
+        run: node scripts/build-sidecar.mjs
+      - name: Beluga's engine and Node, bundled (Windows)
+        # PowerShell: its tar is Windows' own (Git Bash's GNU tar reads C:\ as a host).
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: node scripts/build-sidecar.mjs
       - name: The app
         working-directory: packages/mac
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx tauri build
+          # Signed updates unless the run said not to (a release always signs them).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ (github.event_name == 'release' || inputs.updates) && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ (github.event_name == 'release' || inputs.updates) && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          # ('0', not '': an empty string is false in an expression, so && '' || '1' always gave '1'.)
+          UNSIGNED: ${{ (github.event_name == 'release' || inputs.updates) && '0' || '1' }}
+          LINUX_BUNDLES: ${{ inputs.linux || 'deb,rpm,appimage' }}
+          # linuxdeploy's strip is older than the binaries it strips (Node 24's): the AppImage skips it.
+          NO_STRIP: 'true'
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          args=(--verbose)
+          [ "$RUNNER_OS" = Linux ] && args+=(--bundles "$LINUX_BUNDLES")
+          [ "$UNSIGNED" = 1 ] && args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+          npx tauri build "${args[@]}"
+      - name: Why the AppImage failed (ldd on every binary in it)
+        if: failure() && runner.os == 'Linux'
+        working-directory: packages/mac/src-tauri/target/release/bundle/appimage
+        run: |
+          ls
+          find . -type f -print0 | while IFS= read -r -d '' f; do
+            head -c 4 "$f" 2>/dev/null | grep -q $'\x7fELF' || continue
+            out=$(ldd "$f" 2>&1) || echo "LDD FAILS: $f :: $(file -b "$f") :: $out"
+          done
       - run: node scripts/release-desktop.mjs collect --tag "$TAG" --out release-out
       - uses: actions/upload-artifact@v4
         with:

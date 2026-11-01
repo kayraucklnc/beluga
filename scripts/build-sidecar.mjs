@@ -57,6 +57,12 @@ rmSync(path.join(out, 'package-lock.json'), { force: true });
 // the relay fallback first needs it), mathjax's es5 build (math-svg.ts uses mathjax-full/js), and
 // whisper's C++ sources and wasm fallback (the native build is there).
 for (const dir of ['cloudflared/bin', 'mathjax-full/es5', '@fugood/whisper.node/src', '@fugood/node-whisper-wasm']) rmSync(path.join(out, 'node_modules', dir), { recursive: true, force: true });
+// Nor whisper's GPU builds (CUDA, Vulkan, Snapdragon): voice.ts loads its default build. On Linux
+// they're most of the app's size, and the CUDA one needs NVIDIA's libcudart, which the AppImage can't find.
+{
+  const fugood = path.join(out, 'node_modules', '@fugood');
+  if (existsSync(fugood)) for (const name of readdirSync(fugood)) if (/^node-whisper-.+-(cuda|vulkan|snapdragon)$/.test(name)) rmSync(path.join(fugood, name), { recursive: true, force: true });
+}
 // Nor type declarations, source maps, TypeScript sources or docs (licenses stay).
 const junk = /\.(d\.[cm]?ts|[cm]?ts|map|md|markdown)$/i;
 const strip = (dir) => {
@@ -73,7 +79,8 @@ const prune = (dir) => {
     if (!e.isDirectory()) continue;
     const p = path.join(dir, e.name);
     if (e.name === 'prebuilds') {
-      for (const plat of readdirSync(p)) if (!plat.startsWith(`${platform}-${arch}`) && plat !== platform) rmSync(path.join(p, plat), { recursive: true, force: true });
+      // Musl builds (Alpine) aren't for this app, which runs on glibc: linuxdeploy can't even read them.
+      for (const plat of readdirSync(p)) if ((!plat.startsWith(`${platform}-${arch}`) && plat !== platform) || plat.includes('musl')) rmSync(path.join(p, plat), { recursive: true, force: true });
     } else prune(p);
   }
 };
@@ -92,8 +99,10 @@ const name = `node-v${NODE_VERSION}-${platform === 'win32' ? 'win' : platform}-$
 const archive = platform === 'win32' ? 'node.zip' : 'node.tar.gz';
 const inside = platform === 'win32' ? `${name}/node.exe` : `${name}/bin/node`;
 run('curl', ['-fsSL', '-o', path.join(tmp, archive), `https://nodejs.org/dist/v${NODE_VERSION}/${name}${platform === 'win32' ? '.zip' : '.tar.gz'}`]);
-// bsdtar (macOS, Windows 10 and later) reads zips too.
-run('tar', ['-xf', path.join(tmp, archive), '-C', tmp, inside]);
+// bsdtar (macOS, Windows 10 and later) reads zips too. On Windows, its own (System32's): Git Bash's
+// GNU tar, when it comes first on PATH, takes C:\ for a remote host.
+const tar = process.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+run(tar, ['-xf', path.join(tmp, archive), '-C', tmp, inside]);
 copyFileSync(path.join(tmp, inside), bin);
 chmodSync(bin, 0o755);
 rmSync(tmp, { recursive: true, force: true });

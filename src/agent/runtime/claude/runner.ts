@@ -98,9 +98,12 @@ export function usageOf(modelUsage: Record<string, { inputTokens: number; output
   return { input: sum((u) => u.inputTokens), output: sum((u) => u.outputTokens), cacheRead: sum((u) => u.cacheReadInputTokens), cacheWrite: sum((u) => u.cacheCreationInputTokens), cost, session };
 }
 
+/** Claude Code's name for a model, without its "(recommended)": the picker says "Default", not "Default (recommended)". */
+const plainModelName = (name: string): string => name.replace(/\s*\(recommended\)\s*$/i, '') || name;
+
 /** Friendly rows for the model picker from Claude Code's own list. */
 export function toModelChoices(models: ReadonlyArray<{ value: string; displayName: string; description: string; supportedEffortLevels?: readonly string[] }>) {
-  return models.map((m) => ({ value: m.value === 'default' ? '' : m.value, label: m.displayName, description: m.description, ...(m.supportedEffortLevels ? { efforts: m.supportedEffortLevels } : {}) }));
+  return models.map((m) => ({ value: m.value === 'default' ? '' : m.value, label: plainModelName(m.displayName), description: m.description, ...(m.supportedEffortLevels ? { efforts: m.supportedEffortLevels } : {}) }));
 }
 
 /**
