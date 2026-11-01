@@ -54,12 +54,12 @@ function collect({ tag, out }) {
   if (!offered.length) throw new Error(`Nothing to offer in ${bundle}: did tauri build run?`);
   mkdirSync(out, { recursive: true });
   for (const f of offered) copyFileSync(f, path.join(out, assetName(path.basename(f), conf.productName)));
+  const key = platformKey(os, process.arch);
   // Installed copies update from the signed build (the AppImage, the Windows installer): without
   // its signature (a run that didn't sign) the packages are still offered, and latest.json skips it.
   if (update && existsSync(`${update}.sig`)) {
     const name = assetName(path.basename(update), conf.productName);
     copyFileSync(`${update}.sig`, path.join(out, `${name}.sig`));
-    const key = platformKey(os, process.arch);
     writeFileSync(path.join(out, `${key}.json`), `${JSON.stringify({ key, version: conf.version, signature: readFileSync(`${update}.sig`, 'utf8').trim(), url: assetUrl(tag, name) }, null, 2)}\n`);
   } else console.warn(`release-desktop: no signed update for ${os}; installed copies won't update to this one`);
   console.log(`Collected for ${key}:\n${readdirSync(out).map((f) => `  ${f}`).join('\n')}`);
