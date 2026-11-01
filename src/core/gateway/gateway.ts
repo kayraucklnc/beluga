@@ -433,17 +433,19 @@ export class Gateway {
 
   /**
    * A dialogue stopped on this side (BLG-468): its turn in flight with them stops (sent: cancelled;
-   * received: halted), and their side hears so it ends there too, between turns as well.
+   * received: halted), and their side hears so it ends there too, between turns as well. They hear
+   * of the stop before the halted turn's result: read first, that result would end it there as a
+   * failed turn instead (frames to one person arrive in order, but not always in one read).
    */
   stopDialogue(peerId: string, dialogue: string, why: string): void {
     const tasks = this.book.all().filter((t) => t.peerId === peerId && t.dialogue?.id === dialogue).sort((a, b) => a.createdAt - b.createdAt);
+    const last = tasks.at(-1);
+    if (last) this.courier.send(peerId, { t: 'task_cancel', id: last.id, dialogue: { id: dialogue, why: oneLine(why, 300) }, ts: this.now() }, true);
     for (const t of tasks) {
       if (isFinal(t.state)) continue;
       if (t.direction === 'sent') this.cancel(t.id);
       else this.server.stopTask(t.id);
     }
-    const last = tasks.at(-1);
-    if (last) this.courier.send(peerId, { t: 'task_cancel', id: last.id, dialogue: { id: dialogue, why: oneLine(why, 300) }, ts: this.now() }, true);
   }
 
   private onDialogueStop(from: string, taskId: string, d: { readonly id: string; readonly why: string }): void {

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDemoWorkspaces } from '../../src/demo.js';
-import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
+import { type Crowd, SLOW, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Mac, mac } from './helpers.js';
 
 /** BLG-341: handing a worktree to a friend who isn't in your room, over the Beluga network. */
@@ -64,7 +64,7 @@ describe('handing a worktree to a friend outside your room', () => {
     await settle(() => ata.store.getState().sharedProjects.some((p) => p.worktrees.some((w) => w.id === theirs.id)) || undefined);
     // Its branch bundle never showed up as a folder kay shares with ata.
     expect(ata.store.getState().friendFolders).toEqual([]);
-  }, 60_000);
+  }, 60_000 * SLOW);
 
   it('a decline comes back over the network too', async () => {
     net = await crowd();
@@ -80,5 +80,5 @@ describe('handing a worktree to a friend outside your room', () => {
     kay.session.answerApproval('no');
     await settle(() => ata.store.getState().log.find((l) => l.type === 'system' && l.text.includes("didn't take it over: declined")));
     expect(ata.session.workspaces!.manager.find(ws.id)?.handedTo).toBeUndefined();
-  }, 60_000);
+  }, 60_000 * SLOW);
 });

@@ -38,7 +38,8 @@ export function trustFolder(dir: string, file = claudeJson()): void {
   }
   if (!config || typeof config !== 'object') return;
   const projects = (config.projects ??= {});
-  const keys = pathVariants(dir);
+  // On Windows Claude Code keys its projects with forward slashes (C:/Users/…): both spellings.
+  const keys = [...new Set(pathVariants(dir).flatMap((k) => (process.platform === 'win32' ? [k, k.replaceAll('\\', '/')] : [k])))];
   if (keys.some((k) => projects[k]?.hasTrustDialogAccepted === true)) return;
   for (const k of keys) projects[k] = { ...projects[k], hasTrustDialogAccepted: true };
   const tmp = `${file}.beluga-${process.pid}.tmp`;

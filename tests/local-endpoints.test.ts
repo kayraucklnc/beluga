@@ -56,7 +56,8 @@ describe('local endpoints: kept like your other secrets', () => {
     const id = env.saveEndpoint({ label: 'Work proxy', baseUrl: 'https://llm.example.com/', key: 'sk-secret', models: ['big', ' big ', 'small'] });
     expect(id).toBe('work-proxy');
     expect(env.endpoints()[0]).toEqual({ id, label: 'Work proxy', baseUrl: 'https://llm.example.com', key: 'sk-secret', models: ['big', 'small'] });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     env.saveEndpoint({ id, label: 'Proxy', baseUrl: 'https://llm.example.com' });
     expect(env.endpoints()[0]).toMatchObject({ label: 'Proxy', key: 'sk-secret', models: ['big', 'small'] });
     env.saveEndpoint({ id, label: 'Proxy', baseUrl: 'https://llm.example.com', key: '' });

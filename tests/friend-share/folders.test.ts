@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
+import { type Crowd, SLOW, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Mac, mac } from './helpers.js';
 
 /** BLG-205: a folder shared with a friend over the network shows in their Files, read-only, secrets never. */
@@ -59,5 +59,5 @@ describe('a folder shared with a friend over the network', () => {
     ata.session.unshareFolder(name);
     await settle(() => !kay.store.getState().friendFolders.length);
     expect(kay.store.getState().browser.rows.some((r) => r.target !== 'up' && r.target.share === name)).toBe(false);
-  }, 60_000);
+  }, 60_000 * SLOW);
 });

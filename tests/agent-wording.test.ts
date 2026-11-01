@@ -32,7 +32,8 @@ function offenders(root: string): string[] {
     }
   };
   const check = (file: string): void => {
-    const rel = path.relative(repo, file);
+    // Forward slashes on Windows too, as FILES names them.
+    const rel = path.relative(repo, file).split(path.sep).join('/');
     if (FILES.includes(rel)) return;
     const lines = readFileSync(file, 'utf8').split('\n');
     let comment = false;

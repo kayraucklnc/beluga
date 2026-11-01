@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { encodeProjectDir } from '../../src/agent/runtime/claude/claude-sessions.js';
 import { createDemoWorkspaces } from '../../src/demo.js';
 import type { LogItem } from '../../src/core/store.js';
-import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
+import { type Crowd, SLOW, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Mac, mac } from './helpers.js';
 
 /** BLG-312: a friend forks one of your shared worktrees to their own Mac, changes, Scratch, conversation and Claude's session with it. */
@@ -89,7 +89,7 @@ describe('forking a friend’s worktree to your Mac', () => {
     expect(git(theirs.path, 'status', '--porcelain')).toBe(statusBefore);
     expect(git(theirs.path, 'for-each-ref', 'refs/beluga-fork')).toBe('');
     expect(ata.store.getState().log.some((l) => l.type === 'system' && l.channel === `ws:${theirs.id}` && l.text.startsWith('kay forked this worktree'))).toBe(true);
-  }, 60_000);
+  }, 60_000 * SLOW);
 
   it('someone who only follows along can’t fork', async () => {
     net = await crowd();
@@ -102,5 +102,5 @@ describe('forking a friend’s worktree to your Mac', () => {
     ata.session.sharing.shareWithFriend({ peerId: kay.id, workspaceId: ws.id, role: 'view' });
     await settle(() => kay.store.getState().sharedProjects[0]);
     await expect(kay.shares.fork(ata.id, ws.id)).rejects.toThrow(/Can work here/);
-  }, 30_000);
+  }, 30_000 * SLOW);
 });

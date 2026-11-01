@@ -111,7 +111,10 @@ describe('launching the agent’s terminal', () => {
     const after = JSON.parse(readFileSync(file, 'utf8'));
     expect(after.theme).toBe('dark');
     expect(after.projects['/other']).toEqual({ allowedTools: ['x'] });
-    expect(after.projects['/work/tree']).toEqual({ hasTrustDialogAccepted: true });
+    // The folder as the platform spells it (D:\work\tree on Windows), and as Claude Code there does (D:/work/tree).
+    const tree = path.resolve('/work/tree');
+    expect(after.projects[tree]).toEqual({ hasTrustDialogAccepted: true });
+    expect(after.projects[tree.replaceAll('\\', '/')]).toEqual({ hasTrustDialogAccepted: true });
     writeFileSync(file, '{ broken');
     trustFolder('/work/tree', file);
     expect(readFileSync(file, 'utf8')).toBe('{ broken');
