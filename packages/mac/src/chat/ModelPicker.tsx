@@ -3,6 +3,7 @@ import { EFFORTS, type Effort } from '@beluga/shared/settings-schema.js';
 import { useState } from 'react';
 import type { AppState } from '@beluga/core/store.js';
 import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
+import { type HandoffMode, limitHit, needsHandoff } from '@beluga/shared/agent-handoff.js';
 import { type AgentMark, modelMark, runtimeMark } from '@beluga/shared/agent-marks.js';
 import { type AgentPicker, type PickerGroup, type PickerState, agentPicker, pickAction } from '@beluga/shared/agent-picker.js';
 import type { RuntimeModel } from '@beluga/shared/agent-runtimes.js';
@@ -96,6 +97,29 @@ function flavor(value: string, label: string, runtime: string): string {
 
 export const samePicker = (a: AgentPicker, b: AgentPicker): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+/** What a move to another runtime needs to know of a conversation: whose session it holds, and whether its agent is at its plan limit. */
+interface Carried {
+  readonly live: boolean;
+  readonly sessionRuntime?: string;
+  readonly limited: boolean;
+}
+
+function carriedOf(st: AppState, channel: string): Carried {
+  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  const ws = id ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) : undefined;
+  if (!ws || (!ws.sessionId && !ws.forkFromSession)) return { live: false, limited: false };
+  return { live: true, ...(ws.sessionRuntime ? { sessionRuntime: ws.sessionRuntime } : {}), limited: limitHit(st.log, channel) !== undefined };
+}
+
+const sameCarried = (a: Carried, b: Carried): boolean => a.live === b.live && a.sessionRuntime === b.sessionRuntime && a.limited === b.limited;
+
+/** A move waiting on how (BLG-592): to an agent that can't read this conversation's session. */
+interface Move {
+  readonly agent: AgentRef | null;
+  readonly to: string;
+  readonly from: string;
+}
+
 /**
  * The agent for this conversation, and how hard it thinks, in one popover (BLG-446): your default
  * agent's models first, as rows with what they're good at; the other runtimes one tap away under
@@ -107,7 +131,9 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
   // Only what the picker shows (not the whole state): not drawn again on every streamed event (KLD-48).
   const picker = useApp((st) => agentPicker(pickerState(st), channel, myRuntime(st.prefs), draft), samePicker);
   const effort = useApp((st) => st.prefs.effort);
+  const carried = useApp((st) => carriedOf(st, channel), sameCarried);
   const [others, setOthers] = useState(() => picker.groups.some((g) => !g.isDefault && g.current));
+  const [move, setMove] = useState<Move>();
   const conversation = picker.conversation;
   const groups = picker.groups;
   const home = groups.find((g) => g.isDefault);
@@ -130,7 +156,16 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
     // New conversations: your agent's model (Claude's is the model setting; another runtime's goes with the agent).
     if (action?.kind === 'model' && !conversation) setMyAgent(api, g.runtime, g.label, action.value);
     else if (action?.kind === 'model') void api.workbench.setModel(conversation, action.value);
-    else if (action?.kind === 'agent' && conversation) void api.workbench.setAgent(conversation, action.agent);
+    else if (action?.kind === 'agent' && conversation) {
+      // The new agent can't read this conversation: you choose how it goes on (BLG-592).
+      const live = { sessionId: 'live', ...(carried.sessionRuntime ? { sessionRuntime: carried.sessionRuntime } : {}) };
+      if (carried.live && needsHandoff(live, g.runtime)) setMove({ agent: action.agent, to: g.label, from: groups.find((x) => x.current)?.label ?? 'Your agent' });
+      else void api.workbench.setAgent(conversation, action.agent);
+    }
+  };
+  const moveWith = (mode: HandoffMode): void => {
+    if (move && conversation) void api.workbench.setAgent(conversation, move.agent, mode);
+    setMove(undefined);
   };
   const rows = (g: PickerGroup) => (
     <div className={s.models} role="radiogroup" aria-label={`${g.label} models`}>
@@ -161,7 +196,7 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
     label
   );
   return (
-    <Popover.Root>
+    <Popover.Root onOpenChange={(open) => !open && setMove(undefined)}>
       <Popover.Trigger asChild>
         <button type="button" className={s.chip} aria-label="Agent, model and effort" title={chip} data-shrink="">
           <Icon name={runtimeMark(picker.runtime)} size={12} />
@@ -171,56 +206,103 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={s.popover} side="top" align="start" sideOffset={8} collisionPadding={12}>
-          <div className={s.heading}>
-            {home ? <Icon name={runtimeMark(home.runtime)} size={12} className={s.mark} /> : null}
-            {home?.label ?? 'Model'}
-            <span className={s.scope}>{conversation ? 'for this conversation' : onDraft ? 'for this worktree' : 'for new conversations'}</span>
-          </div>
-          {home ? (home.available ? rows(home) : <div className={s.why}>{home.why}</div>) : null}
-          {rest.length ? (
+          {move ? (
+            <MoveChoice move={move} limited={carried.limited} onPick={moveWith} onBack={() => setMove(undefined)} />
+          ) : (
             <>
-              <button type="button" className={s.others} aria-expanded={others} onClick={() => setOthers(!others)}>
-                <Icon name={others ? 'chevronDown' : 'chevronRight'} size={10} />
-                Other agents
-              </button>
-              {others
-                ? rest.map((g) => (
-                    <div key={g.runtime} className={cx(s.group, !g.available && s.groupOff)} aria-disabled={!g.available || undefined}>
-                      <div className={s.groupName}>
-                        <Icon name={runtimeMark(g.runtime)} size={11} className={s.mark} />
-                        {g.label}
-                      </div>
-                      {g.available ? rows(g) : <div className={s.why}>{g.why}</div>}
-                    </div>
-                  ))
-                : null}
-            </>
-          ) : null}
-          <div className={s.heading}>
-            Thinking
-            <span className={s.scope}>for every conversation</span>
-          </div>
-          <div className={s.meterRow}>
-            <button type="button" role="radio" aria-checked={!effort} className={cx(s.auto, !effort && s.autoOn)} onClick={() => void api.session.setPrefs({ effort: null })}>
-              Auto
-            </button>
-            <div className={s.meter} role="radiogroup" aria-label="Thinking effort">
-              {EFFORTS.map((e, i) => {
-                const level = effort ? EFFORTS.indexOf(effort) : -1;
-                return (
-                  <button key={e} type="button" role="radio" aria-checked={effort === e} disabled={!allowed.has(e)} className={s.step} onClick={() => void api.session.setPrefs({ effort: e })}>
-                    <span className={cx(s.bar, i <= level && s.barOn)} style={{ height: 6 + i * 5 }} />
-                    <span className={cx(s.stepLabel, effort === e && s.stepLabelOn)}>{EFFORT_INFO[e].label}</span>
+              <div className={s.heading}>
+                {home ? <Icon name={runtimeMark(home.runtime)} size={12} className={s.mark} /> : null}
+                {home?.label ?? 'Model'}
+                <span className={s.scope}>{conversation ? 'for this conversation' : onDraft ? 'for this worktree' : 'for new conversations'}</span>
+              </div>
+              {home ? (home.available ? rows(home) : <div className={s.why}>{home.why}</div>) : null}
+              {rest.length ? (
+                <>
+                  <button type="button" className={s.others} aria-expanded={others} onClick={() => setOthers(!others)}>
+                    <Icon name={others ? 'chevronDown' : 'chevronRight'} size={10} />
+                    Other agents
                   </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className={s.effortDetail}>
-            <strong>{effort ? EFFORT_INFO[effort].label : 'Auto'}</strong> · {effort ? EFFORT_INFO[effort].detail : 'Your agent decides how much to think, case by case'}
-          </div>
+                  {others
+                    ? rest.map((g) => (
+                        <div key={g.runtime} className={cx(s.group, !g.available && s.groupOff)} aria-disabled={!g.available || undefined}>
+                          <div className={s.groupName}>
+                            <Icon name={runtimeMark(g.runtime)} size={11} className={s.mark} />
+                            {g.label}
+                          </div>
+                          {g.available ? rows(g) : <div className={s.why}>{g.why}</div>}
+                        </div>
+                      ))
+                    : null}
+                </>
+              ) : null}
+              <div className={s.heading}>
+                Thinking
+                <span className={s.scope}>for every conversation</span>
+              </div>
+              <div className={s.meterRow}>
+                <button type="button" role="radio" aria-checked={!effort} className={cx(s.auto, !effort && s.autoOn)} onClick={() => void api.session.setPrefs({ effort: null })}>
+                  Auto
+                </button>
+                <div className={s.meter} role="radiogroup" aria-label="Thinking effort">
+                  {EFFORTS.map((e, i) => {
+                    const level = effort ? EFFORTS.indexOf(effort) : -1;
+                    return (
+                      <button key={e} type="button" role="radio" aria-checked={effort === e} disabled={!allowed.has(e)} className={s.step} onClick={() => void api.session.setPrefs({ effort: e })}>
+                        <span className={cx(s.bar, i <= level && s.barOn)} style={{ height: 6 + i * 5 }} />
+                        <span className={cx(s.stepLabel, effort === e && s.stepLabelOn)}>{EFFORT_INFO[e].label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className={s.effortDetail}>
+                <strong>{effort ? EFFORT_INFO[effort].label : 'Auto'}</strong> · {effort ? EFFORT_INFO[effort].detail : 'Your agent decides how much to think, case by case'}
+              </div>
+            </>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/**
+ * Moving a conversation to an agent that can't read its session (BLG-592): switch now, the new
+ * agent getting the recent conversation with your next message; or have the old agent write a
+ * handoff note first, on its own plan. An agent at its plan limit can't write one.
+ */
+function MoveChoice({ move, limited, onPick, onBack }: { move: Move; limited: boolean; onPick: (mode: HandoffMode) => void; onBack: () => void }) {
+  return (
+    <>
+      <div className={s.heading}>
+        <button type="button" className={s.back} aria-label="Back to the models" onClick={onBack}>
+          <Icon name="back" size={11} />
+        </button>
+        Move to {move.to}
+      </div>
+      <div className={s.why}>
+        {move.to} can’t read {move.from}’s conversation, so it needs to be told where things stand.
+      </div>
+      <div className={s.models} role="group" aria-label={`How to move to ${move.to}`}>
+        <button type="button" className={s.model} onClick={() => onPick('quiet')} autoFocus>
+          <span className={s.choiceIcon}>
+            <Icon name="arrowRight" size={12} />
+          </span>
+          <span className={s.modelText}>
+            <span className={s.modelName}>Just switch</span>
+            <span className={s.modelDesc}>Nothing runs now. {move.to} gets the recent conversation with your next message.</span>
+          </span>
+        </button>
+        <button type="button" className={cx(s.model, limited && s.modelOff)} disabled={limited} onClick={() => onPick('note')}>
+          <span className={s.choiceIcon}>
+            <Icon name="pencil" size={12} />
+          </span>
+          <span className={s.modelText}>
+            <span className={s.modelName}>Write a handoff note first</span>
+            <span className={s.modelDesc}>{limited ? `${move.from} is at its plan limit, so it can’t write one.` : `${move.from} sums up what’s done and what’s left, using your ${move.from} plan.`}</span>
+          </span>
+        </button>
+      </div>
+    </>
   );
 }

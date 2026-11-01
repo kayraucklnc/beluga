@@ -84,6 +84,8 @@ describe('a worktree on Codex, end to end', () => {
       createAgent: (): AgentBackend => ({
         run: async (input) => {
           claudeRuns.push(input);
+          // Claude's own conversation from here on (what a real run reports).
+          input.place?.onSession('claude-session');
           return 'claude: on it';
         },
       }),
@@ -136,5 +138,26 @@ describe('a worktree on Codex, end to end', () => {
     await waitFor(() => claudeRuns.some((r) => r.prompt === 'carry on'), 8000);
     expect(claudeRuns.find((r) => r.prompt === 'carry on')!.place?.agent?.runtime).toBe('claude');
     await waitFor(() => store.getState().log.filter((l) => l.channel === channel && l.type === 'agent' && l.text === 'claude: on it').length === 2, 8000);
+
+    // 5. Back to Codex quietly (BLG-592): nothing runs now; your next message takes the recent conversation along, once.
+    const turns = codex.sent('turn/start').length;
+    const asked = claudeRuns.length;
+    expect(session.workbench!.setAgent(channel, { runtime: 'codex', label: 'Codex' }, 'quiet')).toBe(true);
+    await waitFor(() => workspaces.find(ws.id)?.carryFrom === 'Claude', 8000);
+    expect(codex.sent('turn/start')).toHaveLength(turns);
+    expect(claudeRuns).toHaveLength(asked);
+    session.submit('and the docs', { channel });
+    await waitFor(() => codex.sent('turn/start').length === turns + 1, 8000);
+    const carried = JSON.stringify(codex.sent('turn/start').at(-1));
+    expect(carried).toContain('and the docs');
+    expect(carried).toContain('took over this conversation from Claude');
+    expect(carried).toContain('carry on');
+    expect(workspaces.find(ws.id)?.carryFrom).toBeUndefined();
+    // The chat shows only what you wrote.
+    expect(store.getState().log.some((l) => l.channel === channel && l.type === 'chat' && l.text === 'and the docs')).toBe(true);
+    await waitFor(() => said('echo: and the docs'), 8000);
+    session.submit('one more', { channel });
+    await waitFor(() => codex.sent('turn/start').length === turns + 2, 8000);
+    expect(JSON.stringify(codex.sent('turn/start').at(-1))).not.toContain('took over this conversation');
   }, 30_000);
 });

@@ -1473,7 +1473,9 @@ export class AgentHost {
   /** The words Claude reads: each "@BLG-24" this board has says it's a task, and which ("@BLG-24 (task: Fix the login)"). */
   private promptOf(body: BodyOf<'agent_request'>): string {
     const board = this.store.getState().board;
-    return board.issues.length ? explainTaskMentions(body.prompt, (key) => findIssue(board, key)) : body.prompt;
+    const prompt = board.issues.length ? explainTaskMentions(body.prompt, (key) => findIssue(board, key)) : body.prompt;
+    // The first run after a quiet switch (BLG-592) takes the recent conversation along; the chat and the queue keep only the message.
+    return this.deps.workspaces?.withCarry?.(body.channel, prompt, body.requestId) ?? prompt;
   }
 
   private recentChat(channel = 'room'): string[] {
