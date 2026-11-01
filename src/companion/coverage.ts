@@ -305,7 +305,7 @@ export const PHONE: Record<Method, Side> = {
   'claudeCode.outputs': 'phone',
   'claudeCode.output': 'phone',
   'claudeCode.taskOutput': 'phone',
-  'claudeCode.skills': 'mac',
+  'claudeCode.skills': 'mac', // Includes skill discovery in a draft's folder.
   'claudeCode.mcpServers': 'mac',
   'claudeCode.mcpSignIn': 'mac',
   'claudeCode.mcpSignedIn': 'mac',
