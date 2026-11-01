@@ -234,8 +234,17 @@
   place-items: center;
   width: 16px;
 }
-[data-highlighted] .pickMark {
+/* On the lit row, one-colour marks (status, priority, a label's dot, an icon) turn white; pictures
+   (a repo's icon, someone's avatar) keep their colours, or they'd be white blobs. */
+[data-highlighted] .pickMark > svg,
+[data-highlighted] .pickMark > .labelMark,
+[role='menuitem']:not([data-disabled]):hover .pickMark > svg,
+[role='menuitem']:not([data-disabled]):hover .pickMark > .labelMark {
   filter: brightness(0) invert(1);
+}
+[data-highlighted] .pickMark,
+[role='menuitem']:not([data-disabled]):hover .pickMark {
+  --repo-ring: var(--accent);
 }
 .pickCheck {
   color: var(--accent);
@@ -2348,6 +2357,27 @@
 }
 .repoStackItem + .repoStackItem {
   margin-left: calc(var(--repo-size) * -0.12);
+}
+/* The same, folded into one icon's square for a menu: one repo tucked behind the other, corner to corner. */
+.repoPair {
+  position: relative;
+  display: inline-block;
+  flex: none;
+}
+.repoPairItem {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  border-radius: 3px;
+}
+.repoPairFront {
+  top: auto;
+  left: auto;
+  right: 0;
+  bottom: 0;
+  box-shadow: 0 0 0 1.5px var(--repo-ring, var(--bg-raised));
+  background: var(--repo-ring, var(--bg-raised));
 }
 
 /* Which repos' tasks a board of several shows: all of them, or the ones you ticked (tinted then). */

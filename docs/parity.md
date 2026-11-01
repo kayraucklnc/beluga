@@ -469,7 +469,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
 | `board.createBoard` | ✓ Tasks › the board switcher › New Board… (a name, the repos it covers, its keys) |
 | `board.editBoard` | ✓ Tasks › the board switcher › Board Settings…, ⋯ › Board Settings… / Repos on This Board…, the Repos filter's Repos on This Board…, a task's Repo menu |
-| `board.removeBoard` | ✓ a board of its own's settings sheet › Delete Board… (only once nothing is on it) |
+| `board.removeBoard` | ✓ a board of its own's settings sheet › Delete Board…, and Tasks › ⋯ › Delete Board… (its tasks go back to their repos' boards) |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
 | `board.createLabel` | ✓ a task's Labels menu › New Label… (a name, an icon, a color) |
 | `board.removeLabel` | ✓ the New Label sheet: a project label's remove button (under Labels of this project) |

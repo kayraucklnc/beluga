@@ -759,6 +759,15 @@ export class BoardWork {
         const where = repos.length > 1 ? ` on ${boardName(state(), boardOf(issue), this.repoName)}, running in ${named(issue.projectId)}${covered ? '' : ` (the board covers ${named(issue.projectId)} from now on)`}` : '';
         return `Created ${issue.key}: ${issue.title} (${issue.status}${issue.private ? ', private: only the user sees it' : ''})${where}${leftOut(boardOf(issue), input.labels)}`;
       },
+      createBoard: (input) => {
+        const repos = [...new Set(input.repos.map(projectByName))];
+        const taken = boardByName(input.name);
+        if (taken && isOwnBoard(taken)) throw new Error(`There's already a board called ${boardName(state(), taken, this.repoName)}: put tasks on it with task_create (board: its name), or pick another name`);
+        const id = board.createBoard({ name: input.name, repos, ...(input.prefix ? { prefix: input.prefix } : {}) });
+        const made = state().projects[id]!;
+        this.deps.toast?.(`${this.agent()} made the ${made.name} board: Tasks › the board switcher`);
+        return `Made the board "${made.name}" (keys ${made.prefix}-…), covering ${repos.map(named).join(', ')}. Put tasks on it with task_create (board: "${made.name}"), each with project: the repo it runs in. Name it in your answer for the user.`;
+      },
       update: (key, patch) => {
         const issue = pick(key);
         const assignee = assign(patch.assign);

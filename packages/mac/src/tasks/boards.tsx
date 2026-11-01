@@ -30,10 +30,27 @@ export function RepoStack({ repos, names, size = 16 }: { repos: readonly string[
   );
 }
 
-/** A board in the switcher: its repo's icon, or its repos' stacked when it covers several. */
-export function BoardMark({ repos, names, size = 16 }: { repos: readonly string[]; names: (id: string) => string | undefined; size?: number }) {
+/** Two repos' icons, one tucked behind the other, inside one icon's square (a menu's mark slot). */
+function RepoPair({ repos, names, size }: { repos: readonly string[]; names: (id: string) => string | undefined; size: number }) {
+  const inner = Math.round(size * 0.72);
+  return (
+    <span className={t.repoPair} style={{ width: size, height: size }}>
+      {repos.slice(0, 2).map((r, i) => (
+        <span key={r} className={cx(t.repoPairItem, i === 1 && t.repoPairFront)}>
+          <ProjectIcon id={r} name={names(r) ?? r} size={inner} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * A board: its repo's icon, or its repos' stacked when it covers several. `fit` keeps a board of
+ * several in one icon's square (two icons tucked together), so a menu's names stay lined up.
+ */
+export function BoardMark({ repos, names, size = 16, fit }: { repos: readonly string[]; names: (id: string) => string | undefined; size?: number; fit?: boolean }) {
   if (repos.length < 2) return repos[0] ? <ProjectIcon id={repos[0]} name={names(repos[0]) ?? repos[0]} size={size} /> : <Icon name="columns" size={size - 2} />;
-  return <RepoStack repos={repos} names={names} size={size - 2} />;
+  return fit ? <RepoPair repos={repos} names={names} size={size} /> : <RepoStack repos={repos} names={names} size={size - 2} />;
 }
 
 /** Whether a task's board covers several repos (then its cards say which one it runs in). */
@@ -77,16 +94,43 @@ export function RepoPicker({ issue, children }: { issue: { readonly id: string; 
 }
 
 /**
+ * Delete a board you made, after asking: it's a view over a few repos, so its tasks go home to the
+ * board of the repo each runs in, keys kept.
+ */
+export function useDeleteBoard(): (boardId: string) => void {
+  const board = useBoard();
+  const { api, act, openList } = useTaskActions();
+  return (boardId) => {
+    const name = board.projects[boardId]?.name ?? 'this';
+    const tasks = board.issues.filter((i) => boardOf(i) === boardId).length;
+    openSheet({
+      kind: 'confirm',
+      title: `Delete the ${name} board?`,
+      message: tasks
+        ? `Its ${tasks === 1 ? 'task goes' : `${tasks} tasks go`} back to the board of the repo ${tasks === 1 ? 'it runs' : 'each runs'} in, keys kept. The repos aren’t touched.`
+        : 'Nothing is on it. The repos it covered keep their own boards.',
+      confirm: 'Delete Board',
+      destructive: true,
+      run: () =>
+        void act(() => api.removeBoard(boardId), tasks ? `The board is gone: ${tasks === 1 ? 'its task is' : `its ${tasks} tasks are`} back on their repos’ boards` : 'The board is gone').then((moved) => {
+          if (moved !== undefined) openList();
+        }),
+    });
+  };
+}
+
+/**
  * New Board (no `boardId`), or a board's settings: its name and the repos it covers. A repo's own
- * board always covers its repo; a board of its own covers the ones you tick, and can go once
- * nothing is on it. Tasks stay where they are whatever changes here.
+ * board always covers its repo; a board of its own covers the ones you tick, and can be deleted
+ * (its tasks go home to their repos' boards). Tasks stay where they are whatever else changes here.
  */
 export function BoardSheet({ boardId, repos: startRepos, close }: { boardId?: string; repos?: readonly string[]; close: () => void }) {
   const board = useBoard();
   const allProjects = useApp((s) => s.projects);
   const projects = useMemo(() => allProjects.filter((p) => p.root && !p.error), [allProjects]);
   const { client } = useBeluga();
-  const { api, act, openList } = useTaskActions();
+  const { api, openList } = useTaskActions();
+  const deleteBoard = useDeleteBoard();
   const editing = boardId !== undefined;
   const own = !editing || isOwnBoard(boardId);
   const saved = editing ? board.projects[boardId] : undefined;
@@ -94,7 +138,6 @@ export function BoardSheet({ boardId, repos: startRepos, close }: { boardId?: st
   const [name, setName] = useState(saved?.name ?? '');
   const [repos, setRepos] = useState<readonly string[]>(() => (editing ? reposOf(board, boardId).filter((r) => r !== boardId) : (startRepos ?? []).filter((r) => projects.some((p) => p.id === r))));
   const [prefix, setPrefix] = useState('');
-  const used = editing && board.issues.some((i) => boardOf(i) === boardId);
   const toggle = (id: string): void => setRepos((now) => (now.includes(id) ? now.filter((r) => r !== id) : [...now, id]));
   const count = repos.length + (own ? 0 : 1);
   const canSubmit = (own ? Boolean(name.trim()) && repos.length > 0 : true) && (!prefix || /^[A-Za-z0-9]{2,6}$/.test(prefix));
@@ -112,21 +155,8 @@ export function BoardSheet({ boardId, repos: startRepos, close }: { boardId?: st
       width={520}
       onCancel={close}
       footer={
-        editing && own && !used ? (
-          <Button
-            variant="quiet"
-            size="small"
-            onClick={() =>
-              openSheet({
-                kind: 'confirm',
-                title: `Delete the ${saved?.name ?? ''} board?`,
-                message: 'Nothing is on it. The repos it covered keep their own boards.',
-                confirm: 'Delete Board',
-                destructive: true,
-                run: () => void act(() => api.removeBoard(boardId), 'The board is gone').then(() => openList()),
-              })
-            }
-          >
+        editing && own ? (
+          <Button variant="quiet" size="small" onClick={() => deleteBoard(boardId)}>
             Delete Board…
           </Button>
         ) : null

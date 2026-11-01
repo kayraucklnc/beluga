@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
-import { isStartable, issueForWorkspace, worktreeDoing } from '../src/core/board/model.js';
+import { isOwnBoard, isStartable, issueForWorkspace, reposOf, worktreeDoing } from '../src/core/board/model.js';
 import { boardNote, briefPrompt, describeIssue, describeList } from '../src/core/board/prompt.js';
 import { BoardWork, startPrompt } from '../src/core/board/work.js';
 import { Store, initialState } from '../src/core/store.js';
@@ -261,6 +261,23 @@ describe('Claude and the board', () => {
     expect(run.tools!.create({ title: 'Billing API', board: 'Launch' })).toBe('Created LNC-1: Billing API (todo) on Launch, running in bob-api (the board covers bob-api from now on)');
     expect(board.need('LNC-1')).toMatchObject({ board: id, projectId: 'api' });
     expect(() => run.tools!.create({ title: 'x', board: 'Nope' })).toThrow(/no board called Nope/);
+  });
+
+  it('Claude makes a board for a few repos by itself, then puts tasks on it (BLG-557)', () => {
+    const { board, work } = setup({ autoTasks: true });
+    const run = work.forRun('room', 'p-me')!;
+    expect(run.brief).toContain('board_create makes one');
+    expect(run.tools!.createBoard({ name: 'Checkout', repos: ['bob-api', 'Landing'], prefix: 'chk' })).toBe(
+      'Made the board "Checkout" (keys CHK-…), covering bob-api, landing. Put tasks on it with task_create (board: "Checkout"), each with project: the repo it runs in. Name it in your answer for the user.',
+    );
+    const id = Object.keys(board.state().projects).find((k) => board.state().projects[k]!.name === 'Checkout')!;
+    expect(isOwnBoard(id)).toBe(true);
+    expect(reposOf(board.state(), id)).toEqual(['api', 'land']);
+    expect(run.tools!.create({ title: 'Card form', board: 'Checkout', project: 'landing' })).toBe('Created CHK-1: Card form (todo) on Checkout, running in landing');
+    expect(board.need('CHK-1')).toMatchObject({ board: id, projectId: 'land' });
+    // Once per name; repos by name only.
+    expect(() => run.tools!.createBoard({ name: 'checkout', repos: ['bob-api'] })).toThrow(/already a board called Checkout/);
+    expect(() => run.tools!.createBoard({ name: 'Other', repos: ['nope'] })).toThrow(/no repo called nope/);
   });
 
   it('runs in a project read what it is about, with or without a task (BLG-298)', () => {

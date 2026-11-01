@@ -91,7 +91,10 @@ export const BOARD_HANDLERS = {
   'board.setAutoTasks': (s, on) => needBoard(s).board.setAutoTasks(on),
   'board.createBoard': (s, input) => needBoard(s).board.createBoard(input),
   'board.editBoard': (s, id, patch) => needBoard(s).board.editBoard(id, patch),
-  'board.removeBoard': (s, id) => needBoard(s).board.removeBoard(id),
+  'board.removeBoard': (s, id) => {
+    const work = needBoard(s);
+    return work.board.removeBoard(id, work.me());
+  },
   'board.setPrefix': (s, projectId, prefix) => needBoard(s).board.setPrefix(projectId, prefix),
   'board.createLabel': (s, projectId, label) => needBoard(s).board.createLabel(projectId, label),
   'board.removeLabel': (s, projectId, name) => needBoard(s).board.removeLabel(projectId, name),

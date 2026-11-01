@@ -1069,12 +1069,36 @@ export class Board {
     if (next !== board) this.meta({ ...this.projects, [boardId]: next });
   }
 
-  /** A board of its own, gone: only once nothing is on it (archived tasks included). */
-  removeBoard(boardId: string): void {
-    if (!isOwnBoard(boardId) || !this.projects[boardId]) throw new Error('Only a board you made can be removed');
-    if (this.issues.some((i) => boardOf(i) === boardId)) throw new Error('This board still has tasks: move them to another board first');
+  /**
+   * A board of its own, gone: it's a view over a few repos, so its tasks (archived ones too) go home
+   * to the board of the repo they run in, keys kept. A sub-task follows its top task, so families
+   * stay on one board (that board covers the sub-task's repo from then on). Returns how many moved.
+   */
+  removeBoard(boardId: string, by: Actor): number {
+    const gone = this.projects[boardId];
+    if (!isOwnBoard(boardId) || !gone) throw new Error('Only a board you made can be removed');
+    const on = this.issues.filter((i) => boardOf(i) === boardId);
+    const byId = new Map(on.map((i) => [i.id, i]));
+    const top = (issue: Issue): Issue => {
+      let at = issue;
+      for (let hops = 0; at.parent && byId.has(at.parent) && hops < on.length; hops++) at = byId.get(at.parent)!;
+      return at;
+    };
     const { [boardId]: _gone, ...rest } = this.projects;
-    this.meta(rest);
+    let projects: Record<string, BoardProject> = rest;
+    const homes = on.map((issue) => {
+      const home = top(issue).projectId;
+      const known = projects[home] ?? (this.deps.projectName(home) !== undefined ? this.projectFor(home) : undefined);
+      if (known) projects = { ...projects, [home]: this.covering(known, home, issue.projectId) };
+      return { issue, home };
+    });
+    this.meta(projects);
+    const at = this.now();
+    for (const { issue, home } of homes) {
+      const name = this.deps.projectName(home) ?? 'its repo';
+      this.change(issue, { board: home === issue.projectId ? undefined : home }, [this.entry(by, 'project', `moved this to ${name}’s board (${gone.name ?? 'its board'} was deleted)`, undefined, at)], false);
+    }
+    return on.length;
   }
 
   /** Write anything waiting now (on the way out). */
