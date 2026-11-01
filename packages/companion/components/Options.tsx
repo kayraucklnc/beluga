@@ -1,6 +1,6 @@
-import type { LucideIcon } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
+import type { IconLike } from './AgentMark';
 import { Sheet } from './Sheet';
 import { haptic, IconBadge, Press, T, type Tone } from './ui';
 
@@ -9,7 +9,8 @@ import { haptic, IconBadge, Press, T, type Tone } from './ui';
  * a pastel circle, a word or two). The same sheet everywhere, so it's learned once.
  */
 export interface Option {
-  readonly Icon: LucideIcon;
+  /** A lucide icon, or an agent's mark (AgentMark.tsx markIcon). */
+  readonly Icon: IconLike;
   readonly label: string;
   readonly sub?: string;
   readonly tone?: Tone;

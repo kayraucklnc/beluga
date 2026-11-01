@@ -379,4 +379,4 @@ export function onItWords(people: readonly OnIt[]): string {
 
 /** One face's tooltip: whose Claude is at work, or whose worktree has it. */
 export const onItTip = (p: OnIt, doing?: string): string =>
-  p.running ? (p.you ? `Your Claude is working${doing ? `: ${doing}` : ''}` : `${p.name}’s Claude is working on it`) : p.you ? 'Your worktree has it' : `${p.name} is on it`;
+  p.running ? (p.you ? `Your agent is working${doing ? `: ${doing}` : ''}` : `${p.name}’s agent is working on it`) : p.you ? 'Your worktree has it' : `${p.name} is on it`;

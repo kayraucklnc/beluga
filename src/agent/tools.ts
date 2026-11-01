@@ -1,6 +1,7 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
 import type { RoomBridge, SetupTools } from './types.js';
+import { type DialogueTurnTools, endDialogueToolDef } from './dialogue-tools.js';
 import { createGatewayToolDefs } from './gateway-tools.js';
 
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
@@ -147,7 +148,7 @@ export function setProjectSetupToolDef(setup: SetupTools) {
   );
 }
 
-/** The Beluga tools for one run: the room's, plus continue_in_worktree in a main folder, plus set_project_setup in a worktree. */
-export function createRoomTools(bridge: RoomBridge, move?: (task: string) => Promise<string>, setup?: SetupTools) {
-  return createSdkMcpServer({ name: 'beluga', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : []), ...(setup ? [setProjectSetupToolDef(setup)] : [])] });
+/** The Beluga tools for one run: the room's, plus continue_in_worktree in a main folder, plus set_project_setup in a worktree, plus end_dialogue in a dialogue's turn. */
+export function createRoomTools(bridge: RoomBridge, move?: (task: string) => Promise<string>, setup?: SetupTools, dialogue?: DialogueTurnTools) {
+  return toolSuite({ name: 'beluga', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : []), ...(setup ? [setProjectSetupToolDef(setup)] : []), ...(dialogue ? [endDialogueToolDef(dialogue)] : [])] });
 }

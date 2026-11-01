@@ -2,7 +2,9 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { type ReactNode, useState } from 'react';
 import type { Guest } from '@beluga/core/collab-store.js';
 import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
-import type { GuestCan, PeerInfo, Usage } from '@beluga/protocol.js';
+import { CLAUDE_AGENT, type GuestCan, type PeerInfo, type Usage, defaultAgentOf } from '@beluga/protocol.js';
+import { agentName } from '@beluga/shared/agent-label.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { CAN_INFO } from '@beluga/shared/invites.js';
 import type { TrustLevel } from '@beluga/shared/settings-schema.js';
 import { CAN_ORDER } from '@beluga/ui/invite-menus.js';
@@ -32,9 +34,9 @@ interface CardProps {
 
 /** What a friend's trust lets you do on their side, in a line. */
 const GRANTED: Record<TrustLevel, string> = {
-  blocked: 'Doesn’t let you use their Claude',
+  blocked: 'Doesn’t let you use their agent',
   ask: 'Approves each of your requests',
-  trusted: 'Lets you use their Claude without asking',
+  trusted: 'Lets you use their agent without asking',
   full: 'Fully trusts you',
 };
 
@@ -98,6 +100,17 @@ function Row({ icon, label, onClick, danger }: { icon: IconName; label: string; 
   );
 }
 
+/** "Codex on", its mark before its name. */
+function AgentOn({ peer }: { peer: PeerInfo }) {
+  const agent = defaultAgentOf(peer);
+  return (
+    <span className={p.agentOn}>
+      <Icon name={agentMark(agent)} size={10} />
+      {agentName(agent)} on
+    </span>
+  );
+}
+
 function Meter({ label, pct }: { label: string; pct: number }) {
   return (
     <div className={p.meter}>
@@ -110,10 +123,17 @@ function Meter({ label, pct }: { label: string; pct: number }) {
   );
 }
 
-function UsageMeters({ usage }: { usage: Usage | undefined }) {
+/** Their default agent's plan usage (an older Mac sends only Claude's), and whose plan it is. */
+function shownUsage(peer: PeerInfo): { usage: Usage | undefined; provider: string } {
+  const own = peer.usages?.find((u) => u.agent.runtime === defaultAgentOf(peer).runtime);
+  return own ? { usage: own, provider: own.agent.label } : { usage: peer.usage, provider: CLAUDE_AGENT.label };
+}
+
+function UsageMeters({ peer }: { peer: PeerInfo }) {
+  const { usage, provider } = shownUsage(peer);
   if (!usage?.fiveHour && !usage?.week) return null;
   return (
-    <div className={p.usage} aria-label="Claude usage">
+    <div className={p.usage} aria-label={`${provider} plan usage`}>
       {usage.fiveHour ? <Meter label="5-hour" pct={usage.fiveHour.pct} /> : null}
       {usage.week ? <Meter label="Week" pct={usage.week.pct} /> : null}
     </div>
@@ -143,16 +163,16 @@ export function RoomPeerCard({ peer, menu, close, confirm, onRun }: CardProps & 
         tags={
           <>
             {peer.host ? <Tag tone="accent">Host</Tag> : null}
-            <Tag tone={peer.agent ? 'claude' : 'muted'}>{peer.agent ? 'Claude on' : 'No Claude'}</Tag>
+            <Tag tone={peer.agent ? 'claude' : 'muted'}>{peer.agent ? <AgentOn peer={peer} /> : 'No agent'}</Tag>
             {following ? <Tag>Following</Tag> : null}
           </>
         }
         lines={[peer.shares.length ? `Shares ${peer.shares.map((x) => x.name).join(', ')}` : 'Shares nothing yet', grant ? GRANTED[grant.level] : undefined]}
       />
-      <UsageMeters usage={peer.usage} />
+      <UsageMeters peer={peer} />
       <div className={p.actions}>
         <Action icon="chat" label="Message" onClick={() => address(false)} />
-        {peer.agent ? <Action icon="claude" label="Ask Claude" onClick={() => address(true)} /> : null}
+        {peer.agent ? <Action icon={agentMark(defaultAgentOf(peer))} label={`Ask ${agentName(defaultAgentOf(peer))}`} onClick={() => address(true)} /> : null}
         {canRunOn(grant?.level) && onRun ? <Action icon="terminal" label="Run" onClick={onRun} /> : null}
         <Action icon="eye" label={following ? 'Following' : 'Follow'} on={following} onClick={() => pick(following ? 'unfollow' : 'follow')} />
         {share ? <Action icon="folder" label="Files" onClick={() => pick('browse')} /> : null}
@@ -309,17 +329,17 @@ export function AccountCard({ peer, menu, close, confirm }: CardProps & { menu: 
         tags={
           <>
             <Tag>{host ? `You host ${room}` : `You’re in ${room}`}</Tag>
-            <Tag tone={peer.agent ? 'claude' : 'muted'}>{peer.agent ? 'Claude on' : 'No Claude'}</Tag>
+            <Tag tone={peer.agent ? 'claude' : 'muted'}>{peer.agent ? <AgentOn peer={peer} /> : 'No agent'}</Tag>
           </>
         }
         lines={['This is how friends see you.']}
       />
-      <UsageMeters usage={peer.usage} />
+      <UsageMeters peer={peer} />
       <div className={p.block}>
         <div className={p.inline}>
-          <span className={p.blockLabel}>Friends may use your Claude</span>
+          <span className={p.blockLabel}>Friends may use your agent</span>
           <Select
-            label="Friends may use your Claude"
+            label="Friends may use your agent"
             value={policy}
             onChange={(v) => void api.session.setClaudeSharing(v)}
             options={[
@@ -332,7 +352,7 @@ export function AccountCard({ peer, menu, close, confirm }: CardProps & { menu: 
         <div className={p.blockDetail}>For people you haven’t picked a trust level for. Click someone in People to set theirs.</div>
       </div>
       <div className={p.rows}>
-        <Row icon="claude" label="Ask My Claude" onClick={() => addressTo(ui, actions, client.store.getState().view, { peerId: peer.peerId, name: peer.name, claude: true, self: true })} />
+        <Row icon="claude" label={`Ask My ${agentName(defaultAgentOf(peer))}`} onClick={() => addressTo(ui, actions, client.store.getState().view, { peerId: peer.peerId, name: peer.name, claude: true, self: true })} />
         <Row icon="share" label="Share a Folder…" onClick={() => pick('share-folder')} />
         <Row
           icon="gear"

@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { ResolvedScripts } from '@beluga/workspaces/scripts.js';
-import { Checkbox, Field, FormSheet, SourceTag, TextInput } from '../../components/FormSheet.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
+import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
+import { agentEntries } from '../../chat/ModelPicker.js';
+import { Checkbox, Field, FormSheet, Popup, SourceTag, TextInput } from '../../components/FormSheet.js';
+import { agentName, useMyAgent } from '../../lib/agent-words.js';
 import { useApi, useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 
@@ -9,7 +13,7 @@ type Source = NonNullable<ResolvedScripts['setup']>['source'];
 
 const SOURCE: Record<Source, { label: string; tone: 'team' | 'mine' | 'guess'; detail: string }> = {
   yours: { label: 'Your settings', tone: 'mine', detail: 'Only you have it' },
-  claude: { label: 'By Claude', tone: 'guess', detail: 'Claude worked it out from the project (only you have it). Change it if it’s wrong' },
+  claude: { label: 'By your agent', tone: 'guess', detail: 'Your agent worked it out from the project (only you have it). Change it if it’s wrong' },
   'beluga.json': { label: 'beluga.json', tone: 'team', detail: 'Shared with everyone on the project' },
   'klaud.json': { label: 'klaud.json', tone: 'team', detail: 'Shared with everyone on the project' },
   'conductor.json': { label: 'conductor.json', tone: 'team', detail: 'A setup file in the project, shared with everyone on it' },
@@ -24,11 +28,18 @@ export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>
   const api = useApi();
   const project = useApp((st) => st.projects.find((p) => p.id === menu.projectId));
   const autoSetup = useApp((st) => st.prefs.autoSetup);
+  const projectAgents = useApp((st) => st.prefs.projectAgents);
+  const models = useApp((st) => st.models);
+  const runtimes = useApp((st) => st.runtimes);
+  const mine = useMyAgent();
   const scripts = project?.scripts ?? {};
   const [values, setValues] = useState<Record<Kind, string>>({ setup: scripts.setup?.command ?? '', run: scripts.run?.command ?? '' });
   const [team, setTeam] = useState(false);
   const [auto, setAuto] = useState(autoSetup);
   const [touched, setTouched] = useState(false);
+  // '~': the same agent as yours (Settings); anything else is this project's own.
+  const agentNow = project && projectAgents?.[project.name] ? choiceForAgent(projectAgents[project.name]) : '~';
+  const [agent, setAgent] = useState(agentNow);
   // Until you type, the fields follow what's saved (it can arrive just after the sheet opens).
   const setupNow = scripts.setup?.command ?? '';
   const runNow = scripts.run?.command ?? '';
@@ -51,8 +62,8 @@ export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>
     );
   };
   // Guessed values say so (once), so you check them.
-  const hint = (kind: Kind, what: string) => (!edited(kind) && scripts[kind]?.source === 'detected' ? `${what} Guessed from the project: check it.` : !edited(kind) && scripts[kind]?.source === 'claude' ? `${what} Claude worked it out from the project: check it.` : what);
-  const changed = edited('setup') || edited('run') || team || auto !== autoSetup;
+  const hint = (kind: Kind, what: string) => (!edited(kind) && scripts[kind]?.source === 'detected' ? `${what} Guessed from the project: check it.` : !edited(kind) && scripts[kind]?.source === 'claude' ? `${what} Your agent worked it out from the project: check it.` : what);
+  const changed = edited('setup') || edited('run') || team || auto !== autoSetup || agent !== agentNow;
 
   const save = (): void => {
     for (const kind of ['setup', 'run'] as const) {
@@ -62,6 +73,10 @@ export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>
       else if (!team && edited(kind)) void api.workbench.setScript(project.id, kind, value);
     }
     if (auto !== autoSetup) void api.session.setPrefs({ autoSetup: auto });
+    if (agent !== agentNow) {
+      const { [project.name]: _, ...others } = projectAgents ?? {};
+      void api.session.setPrefs({ projectAgents: agent === '~' ? others : { ...others, [project.name]: agentForChoice(agent, runtimes) } });
+    }
     close();
   };
 
@@ -82,6 +97,9 @@ export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>
       </Field>
       <Field label="Run" htmlFor="script-run" hint={hint('run', 'Starts the project when you click Run.')} aside={tag('run')}>
         <TextInput id="script-run" value={values.run} onChange={(v) => (setTouched(true), setValues({ ...values, run: v }))} mono placeholder="npm run dev" />
+      </Field>
+      <Field label="Agent" htmlFor="project-agent" hint="Runs this project's new conversations and answers when friends write @you about it.">
+        <Popup id="project-agent" value={agent} onChange={setAgent} options={[{ value: '~', label: `Same as yours (${agentName(mine)})`, icon: agentMark(mine) }, ...agentEntries(agentChoices(runtimes, models))]} />
       </Field>
       <Field label="">
         <Checkbox checked={auto} onChange={setAuto} label="Run setup in new worktrees" detail="For every project; in its Terminal tab" />

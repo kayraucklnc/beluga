@@ -1,8 +1,10 @@
+import { type RuntimeChoice, runtimeChoices } from '../shared/agent-runtimes.js';
 import type { NoticeKind, NoticeTag } from './notify.js';
 import type { ArchivePhase } from '../workspaces/archive.js';
 import type { Settings } from './settings.js';
 import { type EnvKeys, NO_ENV_KEYS } from '../shared/env-vars.js';
 import type { ShellChoice } from '../shared/shells.js';
+import type { TermVisual } from '../shared/term-visuals.js';
 
 /** Something that happened while you were looking elsewhere (the inbox). */
 export interface Notice {
@@ -151,9 +153,23 @@ export interface Template {
   readonly builtIn?: boolean;
 }
 
+/** Who drives a conversation from its terminal (BLG-534). */
+export interface AgentTermState {
+  /** 'claude', 'codex' or 'local'. */
+  readonly runtime: string;
+  /** The agent, as people read it ("Claude", "Codex", a local model's name). */
+  readonly label: string;
+  readonly since: number;
+}
+
+/** Visuals kept per workspace for its terminal's links. */
+export const MAX_TERM_VISUALS = 300;
+
 export interface WorkState {
   readonly inbox: readonly Notice[];
   readonly models: readonly ModelChoice[];
+  /** The agent picker's runtimes (BLG-446): which run on this Mac, and why the others don't. */
+  readonly runtimes: readonly RuntimeChoice[];
   /** Folder size in bytes per workspace (worktrees and chats). */
   readonly disk: Readonly<Record<string, number>>;
   /** Worktrees being archived now, and how far along (see workspaces/archive.ts). */
@@ -170,6 +186,10 @@ export interface WorkState {
   readonly termNames: Readonly<Record<string, string>>;
   /** Running terminals that started before you changed their variables (Settings › Environment): a restart gives them the new ones. */
   readonly termEnvStale: readonly string[];
+  /** Conversations the agent's own terminal is driving now (workspace id → which agent, since when), BLG-534. */
+  readonly agentTerms: Readonly<Record<string, AgentTermState>>;
+  /** The visuals each workspace's terminal showed (links in it open them), newest last. */
+  readonly termVisuals: Readonly<Record<string, readonly TermVisual[]>>;
   /** Shells installed on this computer, for picking the terminal's shell. */
   readonly shellChoices: readonly ShellChoice[];
   /** Names of the environment variables you set (never their values). */
@@ -191,6 +211,7 @@ export type WorkAction =
   /** Clear one notice, or all of them. */
   | { type: 'notice_clear'; id?: number }
   | { type: 'models'; models: readonly ModelChoice[] }
+  | { type: 'runtimes'; runtimes: readonly RuntimeChoice[] }
   | { type: 'disk'; sizes: Readonly<Record<string, number>> }
   /** No phase: done (or it failed). */
   | { type: 'archiving'; id: string; phase?: ArchivePhase }
@@ -203,6 +224,10 @@ export type WorkAction =
   /** Name a terminal (no name: back to Shell N). */
   | { type: 'terminal_name'; id: string; name?: string }
   | { type: 'terminal_env_stale'; ids: readonly string[] }
+  /** The agent's terminal opened on a conversation (state), or closed (none). */
+  | { type: 'agent_term'; id: string; state?: AgentTermState }
+  /** Visuals a workspace's terminal showed: these join the list (or replace it, with `all`). */
+  | { type: 'term_visuals'; id: string; visuals: readonly TermVisual[]; all?: boolean }
   | { type: 'shell_choices'; shells: readonly ShellChoice[] }
   | { type: 'env_keys'; keys: EnvKeys }
   | { type: 'pr_custom'; custom: boolean }
@@ -219,6 +244,7 @@ export const FALLBACK_MODELS: readonly ModelChoice[] = [
 export const initialWork: WorkState = {
   inbox: [],
   models: FALLBACK_MODELS,
+  runtimes: runtimeChoices((id) => (id === 'claude' ? {} : undefined)),
   disk: {},
   archiving: {},
   prs: {},
@@ -229,6 +255,8 @@ export const initialWork: WorkState = {
   termExits: {},
   termNames: {},
   termEnvStale: [],
+  agentTerms: {},
+  termVisuals: {},
   shellChoices: [],
   envKeys: NO_ENV_KEYS,
   prCustom: false,
@@ -260,6 +288,8 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
       return state.inbox.some((n) => n.id === action.id) ? { ...state, inbox: state.inbox.filter((n) => n.id !== action.id) } : state;
     case 'models':
       return { ...state, models: action.models.length ? action.models : FALLBACK_MODELS };
+    case 'runtimes':
+      return { ...state, runtimes: action.runtimes };
     case 'disk':
       return { ...state, disk: { ...state.disk, ...action.sizes } };
     case 'archiving':
@@ -292,6 +322,14 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
       return { ...state, termNames: action.name ? { ...state.termNames, [action.id]: action.name } : without(state.termNames, action.id) };
     case 'terminal_env_stale':
       return action.ids.join('\0') === state.termEnvStale.join('\0') ? state : { ...state, termEnvStale: action.ids };
+    case 'agent_term':
+      return action.state ? { ...state, agentTerms: { ...state.agentTerms, [action.id]: action.state } } : action.id in state.agentTerms ? { ...state, agentTerms: without(state.agentTerms, action.id) } : state;
+    case 'term_visuals': {
+      const had = action.all ? [] : (state.termVisuals[action.id] ?? []);
+      const fresh = new Set(action.visuals.map((v) => v.n));
+      const visuals = [...had.filter((v) => !fresh.has(v.n)), ...action.visuals].slice(-MAX_TERM_VISUALS);
+      return { ...state, termVisuals: { ...state.termVisuals, [action.id]: visuals } };
+    }
     case 'shell_choices':
       return { ...state, shellChoices: action.shells };
     case 'env_keys':

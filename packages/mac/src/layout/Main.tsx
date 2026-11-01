@@ -4,8 +4,10 @@ import { Button, Empty } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { useMaking } from '../lib/making.js';
 import { ChatView } from '../views/ChatView.js';
+import { ChatLog } from '../chat/ChatLog.js';
+import views from '../views/views.module.css';
 import { Toolbar } from './Toolbar.js';
-import { WorkspaceCenter } from './panel/FocusView.js';
+import { ProjectCenter, WorkspaceCenter } from './panel/FocusView.js';
 import { TerminalDrawer } from './panel/TerminalDrawer.js';
 import { WorkFrame } from '../work/WorkNav.js';
 import s from './Shell.module.css';
@@ -37,17 +39,33 @@ const SentinelRunPage = lazy(() => import('../sentinel/RunPage.js').then((m) => 
 const SentinelHome = lazy(() => import('../sentinel/SentinelHome.js').then((m) => ({ default: m.SentinelHome })));
 const PhoneView = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhoneView })));
 
-/** A worktree being made: its page shows at once, and becomes its conversation when git is done. */
+/**
+ * A worktree being made: its page shows at once with what you asked (BLG-531), and becomes its
+ * conversation when git is done.
+ */
 function MakingWorktree() {
   const ws = useApp((st) => (st.view.kind === 'workspace' ? findWorkspace(st.projects, st.view.id) : undefined));
+  const asked = useApp((st) => (ws ? st.log.some((l) => l.channel === `ws:${ws.id}`) : false));
   if (!ws) return null;
+  const from = ws.base ?? 'the latest origin';
+  if (!asked) {
+    return (
+      <Empty
+        icon="branch"
+        mark={<span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />}
+        title={`Making ${ws.name}…`}
+        detail={`A new worktree from ${from}. Its conversation opens here in a moment; anything you asked your agent starts then.`}
+      />
+    );
+  }
   return (
-    <Empty
-      icon="branch"
-      mark={<span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />}
-      title={`Making ${ws.name}…`}
-      detail={`A new worktree from ${ws.base ?? 'the latest origin'}. Its conversation opens here in a moment; anything you asked Claude starts then.`}
-    />
+    <div className={views.chat}>
+      <ChatLog key={ws.id} channel={`ws:${ws.id}`} />
+      <div className={s.makingLine} role="status">
+        <span className={side.making} aria-hidden="true" />
+        Making {ws.name} from {from}. Your agent starts as soon as its folder is ready.
+      </div>
+    </div>
   );
 }
 
@@ -118,7 +136,11 @@ function Route() {
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':
-      return view.page === 'history' ? <HistoryView projectId={view.id} /> : <ProjectHome id={view.id} />;
+      return view.page === 'history' ? <HistoryView projectId={view.id} /> : (
+        <ProjectCenter>
+          <ProjectHome id={view.id} />
+        </ProjectCenter>
+      );
   }
 }
 

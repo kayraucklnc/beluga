@@ -1,5 +1,6 @@
 import { type Loose, type LooseTable, type Plist, archivedColor, archivedFont, asDict, asTable, parseToml, parseYaml } from './formats.js';
 import { ANSI_NAMES, type ImportedTheme, NATURAL_LINE_HEIGHT, type TermColors, type TerminalLook, cleanLook, floatsToHex, hexColor, isEmptyColors, makeColors } from './look.js';
+import { ghosttyKeys, itermKeys } from './keys.js';
 
 /**
  * Each terminal's settings → a TerminalLook (look.ts). Pure: the files come in as text (or a
@@ -173,6 +174,9 @@ export function parseGhostty(text: string, read: ReadFile = () => undefined): Pa
   if (alt) look.optionMeta = alt !== 'false';
   const opacity = num(last('background-opacity'));
   if (opacity !== undefined && opacity < 1) notes.push('A see-through background stays solid in Beluga.');
+  const keys = ghosttyKeys(all);
+  if (keys.keys.length) look.keys = keys.keys;
+  if (keys.skipped) notes.push(`${keys.skipped === 1 ? 'One of your keys has' : `${keys.skipped} of your keys have`} nothing to do in Beluga's terminal (a new window, a quick terminal…), so ${keys.skipped === 1 ? 'it stays' : 'they stay'} behind.`);
   return { look: cleanLook(look), notes };
 }
 
@@ -228,6 +232,9 @@ export function parseIterm(prefs: Plist | undefined): Parsed {
   const option = num(p['Option Key Sends']);
   if (option !== undefined) look.optionMeta = option !== 0;
   if ((num(p['Transparency']) ?? 0) > 0.01) notes.push('A see-through background stays solid in Beluga.');
+  const keys = itermKeys(root, p);
+  if (keys.keys.length) look.keys = keys.keys;
+  if (keys.skipped) notes.push(`${keys.skipped === 1 ? 'One of your key mappings does' : `${keys.skipped} of your key mappings do`} something Beluga's terminal hasn't got, so ${keys.skipped === 1 ? 'it stays' : 'they stay'} behind.`);
   return { look: cleanLook(look), notes, ...(postscript ? { postscript } : {}) };
 }
 

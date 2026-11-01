@@ -4,6 +4,7 @@ import { Tip, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { Markdown } from './Markdown.js';
+import { useAgentNameIn } from '../lib/agent-words.js';
 import s from './btw.module.css';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -14,14 +15,15 @@ export function askBtw(client: ReturnType<typeof useBeluga>['client'], api: Retu
 }
 
 /**
- * A side question (/btw) and Claude's answer, just above the box you type in. It's beside the
- * conversation, never in it: Claude keeps working, and the conversation never sees it. ✕ or esc
+ * A side question (/btw) and the agent's answer, just above the box you type in. It's beside the
+ * conversation, never in it: the agent keeps working, and the conversation never sees it. ✕ or esc
  * (with the box empty) closes it; asking another replaces it.
  */
 export function BtwCard({ channel }: { channel: string }) {
   const { client } = useBeluga();
   const api = useApi();
   const btw = useApp((st) => st.btw?.[channel]);
+  const agent = useAgentNameIn(channel);
   const body = useRef<HTMLDivElement>(null);
   // Follow the answer as it grows, unless you scrolled up to read.
   const pinned = useRef(true);
@@ -70,7 +72,7 @@ export function BtwCard({ channel }: { channel: string }) {
         }}
       >
         {thinking ? (
-          <span className={s.shimmer}>Claude is thinking on the side…</span>
+          <span className={s.shimmer}>{agent} is thinking on the side…</span>
         ) : btw.text ? (
           <div className={cx(s.answer, writing && s.writing)}>
             <Markdown text={btw.text} live={writing} />
@@ -78,14 +80,14 @@ export function BtwCard({ channel }: { channel: string }) {
         ) : null}
         {btw.state === 'failed' ? (
           <p className={s.error}>
-            {btw.error ?? 'Claude couldn’t answer that'}
+            {btw.error ?? `${agent} couldn’t answer that`}
             <button type="button" className={s.retry} onClick={() => askBtw(client, api, channel, btw.question)}>
               Ask Again
             </button>
           </p>
         ) : null}
       </div>
-      <footer className={s.foot}>Not part of the conversation: Claude keeps working and won’t remember this</footer>
+      <footer className={s.foot}>Not part of the conversation: {agent} keeps working and won’t remember this</footer>
     </section>
   );
 }

@@ -52,7 +52,7 @@ export function worktreeShareRows(state: ShareState, wsId: string): WorktreeShar
 
 /** What one row's line under the name says. */
 export function shareRowDetail(row: WorktreeShareRow, inRoom: boolean): string {
-  if (row.access === 'contribute') return row.wholeProject ? 'Works with your Claude across the whole project' : 'Chats and asks your Claude here';
+  if (row.access === 'contribute') return row.wholeProject ? 'Works with your agent across the whole project' : 'Chats and asks your agent here';
   if (row.access === 'view') return row.wholeProject ? 'Follows the whole project, read-only' : 'Follows along, read-only';
   if (row.guest) return 'Guest';
   return inRoom ? 'In your room, not in this worktree' : 'Not in this worktree';

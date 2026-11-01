@@ -1,5 +1,7 @@
 /// <reference path="../net/mesh/modules.d.ts" />
 import { createHash, hkdfSync } from 'node:crypto';
+import { agentName } from '../shared/agent-label.js';
+import type { AgentRef } from '../protocol.js';
 import type DHT from 'hyperdht';
 import type { BootstrapNode, KeyPair, NoiseSocket, Server } from 'hyperdht';
 import { stat } from 'node:fs/promises';
@@ -679,8 +681,8 @@ export class CompanionHost {
    * Ask your Mac: a new chat in a project (as New Chat there), a new worktree there with its photos
    * (1.12), or a message in a conversation you can write in → its topic.
    */
-  async ask(caller: string, a: { target: { project: string; worktree?: true | undefined; plan?: boolean | undefined } | { topic: string }; text: string; files?: readonly string[] | undefined }): Promise<{ topic: string }> {
-    if ('project' in a.target && a.target.worktree) return this.startWorktree(caller, a.target.project, a.text, a.files, a.target.plan);
+  async ask(caller: string, a: { target: { project: string; worktree?: true | undefined; plan?: boolean | undefined; agent?: AgentRef | undefined } | { topic: string }; text: string; files?: readonly string[] | undefined }): Promise<{ topic: string }> {
+    if ('project' in a.target && a.target.worktree) return this.startWorktree(caller, a.target.project, a.text, a.files, a.target.plan, a.target.agent);
     let channel: string;
     if ('project' in a.target) {
       const title = a.text.replace(/\s+/g, ' ').trim().slice(0, 40) || 'From my phone';
@@ -701,11 +703,11 @@ export class CompanionHost {
     return { topic };
   }
 
-  /** A new worktree with Claude on your words and the photos with them, as the Mac's project home starts one. */
-  private async startWorktree(caller: string, project: string, words: string, files: readonly string[] | undefined, plan: boolean | undefined): Promise<{ topic: string }> {
+  /** A new worktree with Claude on your words and the photos with them, as the Mac's project home starts one; `agent` (BLG-506): who works it. */
+  private async startWorktree(caller: string, project: string, words: string, files: readonly string[] | undefined, plan: boolean | undefined, agent?: AgentRef): Promise<{ topic: string }> {
     // Its channel doesn't exist yet; any but the room's links the photos the same way.
     const text = await this.withFiles(caller, words, files, 'ws:new');
-    const id = await this.must(caller, 'workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}) }]);
+    const id = await this.must(caller, 'workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}), ...(agent ? { agent } : {}) }]);
     if (typeof id !== 'string') throw new Error('Your Mac couldn’t make the worktree');
     const channel = `ws:${id}`;
     this.phoneRuns.set(channel, false);
@@ -982,7 +984,7 @@ export class CompanionHost {
       else if (wasRunning && last?.type === 'agent') {
         this.phoneRuns.delete(channel);
         const topic = convTopic(channel);
-        nudges.push({ kind: 'done', title: last.status === 'done' || last.status === 'answered' ? 'Claude answered' : 'Claude stopped', body: last.text.replace(/```[\s\S]*?(```|$)/g, '(code)').slice(0, 300), ...(topic ? { topic } : {}), priority: 'normal', collapse: `done:${channel}` });
+        nudges.push({ kind: 'done', title: `${agentName(last.agent)} ${last.status === 'done' || last.status === 'answered' ? 'answered' : 'stopped'}`, body: last.text.replace(/```[\s\S]*?(```|$)/g, '(code)').slice(0, 300), ...(topic ? { topic } : {}), priority: 'normal', collapse: `done:${channel}` });
       }
     }
     // Every other run that finished (the Mac's own "Claude finished" notices): only for a phone that

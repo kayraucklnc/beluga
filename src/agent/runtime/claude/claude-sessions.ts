@@ -1,10 +1,10 @@
 import { existsSync, readdirSync, realpathSync } from 'node:fs';
-import { open, stat } from 'node:fs/promises';
+import { open, readdir, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { getSessionMessages, listSessions } from '@anthropic-ai/claude-agent-sdk';
-import { type Conversation, type ConversationSummary, type TranscriptMessage, transcriptToTurns, typedText } from './transcript.js';
-import { isUnder } from '../shared/path-inside.js';
+import { type Conversation, type ConversationSummary, type TranscriptMessage, transcriptToTurns, typedText } from '../../transcript.js';
+import { isUnder } from '../../../shared/path-inside.js';
 
 /**
  * Finding the Claude Code conversations that ran in a folder (a worktree made by Conductor or
@@ -197,6 +197,71 @@ export async function conversationsUnder(dir: string, limit = UNDER_MAX): Promis
     if (info && cwd && inside(cwd)) out.push({ ...summaryOf(info), cwd, bytes: f.size });
   }
   return out;
+}
+
+/** The folder a transcript ran in, from its first lines that say. */
+async function cwdOf(file: string): Promise<string | undefined> {
+  const st = await stat(file).catch(() => undefined);
+  if (!st) return undefined;
+  for (const raw of await peek(file, Math.min(st.size, PEEK)).catch(() => [] as string[])) {
+    try {
+      const cwd = (JSON.parse(raw) as Line).cwd;
+      if (cwd) return cwd;
+    } catch {
+      // A line cut short: the next one.
+    }
+  }
+  return undefined;
+}
+
+/** What Claude Code keeps per session besides its transcript (edit history, env, to-dos). */
+async function dropSessionExtras(root: string, sessionId: string): Promise<void> {
+  if (!/^[\w-]{1,100}$/.test(sessionId)) return;
+  for (const p of [path.join(root, 'file-history', sessionId), path.join(root, 'session-env', sessionId), path.join(root, 'debug', `${sessionId}.txt`)]) await rm(p, { recursive: true, force: true }).catch(() => undefined);
+  const todos = path.join(root, 'todos');
+  for (const f of await readdir(todos).catch(() => [] as string[])) if (f.startsWith(`${sessionId}-`)) await rm(path.join(todos, f), { force: true }).catch(() => undefined);
+}
+
+/**
+ * Forget one Claude Code session that ran in a folder others share (a deleted chat's): its
+ * transcript, its sub-agent and tool-result folder, and what Claude Code keeps for it elsewhere.
+ */
+export async function dropSession(dir: string, sessionId: string, root: string = claudeConfigDir()): Promise<void> {
+  if (!/^[\w-]{1,100}$/.test(sessionId)) return;
+  for (const variant of new Set(pathVariants(dir))) {
+    const folder = path.join(root, 'projects', encodeProjectDir(variant));
+    await rm(path.join(folder, `${sessionId}.jsonl`), { force: true }).catch(() => undefined);
+    await rm(path.join(folder, sessionId), { recursive: true, force: true }).catch(() => undefined);
+  }
+  await dropSessionExtras(root, sessionId);
+}
+
+/**
+ * Forget every Claude Code session that ran in a folder being deleted for good (BLG-532): its
+ * transcripts, their sub-agent and tool-result folders, and what Claude Code keeps per session
+ * elsewhere. A transcript filed alike that ran in another folder ("a/b-c" and "a-b/c" are filed
+ * alike) stays, and so does the folder then. Returns the bytes freed.
+ */
+export async function dropFolderSessions(dir: string, root: string = claudeConfigDir()): Promise<number> {
+  let freed = 0;
+  for (const variant of new Set(pathVariants(dir))) {
+    const folder = path.join(root, 'projects', encodeProjectDir(variant));
+    let keep = false;
+    for (const file of transcriptsIn(folder)) {
+      const cwd = await cwdOf(file);
+      if (cwd && !samePath(cwd, dir)) {
+        keep = true;
+        continue;
+      }
+      const id = path.basename(file, '.jsonl');
+      freed += (await stat(file).catch(() => undefined))?.size ?? 0;
+      await rm(file, { force: true }).catch(() => undefined);
+      await rm(path.join(folder, id), { recursive: true, force: true }).catch(() => undefined);
+      await dropSessionExtras(root, id);
+    }
+    if (!keep) await rm(folder, { recursive: true, force: true }).catch(() => undefined);
+  }
+  return freed;
 }
 
 async function messagesOf(sessionId: string, dir: string): Promise<TranscriptMessage[]> {

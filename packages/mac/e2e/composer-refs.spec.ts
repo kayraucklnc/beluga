@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from './fixtures.js';
-import { openPlans } from './helpers.js';
+import { openWork } from './helpers.js';
 
 /**
  * A pasted image is referenced in the words where the cursor was ("[image 1]"), and the project
@@ -98,14 +98,14 @@ test('the plan chat takes pasted images, image paths in words, and files like an
   const notes = path.join(dir, 'release notes.md');
   writeFileSync(notes, '# Notes');
   await page.goto('/');
-  await openPlans(page);
+  await openWork(page, 'Plans');
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await page.getByRole('button', { name: /^Project: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();
   }
   await page.locator('main').getByRole('button', { name: /^Card checkout for launch,/ }).click();
   const chat = page.getByRole('complementary', { name: 'Conversation' });
-  const box = chat.getByRole('textbox', { name: 'Message Claude about the plan' });
+  const box = chat.getByRole('textbox', { name: 'Message your agent about the plan' });
   const tray = chat.getByRole('group', { name: 'Images to send' });
   // A picture from the clipboard, where the cursor is.
   await box.fill('the bug is here and');

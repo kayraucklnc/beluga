@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, promises as fs, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { claudeConfigDir, encodeProjectDir, pathVariants } from '../../agent/claude-sessions.js';
+import { claudeConfigDir, dropSession } from '../../agent/runtime/claude/claude-sessions.js';
 import type { AgentPlace } from '../../agent/types.js';
 import { HistorySaver } from '../history-saver.js';
 import { type LogItem, type Store, settleRun } from '../store.js';
@@ -199,9 +199,7 @@ export class SentinelChats {
 
   /** Claude Code's own record of a deleted chat (~/.claude/projects/<its folder>/<session>.jsonl). */
   private async dropTranscript(sessionId: string): Promise<void> {
-    if (!/^[\w-]{1,100}$/.test(sessionId)) return;
-    const root = path.join(this.deps.claudeDir ?? claudeConfigDir(), 'projects');
-    for (const dir of new Set(pathVariants(this.workDir))) await fs.rm(path.join(root, encodeProjectDir(dir), `${sessionId}.jsonl`), { force: true }).catch(() => undefined);
+    await dropSession(this.workDir, sessionId, this.deps.claudeDir ?? claudeConfigDir());
   }
 
   /**

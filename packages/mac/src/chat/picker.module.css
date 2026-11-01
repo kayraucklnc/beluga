@@ -115,6 +115,56 @@
   color: var(--text-3);
   font-size: 0.84rem;
 }
+.others {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+.others:hover {
+  background: var(--bg-hover);
+}
+.group {
+  margin: 2px 0 4px 8px;
+}
+.groupName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 2px;
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+/* A runtime's mark, before its name (never instead of it). */
+.mark {
+  flex: none;
+  align-self: center;
+  margin-right: -2px;
+  color: var(--text-2);
+}
+.groupOff .mark {
+  color: var(--text-3);
+}
+/* A model's maker, when it isn't its runtime's own (a GPT model served locally). */
+.maker {
+  flex: none;
+  align-self: center;
+  margin-right: -3px;
+  color: var(--text-3);
+}
+.groupOff .groupName {
+  color: var(--text-3);
+}
+.why {
+  padding: 2px 8px 8px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
 .meterRow {
   display: flex;
   align-items: flex-end;
@@ -185,4 +235,9 @@
   padding: 8px 8px 4px;
   color: var(--text-3);
   font-size: 0.84rem;
+}
+/* A model that can't be picked now (a local endpoint not answering): greyed, its why below it. */
+.modelOff {
+  opacity: 0.55;
+  cursor: default;
 }

@@ -1,67 +1,48 @@
-import type { Usage } from '../protocol.js';
+import { CLAUDE_AGENT, type AgentRef, type Profile, type ProviderUsage, type Usage } from '../protocol.js';
 
-/** Utilization may come as a 0–1 fraction or a 0–100 percentage depending on the source. */
-export function toPct(value: number | null | undefined): number | undefined {
-  if (value === null || value === undefined || !Number.isFinite(value)) return undefined;
-  const pct = value <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, Math.round(pct)));
+/** What a run or a refresh learned about one provider's usage (any part of it). */
+export type UsageUpdate = Partial<Omit<ProviderUsage, 'agent' | 'updatedAt'>>;
+
+/** Older Macs only knew Claude; at most this many providers are shared. */
+const MAX_PROVIDERS = 8;
+
+/**
+ * Every provider's usage on a profile. An older Mac sends only `usage`, which was always Claude's;
+ * a newer one sends `usages` (and keeps `usage` as Claude's for the older Macs).
+ */
+export function usagesOf(p: Pick<Profile, 'usage' | 'usages'> | undefined): readonly ProviderUsage[] {
+  if (!p) return [];
+  if (p.usages?.length) return p.usages;
+  return p.usage ? [{ ...p.usage, agent: CLAUDE_AGENT }] : [];
 }
 
-/** Seconds, milliseconds or ISO strings → epoch ms. */
-export function toMs(value: number | string | null | undefined): number | undefined {
-  if (value === null || value === undefined) return undefined;
-  if (typeof value === 'string') {
-    const t = Date.parse(value);
-    return Number.isNaN(t) ? undefined : t;
-  }
-  return value < 1e12 ? value * 1000 : value;
+/** One provider's usage on a profile (by runtime: one card per provider). */
+export function usageFor(p: Pick<Profile, 'usage' | 'usages'> | undefined, runtime: string): ProviderUsage | undefined {
+  return usagesOf(p).find((u) => u.agent.runtime === runtime);
 }
 
-interface RateLimitInfo {
-  readonly rateLimitType?: string;
-  readonly utilization?: number;
-  readonly resetsAt?: number;
+/** Someone's providers: Claude always, then every other one they run or that reported usage, by runtime. */
+export function providersOf(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined): AgentRef[] {
+  const agents = new Map<string, AgentRef>([[CLAUDE_AGENT.runtime, CLAUDE_AGENT]]);
+  for (const a of p?.agents ?? []) if (!agents.has(a.runtime)) agents.set(a.runtime, a);
+  for (const u of usagesOf(p)) if (!agents.has(u.agent.runtime)) agents.set(u.agent.runtime, u.agent);
+  return [...agents.values()];
 }
 
-/** Map a streamed rate_limit_event into a partial usage update. */
-export function fromRateLimitEvent(info: RateLimitInfo): Partial<Usage> | undefined {
-  const pct = toPct(info.utilization);
-  if (pct === undefined) return undefined;
-  const window = { pct, resetsAt: toMs(info.resetsAt) };
-  if (info.rateLimitType === 'five_hour') return { fiveHour: window };
-  if (info.rateLimitType === 'seven_day') return { week: window };
-  return undefined;
+/** The plain Usage an older Mac reads, from a provider's usage. */
+function legacyOf(u: ProviderUsage): Usage {
+  return { ...(u.plan ? { plan: u.plan } : {}), ...(u.fiveHour ? { fiveHour: u.fiveHour } : {}), ...(u.week ? { week: u.week } : {}), updatedAt: u.updatedAt };
 }
 
-interface UsageWindowResponse {
-  readonly utilization: number | null;
-  readonly resets_at: string | null;
-}
-
-interface UsageResponse {
-  readonly subscription_type: string | null;
-  readonly rate_limits_available: boolean;
-  readonly rate_limits: { five_hour?: UsageWindowResponse | null; seven_day?: UsageWindowResponse | null } | null;
-}
-
-/** Map the (experimental) /usage response into our Usage shape. */
-export function fromUsageResponse(res: UsageResponse, now = Date.now()): Usage | undefined {
-  if (!res.rate_limits_available || !res.rate_limits) return undefined;
-  const win = (w: UsageWindowResponse | null | undefined) => {
-    const pct = toPct(w?.utilization);
-    return pct === undefined ? undefined : { pct, resetsAt: toMs(w?.resets_at) };
-  };
-  return {
-    plan: res.subscription_type ?? undefined,
-    fiveHour: win(res.rate_limits.five_hour),
-    week: win(res.rate_limits.seven_day),
-    updatedAt: now,
-  };
-}
-
-/** "42% · resets 3:10 PM" style summary. */
-export function describeWindow(w: { pct: number; resetsAt?: number } | undefined): string {
-  if (!w) return '–';
-  const reset = w.resetsAt ? ` · resets ${new Date(w.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : '';
-  return `${w.pct}%${reset}`;
+/**
+ * The profile patch for an update to one provider's usage: its entry in `usages` merged (or added),
+ * and `usage` kept as Claude's so older Macs still read it.
+ */
+export function withUsage(p: Pick<Profile, 'usage' | 'usages'>, agent: AgentRef, update: UsageUpdate, now = Date.now()): Pick<Profile, 'usage' | 'usages'> {
+  const list = usagesOf(p);
+  const prev = list.find((u) => u.agent.runtime === agent.runtime);
+  const next: ProviderUsage = { ...prev, ...update, agent: { ...prev?.agent, ...agent }, updatedAt: now };
+  const usages = prev ? list.map((u) => (u === prev ? next : u)) : [...list, next].slice(-MAX_PROVIDERS);
+  const claude = usages.find((u) => u.agent.runtime === CLAUDE_AGENT.runtime);
+  return { usages, ...(claude ? { usage: legacyOf(claude) } : p.usage ? { usage: p.usage } : {}) };
 }

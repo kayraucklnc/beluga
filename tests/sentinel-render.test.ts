@@ -54,7 +54,7 @@ describe('sentences', () => {
   });
 
   it('says what a step does', () => {
-    expect(stepSentence({ id: 'a', name: 'Brief', kind: 'claude', where: 'project', prompt: 'Write my brief\nmore' })).toBe('Claude in the project: “Write my brief”');
+    expect(stepSentence({ id: 'a', name: 'Brief', kind: 'claude', where: 'project', prompt: 'Write my brief\nmore' })).toBe('Agent in the project: “Write my brief”');
     expect(stepSentence({ id: 'b', name: 'Tests', kind: 'script', command: 'npm test', cwd: 'project', timeoutSec: 120 })).toBe('Runs `npm test` in the project');
     expect(stepSentence({ id: 'c', name: 'Tell me', kind: 'notify', phone: true })).toBe('Tells you on the Mac and the phone');
   });

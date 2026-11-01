@@ -82,7 +82,7 @@ function Page({ projectId, repo, issue, loading, refresh, late }: { projectId: s
             openSheet({
               kind: 'confirm',
               title: `Post the findings on #${issue.number}?`,
-              message: `What Claude found goes on GitHub as a comment from you, for everyone who can see the issue.\n\n${found.length > 600 ? `${found.slice(0, 600)}…` : found}`,
+              message: `What the agent found goes on GitHub as a comment from you, for everyone who can see the issue.\n\n${found.length > 600 ? `${found.slice(0, 600)}…` : found}`,
               confirm: 'Post Comment',
               run: () => void a.comment(projectId, issue.number, `**Findings**\n\n${found}`).then((url) => url && refresh()),
             }),
@@ -201,7 +201,7 @@ function NextStep({ projectId, issue, stage }: { projectId: string; issue: GhIss
 
   if (stage.kind === 'investigating') {
     return (
-      <Status icon={<LiveDot />} title="Claude is investigating" where={where} tone="claude" text={`Finding out why it happens and reproducing it. What it finds goes into ${task.key}’s brief; nothing is fixed yet.`}>
+      <Status icon={<LiveDot />} title="The agent is investigating" where={where} tone="claude" text={`Finding out why it happens and reproducing it. What it finds goes into ${task.key}’s brief; nothing is fixed yet.`}>
         <div className={s.statusActions}>
           {chatButton(true)}
           {taskButton}
@@ -212,11 +212,11 @@ function NextStep({ projectId, issue, stage }: { projectId: string; issue: GhIss
 
   if (stage.kind === 'investigated') {
     return (
-      <Status icon={<Icon name="search" size={13} />} title="Claude investigated" where={where} tone="info" text={found ? undefined : 'Its report is in the conversation.'}>
+      <Status icon={<Icon name="search" size={13} />} title="The agent investigated" where={where} tone="info" text={found ? undefined : 'Its report is in the conversation.'}>
         {found ? <Report text={found} /> : null}
         <div className={s.statusActions}>
           <Button variant="primary" size="small" icon="wrench" disabled={fixing} onClick={() => void fix()}>
-            {fixing ? 'Asking Claude…' : 'Fix It'}
+            {fixing ? 'Asking the agent…' : 'Fix It'}
           </Button>
           <Tip label={`In the same worktree, with a pull request that closes #${n}`}>
             <span className={s.statusHint}>In the same worktree, with a pull request that closes #{n}</span>
@@ -232,7 +232,7 @@ function NextStep({ projectId, issue, stage }: { projectId: string; issue: GhIss
     return (
       <Status
         icon={stage.working ? <LiveDot /> : <Icon name="wrench" size={13} />}
-        title={stage.working ? 'Claude is fixing it' : 'Claude stopped before a pull request'}
+        title={stage.working ? 'The agent is fixing it' : 'The agent stopped before a pull request'}
         where={where}
         tone="claude"
         text={stage.working ? `Its pull request closes #${n} when it merges.` : said ? undefined : 'See what it said in the conversation: it may need you, or it may not be a bug.'}

@@ -18,6 +18,8 @@ import { DeleteMacChat, MacChatsSheet, newMacChat } from '../../components/MacCh
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { EditPromptSheet } from '../../components/EditPrompt';
+import { AgentPickerSheet } from '../../components/AgentPicker';
+import { agentMark, markIcon, markOfName, runtimeMark } from '../../components/AgentMark';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone, toneOf } from '../../components/ui';
 import { ago, elapsed, useSince, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
@@ -48,7 +50,7 @@ function MacStarters({ topic }: { readonly topic: Topic }) {
       <IconBadge Icon={Laptop} tone="sky" size={56} />
       <T v="heading">Ask your Mac</T>
       <T v="callout" style={{ textAlign: 'center', paddingHorizontal: 24 }}>
-        Your Claude for the whole Mac, not one project. The same conversation as on your Mac.
+        Your agent for the whole Mac, not one project. The same conversation as on your Mac.
       </T>
       <View style={{ gap: 8, alignSelf: 'stretch', marginTop: 6 }}>
         {starters.map((s) => (
@@ -83,6 +85,7 @@ export default function Conversation() {
   const [unread, setUnread] = useState<TurnView | undefined>();
   /** Your message, long-pressed to edit it (1.28): Rewind Here or New Fork. */
   const [editing, setEditing] = useState<TurnView | undefined>();
+  const [picking, setPicking] = useState(false);
   const canEdit = useSupports('editPrompt');
   const older = async () => {
     if (!c) return;
@@ -165,7 +168,7 @@ export default function Conversation() {
                       {c.plan.title}
                     </T>
                     <T v="caption" numberOfLines={1}>
-                      {c.plan.milestones ? `${c.plan.milestones} ${c.plan.milestones === 1 ? 'milestone' : 'milestones'} · ${c.plan.done} of ${c.plan.total} tasks` : 'Claude is writing the plan'}
+                      {c.plan.milestones ? `${c.plan.milestones} ${c.plan.milestones === 1 ? 'milestone' : 'milestones'} · ${c.plan.done} of ${c.plan.total} tasks` : 'Your agent is writing the plan'}
                     </T>
                   </View>
                   <Pill label={c.plan.state} tone={toneOf(c.plan.state)} />
@@ -202,7 +205,7 @@ export default function Conversation() {
             {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
             {turns.map((t, i) => (
               <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeIn.duration(180) : undefined}>
-                {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
+                {t.dialogue ? <DialogueTurn d={t.dialogue} /> : t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} runtime={c?.agent?.runtime} />}
               </Animated.View>
             ))}
             {pending.map((p) => (
@@ -219,10 +222,13 @@ export default function Conversation() {
               </Animated.View>
             ))}
           </ScrollView>
+          {c?.terminal ? <TerminalBand label={c.terminal.label} onTakeOver={() => void store.call(calls.takeOver(topic)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))} /> : null}
           <Composer
-            placeholder={c?.waiting ?? (c?.working ? 'What’s next for Claude…' : 'Reply to Claude…')}
+            placeholder={c?.waiting ?? (c?.working ? 'What’s next for your agent…' : 'Reply to your agent…')}
             working={c?.working}
-            disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
+            // The room: "@codex", "@bob:codex" as you type @ (BLG-520).
+            {...(c?.tags?.length ? { tags: c.tags } : {})}
+            disabled={c?.terminal ? `${c.terminal.label}’s terminal on your Mac has this conversation: Take Over to write here.` : c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
             photos
             onSend={(text, photos) => {
               atEnd.current = true;
@@ -276,15 +282,16 @@ export default function Conversation() {
         </Sheet>
         {c?.mergeable ? <MergeSheet topic={topic} visible={mergeOpen} onClose={() => setMergeOpen(false)} /> : null}
         <EditPromptSheet turn={editing} onClose={() => setEditing(undefined)} />
+        <AgentPickerSheet topic={topic} picker={c?.agent} visible={picking} onClose={() => setPicking(false)} />
         <Options
           visible={Boolean(unread)}
           onClose={() => setUnread(undefined)}
-          title="Claude hasn't read this yet"
+          title="Your agent hasn't read this yet"
           options={[
             {
               Icon: Send,
               label: 'Send now',
-              sub: 'Stops Claude’s current step so it reads this next',
+              sub: 'Stops your agent’s current step so it reads this next',
               tone: 'peach',
               onPress: () => {
                 const request = unread?.steer?.request;
@@ -298,8 +305,9 @@ export default function Conversation() {
           onClose={() => setMenu(false)}
           title={c?.title}
           options={[
+            { Icon: c?.agent ? markIcon(runtimeMark(c.agent.runtime)) : Bot, label: `Agent · ${c?.agent?.label ?? ''}`, sub: 'Pick the agent and model for this conversation', tone: 'lavender', hidden: !c?.agent || !store.supports('agentPicker'), onPress: () => setPicking(true) },
             { Icon: Plus, label: 'New chat', sub: 'A fresh chat with your Mac, a new tab there too', tone: 'sky', hidden: !macChats, onPress: () => newMacChat((h) => router.replace(h as never)) },
-            { Icon: Square, label: askedTask ? 'Stop asking' : 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic)) },
+            { Icon: Square, label: askedTask ? 'Stop asking' : 'Stop the agent', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic)) },
             { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
             { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
             { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
@@ -339,7 +347,7 @@ function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) 
       {waiting ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4, marginRight: 4 }}>
           <Clock color={color.text2} size={12} />
-          <T v="caption">{waiting === 'stopping' ? 'Sent · Claude is stopping its step to read it' : 'Sent · waiting for Claude to read it'}</T>
+          <T v="caption">{waiting === 'stopping' ? 'Sent · your agent is stopping its step to read it' : 'Sent · waiting for your agent to read it'}</T>
         </View>
       ) : (
         <T v="caption" style={{ marginTop: 4, marginRight: 4 }}>
@@ -364,7 +372,49 @@ function PendingTurn({ s }: { s: Pending }) {
   );
 }
 
-function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic }) {
+/** 1.34 (BLG-466): where a dialogue between agents begins: what it's about, how far it is, and Stop / Continue. */
+function DialogueTurn({ d }: { d: NonNullable<TurnView['dialogue']> }) {
+  const act = (call: ReturnType<typeof calls.dialogueStop>): void => void store.call(call).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+  return (
+    <Card style={{ padding: 14, gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <MessagesSquare color={color.text2} size={15} />
+        <T v="caption" c={color.text} style={{ fontWeight: '700' }}>
+          {d.mode}
+        </T>
+        <T v="caption" style={{ flex: 1 }} numberOfLines={1}>
+          {d.who}
+        </T>
+      </View>
+      <T v="callout" c={color.text}>
+        {d.topic}
+      </T>
+      <T v="caption">{[d.progress, d.budget, d.status].filter(Boolean).join(' · ')}</T>
+      {d.canStop || d.canContinue ? (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {d.canContinue ? (
+            <Press onPress={() => act(calls.dialogueContinue(d.id))} style={{ paddingHorizontal: 14, height: 32, borderRadius: 16, justifyContent: 'center', backgroundColor: color.sunken }}>
+              <T v="caption" c={color.text} style={{ fontWeight: '600' }}>
+                Continue
+              </T>
+            </Press>
+          ) : null}
+          {d.canStop ? (
+            <Press onPress={() => act(calls.dialogueStop(d.id))} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 32, borderRadius: 16, backgroundColor: color.sunken }}>
+              <OctagonX color={color.text2} size={14} />
+              <T v="caption" c={color.text} style={{ fontWeight: '600' }}>
+                Stop
+              </T>
+            </Press>
+          ) : null}
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
+/** An agent's turn, under its name with its mark (BLG-498: the agent the Mac sends; an older Mac's, by the name, else the conversation's runtime). */
+function ClaudeTurn({ t, all, onAgent, topic, runtime }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic; runtime?: string | undefined }) {
   const working = t.status === 'working';
   const outs = t.outputs ?? [];
   const mins = t.endTs ? Math.max(1, Math.round((t.endTs - t.ts) / 60000)) : undefined;
@@ -372,7 +422,7 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
   return (
     <View style={{ gap: 12, paddingTop: 2 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <Avatar name={t.name} size={26} claude={t.who === 'claude'} />
+        <Avatar name={t.name} size={26} {...(t.who === 'claude' ? { mark: t.agent ? agentMark(t.agent) : markOfName(t.name, runtime) } : {})} />
         <T v="callout" c={color.text} style={{ fontWeight: '700' }}>
           {t.name}
         </T>
@@ -410,5 +460,21 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
         </View>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * The Mac's terminal view drives this conversation (1.36, BLG-534): what you'd send here waits,
+ * and Take Over gives it back to the chat (the terminal on the Mac closes, what was said there is here).
+ */
+function TerminalBand({ label, onTakeOver }: { readonly label: string; readonly onTakeOver: () => void }) {
+  return (
+    <Card tone="lavender" style={{ marginHorizontal: 16, marginBottom: 8, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <IconBadge Icon={SquareTerminal} tone="lavender" size={30} />
+      <T v="caption" style={{ flex: 1 }}>{`${label}’s terminal on your Mac is driving this conversation.`}</T>
+      <Press onPress={onTakeOver} accessibilityRole="button" accessibilityLabel="Take over" style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9, backgroundColor: color.card }}>
+        <T v="caption" style={{ fontWeight: '600' }}>Take Over</T>
+      </Press>
+    </Card>
   );
 }

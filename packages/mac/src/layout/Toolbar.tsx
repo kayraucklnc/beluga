@@ -1,3 +1,5 @@
+import { agentLabel } from '@beluga/shared/agent-label.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { planForHome } from '@beluga/core/plans/model.js';
 import { ASSISTANT_TITLE, THIS_COMPUTER } from '@beluga/shared/assistant.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -7,6 +9,8 @@ import { describePr } from '@beluga/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js';
+import { ConvoSwitch, SWITCH_ICONS_W, SWITCH_W } from '../agent-term/ConvoSwitch.js';
+import { terminalCapable } from '../lib/convo-mode.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep, sameFields } from '../lib/stable.js';
@@ -15,7 +19,7 @@ import { type ToolAction, isPrStep, shortOf, toolbarActions } from './toolbar-ac
 import { type BranchFold, BranchControl, pillHidden, shortLabel } from './BranchControl.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
-import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { togglePanel } from '../lib/panel.js';
 import { panelFits } from '../lib/panel-model.js';
 import { mod } from '../lib/system.js';
@@ -167,7 +171,9 @@ export function Toolbar() {
     const pillW = (fold: BranchFold): number => (branch && !pillHidden(branch, fold) ? (fold === 'none' ? branch.label.length * 6.6 + 40 : 38) + (branch.pr ? 28 : 0) : 0);
     const stepW = (fold: BranchFold): number => (branch?.steps[0] ? (fold === 'all' ? shortLabel(branch.steps[0]).length * 7.4 + 42 : branch.steps[0].label.length * 7.4 + 42) + 34 : 0);
     const primaryW = (fold: BranchFold): number => (primary ? (fold === 'all' ? shortOf(primary).length * 7.4 + 48 : primary.label.length * 7.4 + 48) : 0);
-    const fixedAt = (fold: BranchFold): number => TITLE_MIN + RIGHT_FIXED + pillW(fold) + stepW(fold) + primaryW(fold) + 34;
+    // The Chat · Terminal · Both switch (BLG-534): with its words while there's room, then its icons.
+    const switchW = getPrefs().termView && terminalCapable(client.store.getState(), ws.id) ? (width >= 1180 ? SWITCH_W : SWITCH_ICONS_W) : 0;
+    const fixedAt = (fold: BranchFold): number => TITLE_MIN + RIGHT_FIXED + switchW + pillW(fold) + stepW(fold) + primaryW(fold) + 34;
     const fold = FOLDS.find((f) => fixedAt(f) <= width) ?? 'all';
     const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixedAt(fold)) / 30)));
     // Icons that don't fit lead ⋯ as a section of their own.
@@ -210,7 +216,7 @@ export function Toolbar() {
                 <span className={s.ellipsis}>{ws.branch}</span>
               </span>
             ) : ws.kind === 'chat' ? (
-              <span className={s.meta}>{ws.askOnly ? (planForHome(state.plans, `ws:${ws.id}`) ? 'The plan’s conversation · main folder' : 'Questions only · main folder') : 'Claude chat'}</span>
+              <span className={s.meta}>{ws.askOnly ? (planForHome(state.plans, `ws:${ws.id}`) ? 'The plan’s conversation · main folder' : 'Questions only · main folder') : 'Agent chat'}</span>
             ) : null}
             {pr && !branch ? (
               <span className={cx(s.meta, s.metaPr, pr.state === 'MERGED' && s.metaMerged)} title={describePr(pr)} data-pr-state={pr.state}>
@@ -220,6 +226,7 @@ export function Toolbar() {
             ) : null}
           </>
         }
+        center={switchW ? <ConvoSwitch wsId={ws.id} iconOnly={switchW === SWITCH_ICONS_W} /> : undefined}
         right={
           <>
             {/* Friends you shared it with over the network, each with how they're doing (or that only you see it). */}
@@ -265,7 +272,14 @@ export function Toolbar() {
       <Shell
         headerRef={headerRef}
         title={w?.name ?? 'Shared workspace'}
-        subtitle={<span className={s.meta}>{`${owner}'s ${w?.project ?? 'project'} · ${w?.role === 'contribute' ? 'you can work here' : 'you’re following along'}`}</span>}
+        // Whose machine and which agent runs there: the owner's (BLG-448), never yours.
+        subtitle={
+          <span className={s.meta}>
+            {`${owner}'s ${w?.project ?? 'project'} ·`}
+            <Icon name={agentMark(w?.agent)} size={11} />
+            {`${agentLabel(w?.agent, owner, false, { model: true })} on their Mac · ${w?.role === 'contribute' ? 'you can work here' : 'you’re following along'}`}
+          </span>
+        }
         center={
           <Segmented
             label="Views"
@@ -292,12 +306,12 @@ export function Toolbar() {
   if (view.kind === 'conversation') return <ConversationBar id={view.id} headerRef={headerRef} />;
 
   if (view.kind === 'assistant') {
-    return <Shell headerRef={headerRef} title={<span className={s.name}>{ASSISTANT_TITLE}</span>} subtitle={<span className={s.meta}>Your Claude for {THIS_COMPUTER} as a whole · the open chat is the one on your phone</span>} />;
+    return <Shell headerRef={headerRef} title={<span className={s.name}>{ASSISTANT_TITLE}</span>} subtitle={<span className={s.meta}>Your agent for {THIS_COMPUTER} as a whole · the open chat is the one on your phone</span>} />;
   }
 
   if (view.kind === 'room') {
     const solo = state.peers.length <= 1;
-    return <Shell headerRef={headerRef} title={solo ? 'Chat' : state.room} subtitle={<span className={s.meta}>{solo ? 'You and your Claude' : `${state.peers.length} people · everyone’s Claude can join in`}</span>} />;
+    return <Shell headerRef={headerRef} title={solo ? 'Chat' : state.room} subtitle={<span className={s.meta}>{solo ? 'You and your agent' : `${state.peers.length} people · everyone’s agent can join in`}</span>} />;
   }
 
   if (view.kind === 'draft' || view.kind === 'draft_worktree') {
@@ -312,7 +326,7 @@ export function Toolbar() {
             <span className={s.name}>{worktree ? 'New Worktree' : 'New Chat'}</span>
           </>
         }
-        subtitle={<span className={s.meta}>{worktree ? 'Its own branch and folder; Claude starts on your task right away' : project ? `Claude works in ${project.name}’s main folder` : 'Nothing is created until you send the first message'}</span>}
+        subtitle={<span className={s.meta}>{worktree ? 'Its own branch and folder; your agent starts on your task right away' : project ? `Your agent works in ${project.name}’s main folder` : 'Nothing is created until you send the first message'}</span>}
       />
     );
   }
@@ -346,7 +360,7 @@ export function Toolbar() {
 
   if (view.kind === 'plans') return <Shell headerRef={headerRef} title={<span className={s.name}>Plans</span>} />;
 
-  if (view.kind === 'issues') return <Shell headerRef={headerRef} title={<span className={s.name}>Issues</span>} subtitle={<span className={s.meta}>From GitHub · Claude investigates, fixes, or writes them up as tasks</span>} />;
+  if (view.kind === 'issues') return <Shell headerRef={headerRef} title={<span className={s.name}>Issues</span>} subtitle={<span className={s.meta}>From GitHub · your agent investigates, fixes, or writes them up as tasks</span>} />;
 
   if (view.kind === 'actions') return <Shell headerRef={headerRef} title={<span className={s.name}>Actions</span>} subtitle={<span className={s.meta}>From GitHub · runs as they go, and each workflow as a graph</span>} />;
 

@@ -8,6 +8,8 @@ import { redactSecrets } from '../../shared/steps.js';
 import type { NoticeEvent } from '../notify.js';
 import { type Named, mentionNote, personMentions } from '../person-mentions.js';
 import type { RunFolders } from './files.js';
+import type { AgentRef } from '../../protocol.js';
+import type { Effort } from '../../shared/settings-schema.js';
 import {
   type ClaudeStep,
   type FriendStep,
@@ -32,6 +34,8 @@ import {
   capPayload,
   firstLine,
   stepAvailable,
+  stepAgent,
+  stepEffort,
 } from './model.js';
 import type { Row, Source } from '../../shared/view-spec.js';
 import { type Measured, keptWords, measureFrom, readOutput } from './metrics.js';
@@ -83,6 +87,11 @@ export interface SentinelPlaces {
   madeChanges(workspaceId: string): Promise<boolean | undefined>;
   /** Archive a worktree quietly (nothing of yours is lost). */
   archive(workspaceId: string): Promise<unknown>;
+  /**
+   * The agent a run's own chat or worktree runs for the next step (BLG-497); undefined: your default.
+   * `effort`: the step's thinking effort (undefined: Settings' effort).
+   */
+  setAgent?(workspaceId: string, agent: AgentRef | undefined, effort?: Effort): void;
 }
 
 /** A pull request as GitHub sees it now (for the merge gate, §5). */
@@ -195,6 +204,8 @@ export interface RunnerDeps {
   readonly fetchSource?: SourceFetch;
   /** Variables only Call a service steps get, from Beluga's own connections (the project's Earnings key as $STRIPE_EARNINGS_KEY). */
   readonly serviceEnv?: (projectId: string | undefined) => Record<string, string>;
+  /** The effort levels an agent's model takes (undefined agent: your default), when they're known. */
+  readonly efforts?: (agent: AgentRef | undefined) => readonly string[] | undefined;
   /** Keep a run's numbers (the files, the state, the first dashboard) → their names as kept. */
   readonly keep?: (active: ActiveRun, measured: readonly Measured[]) => void;
 }
@@ -560,7 +571,7 @@ export class SentinelRunner {
 
   private async prStep(active: ActiveRun, step: PrStep, live: Live): Promise<StepEnd> {
     const worktree = active.run.worktreeId;
-    if (!worktree) return { kind: 'failed', why: 'there’s no worktree to open a pull request from: an “Ask Claude” step in a new worktree comes first' };
+    if (!worktree) return { kind: 'failed', why: 'there’s no worktree to open a pull request from: an “Ask your agent” step in a new worktree comes first' };
     const open = active.run.pr;
     if (open) return { kind: 'done', output: `#${open.number} is open already: ${open.url}` };
     const gh = this.deps.github;
@@ -624,14 +635,14 @@ export class SentinelRunner {
     if (!head) return { kind: 'failed', why: `GitHub didn’t say which commit ${n} is at` };
     live.run({ prHead: head });
     // 3. The review: ship or hold, in one sentence.
-    live.step({ why: `${checks} · Claude is reviewing ${n}` });
+    live.step({ why: `${checks} · The agent is reviewing ${n}` });
     const reviewed = await race(gh.review(where, pr).catch(() => undefined), this.remaining(active), signal);
     if (reviewed.kind === 'timeout') return { kind: 'timeout' };
     if (reviewed.kind === 'aborted') return { kind: 'stopped' };
     const review = reviewed.value;
     // Claude diffed the worktree: a HEAD that isn't the pull request's head is a hold.
     const elsewhere = review !== undefined && review.head !== head;
-    const said = !review ? 'Claude couldn’t review it' : elsewhere ? (review.head ? `Claude reviewed ${review.head.slice(0, 7)}, not ${n}’s head ${head.slice(0, 7)}` : `Claude couldn’t say which commit of ${n} it reviewed`) : `Claude’s review: ${review.verdict}, ${lowerFirst(review.line.replace(/[.\s]+$/, ''))}`;
+    const said = !review ? 'The agent couldn’t review it' : elsewhere ? (review.head ? `The agent reviewed ${review.head.slice(0, 7)}, not ${n}’s head ${head.slice(0, 7)}` : `The agent couldn’t say which commit of ${n} it reviewed`) : `The agent’s review: ${review.verdict}, ${lowerFirst(review.line.replace(/[.\s]+$/, ''))}`;
     const why = `${checks} · ${said}`;
     live.step({ why });
     // 4. Your approval (a hold always asks).
@@ -639,7 +650,7 @@ export class SentinelRunner {
     if (step.require.approval || hold) {
       const wait = this.deps.waitForYou;
       if (!wait) return { kind: 'failed', why: `${n} needs your approval, and nothing can ask you here` };
-      const headline = hold ? `${n}: Claude says hold. Merge it anyway?` : `Merge ${n}?`;
+      const headline = hold ? `${n}: the agent says hold. Merge it anyway?` : `Merge ${n}?`;
       const since = this.deps.now();
       live.run({ state: 'needs-you', headline, waitingSince: since });
       this.deps.notify({ kind: 'needsYou', tag: 'sentinel', title: `${active.sentinel.name}: merge ${n}?`, body: why, need: `sentinel:${active.run.id}`, key: `${active.run.id}:merge`, ...(active.run.channel ? { channel: active.run.channel } : {}) });
@@ -713,8 +724,8 @@ export class SentinelRunner {
 
   private async friendStep(active: ActiveRun, step: FriendStep, outputs: Outputs): Promise<StepEnd> {
     const friends = this.deps.friends;
-    if (!friends) return { kind: 'failed', why: 'asking a friend’s Claude needs the Beluga network: turn it on in Settings › Network' };
-    if (!step.peerId) return { kind: 'failed', why: 'pick whose Claude it asks' };
+    if (!friends) return { kind: 'failed', why: 'asking a friend’s agent needs the Beluga network: turn it on in Settings › Network' };
+    if (!step.peerId) return { kind: 'failed', why: 'pick whose agent it asks' };
     // It goes to someone else's Mac: nothing that looks like a secret goes with it, and outputs go
     // whole (a path on this Mac means nothing there).
     const ask = redactSecrets(render(step.prompt, { ...this.context(active, outputs), material: (kind, name, text) => stepMaterial(kind, name, text) })).trim();
@@ -742,7 +753,7 @@ export class SentinelRunner {
         }
         continue;
       }
-      const who = t.name ?? 'Their Claude';
+      const who = t.name ?? 'Their agent';
       if (t.state !== 'done') return { kind: 'failed', why: `${who} ${t.state === 'declined' ? 'said no' : t.state}${t.summary ? `: ${firstLine(t.summary, 200)}` : ''}` };
       const data = t.data === undefined ? '' : `\n\n${JSON.stringify(t.data, null, 2)}`;
       return { kind: 'done', output: `${t.summary ?? ''}${data}`.trim() || `${who} answered` };
@@ -772,7 +783,7 @@ export class SentinelRunner {
         return spec ? { ...m, ...(spec.label ? { label: spec.label } : {}), ...(spec.unit ? { unit: spec.unit } : {}), ...(spec.better ? { better: spec.better } : {}) } : m;
       });
       missing = step.metrics.filter((m) => !said.some((x) => x.name === m.name)).map((m) => m.name);
-      if (!found.length) return { kind: 'failed', why: 'Claude kept no numbers: its step calls sentinel_measure for each one it finds' };
+      if (!found.length) return { kind: 'failed', why: 'The agent kept no numbers: its step calls sentinel_measure for each one it finds' };
     } else {
       let data: unknown;
       let raw: string | undefined;
@@ -837,12 +848,12 @@ export class SentinelRunner {
     const made = active.places[step.where];
     if (made) return made;
     const places = this.deps.places;
-    if (!places) return 'Claude’s conversations need the Beluga app';
+    if (!places) return 'Agent conversations need the Beluga app';
     const s = active.sentinel;
     let place: SentinelPlace | undefined;
     if (step.where === 'mac') place = places.macChat();
     else {
-      if (!s.projectId) return `it needs a project: pick one on the sentinel’s page, or have Claude work on ${ASSISTANT_TITLE}`;
+      if (!s.projectId) return `it needs a project: pick one on the sentinel’s page, or have the agent work on ${ASSISTANT_TITLE}`;
       const at = this.deps.now();
       place = step.where === 'worktree' ? await places.worktree(s.projectId, `sentinel ${s.name} ${yymmdd(at)}`) : await places.projectChat(s.projectId, `${s.name} · ${dateText(at)}`);
     }
@@ -856,10 +867,17 @@ export class SentinelRunner {
 
   private async claudeStep(active: ActiveRun, step: ClaudeStep, outputs: Outputs, reports: boolean): Promise<StepEnd> {
     const claude = this.deps.claude;
-    if (!claude) return { kind: 'failed', why: 'your Claude isn’t on' };
+    if (!claude) return { kind: 'failed', why: 'your agent isn’t on' };
     const place = await this.place(active, step);
     if (typeof place === 'string') return { kind: 'failed', why: place };
     const { channel } = place;
+    // The step's agent and model (BLG-497): the run's chat or worktree runs it for this step (steps
+    // sharing one can each pick their own). Your Mac's chats run your default agent.
+    // Its effort too, when its model takes it (else Settings' effort).
+    if (place.workspaceId) {
+      const agent = stepAgent(step);
+      this.deps.places?.setAgent?.(place.workspaceId, agent, stepEffort(step, this.deps.efforts?.(agent)));
+    }
     // Earlier outputs filled in are material in tags, never instructions; a big one is its file and a preview.
     const prompt = render(step.prompt, { ...this.context(active, outputs), material: stepMaterial }).trim();
     if (!prompt) return { kind: 'failed', why: 'its prompt is empty', channel };
@@ -879,7 +897,7 @@ export class SentinelRunner {
       // Known before the run starts, so the run is told what it is (Sentinels.forRun).
       active.claude = { stepId: step.id, channel, brief };
       const requestId = claude.ask(prompt, channel, prompt);
-      if (!requestId) return { kind: 'failed', why: 'your Claude couldn’t be asked there', channel };
+      if (!requestId) return { kind: 'failed', why: 'your agent couldn’t be asked there', channel };
       active.claude.requestId = requestId;
       const settled = claude.wait(requestId).then((text) => ({ ok: true as const, text }), (err: unknown) => ({ ok: false as const, why: err instanceof Error ? err.message : String(err) }));
       const answer = await race(settled, remaining(), signal);
@@ -897,7 +915,7 @@ export class SentinelRunner {
         return { kind: 'stopped', channel };
       }
       const said = answer.value;
-      if (!said.ok) return { kind: 'failed', why: USAGE.test(said.why) ? 'usage limit' : firstLine(redactSecrets(said.why), 200) || 'Claude stopped', channel };
+      if (!said.ok) return { kind: 'failed', why: USAGE.test(said.why) ? 'usage limit' : firstLine(redactSecrets(said.why), 200) || 'The agent stopped', channel };
       if (active.stopReason !== undefined) return { kind: 'skip', reason: active.stopReason, output: said.text, channel };
       return { kind: 'done', output: said.text, channel };
     } finally {
@@ -1013,7 +1031,7 @@ export class SentinelRunner {
 }
 
 /** A run whose pull request's head moved after the checks and the review says this. */
-export const BRANCH_CHANGED = 'the branch changed since Claude reviewed it; run it again';
+export const BRANCH_CHANGED = 'the branch changed since the agent reviewed it; run it again';
 
 /**
  * Look at the pull request once more, right before merging: still open, still at `head`, its

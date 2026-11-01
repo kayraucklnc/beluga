@@ -5,6 +5,7 @@ import { useApi, useApp } from '../lib/beluga.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { SCROLLBACK_CHOICES, fontChoices } from '../lib/terminal-look.js';
 import { ImportGroup, TermPreview } from './TerminalImport.js';
+import { KeysGroup, ThemeGroup, ViewGroup } from './TerminalThemes.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import t from './terminal-settings.module.css';
@@ -140,12 +141,16 @@ function PlaceGroup() {
 
 /** Settings › Terminal: the shell (for every screen), where it opens and how terminals look here. */
 export function TerminalSettings() {
+  const prefs = usePrefs();
   return (
     <>
       <PlaceGroup />
       <ShellGroup />
       <ImportGroup />
+      <ThemeGroup />
       <LookGroup />
+      <ViewGroup />
+      {prefs.termView ? <KeysGroup /> : null}
       <p className={t.note}>The shell applies to new terminals; ones already open keep theirs. The look changes right away.</p>
     </>
   );

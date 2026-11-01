@@ -8,6 +8,8 @@ import { firstLine, sentinelById } from '../core/sentinel/model.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
 import { type NeedsYou, Topic } from './protocol.js';
 import { plainLine, stripCode } from './strip.js';
+import { agentLabel } from '../shared/agent-label.js';
+import { defaultAgentOf } from '../protocol.js';
 
 /**
  * Everything waiting for you, each with the API calls its buttons make: the phone's Needs You
@@ -31,8 +33,14 @@ export const nameOf = (state: DomainState, peerId: string | undefined): string |
 
 export const myId = (state: DomainState): string => state.selfId || state.self?.peerId || state.network.self?.peerId || 'me';
 
+/** "your Claude", "mia's Codex": the agent of this Mac, or of a peer it knows (else Claude). */
+const agentOf = (state: DomainState, peerId: string | undefined, owner: string, capital = false): string =>
+  !peerId || peerId === myId(state)
+    ? agentLabel(defaultAgentOf(state.self), undefined, true, { capital })
+    : agentLabel(defaultAgentOf(state.peers.find((p) => p.peerId === peerId)), owner, false, { capital });
+
 function approvalItem(state: DomainState, a: Approval): NeedsYou {
-  const from = a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : 'your Claude';
+  const from = a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : agentOf(state, undefined, '');
   // A friends' chat opens that chat (a request from there, your Claude working there: BLG-207).
   const topic = a.channel ? (/^(dm|group):/.test(a.channel) ? chatTopic(a.channel) : convTopic(a.channel)) : undefined;
   return {
@@ -56,13 +64,13 @@ function approvalItem(state: DomainState, a: Approval): NeedsYou {
 /** Claude's question (or plan to approve), or a plan task waiting on your decision. */
 function questionItem(state: DomainState, q: PendingQuestion): NeedsYou {
   const topic = convTopic(q.channel);
-  const owner = q.owner === myId(state) || !q.owner ? 'your Claude' : `${nameOf(state, q.owner) ?? 'a friend'}'s Claude`;
+  const owner = agentOf(state, q.owner, nameOf(state, q.owner) ?? 'a friend');
   const base = { id: `question:${q.qid}`, from: owner, ...(topic ? { topic } : {}) };
   if (q.question.kind === 'plan') {
     return {
       ...base,
       kind: 'question',
-      title: 'Claude has a plan for you to approve',
+      title: `${owner.charAt(0).toUpperCase()}${owner.slice(1)} has a plan for you to approve`,
       detail: clip(stripCode(q.question.plan).text, 64_000),
       freeText: true,
       actions: [
@@ -114,9 +122,9 @@ function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
       {
         id: `confirm:${t.id}`,
         kind: 'confirm',
-        title: `Ask ${clip(t.peerName, 60)}'s Claude?`,
+        title: `Ask ${agentOf(state, t.peerId, clip(t.peerName, 60))}?`,
         detail: clip(plainLine(t.ask, 64_000), 64_000),
-        from: 'your Claude',
+        from: agentOf(state, undefined, ''),
         ...at,
         askedAt: t.createdAt,
         actions: [
@@ -138,7 +146,7 @@ function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
         kind: 'question',
         title: clip(plainLine(head.question, 500), 500),
         detail: clip(plainLine(t.summary ?? t.ask, 64_000), 64_000),
-        from: `${clip(t.peerName, 60)}'s Claude`,
+        from: agentOf(state, t.peerId, clip(t.peerName, 60)),
         ...at,
         askedAt: t.question.askedAt,
         choices: head.options.slice(0, 12).map((o) => ({ label: clip(o.label, 200), ...(o.description ? { description: clip(o.description, 1000) } : {}) })),
@@ -159,7 +167,7 @@ function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
       {
         id: `request:${t.id}`,
         kind: 'request',
-        title: clip(t.secret ? `${t.peerName} wants ${t.secret.label}` : t.summary ? `${t.peerName}: ${t.summary}` : `${t.peerName} asks your Claude`, 500),
+        title: clip(t.secret ? `${t.peerName} wants ${t.secret.label}` : t.summary ? `${t.peerName}: ${t.summary}` : `${t.peerName} asks ${agentOf(state, undefined, '')}`, 500),
         detail: clip(plainLine(t.ask, 64_000), 64_000),
         from: clip(t.peerName, 100),
         ...(t.chat && chatTopic(t.chat) ? { topic: chatTopic(t.chat)! } : {}),
@@ -328,7 +336,7 @@ function offerItems(state: DomainState): NeedsYou[] {
       id: `friend:${o.peerId}`,
       kind: 'request' as const,
       title: clip(o.via ? `${o.name} from the ${o.via} team wants to add you as a friend` : `${o.name} wants to add you as a friend`, 500),
-      detail: 'You’re in the same room. As friends you can talk, share and ask each other’s Claude, with nobody hosting',
+      detail: 'You’re in the same room. As friends you can talk, share and ask each other’s agents, with nobody hosting',
       from: clip(o.name, 100),
       askedAt: o.at,
       actions: [
@@ -472,6 +480,40 @@ function sentinelItems(state: DomainState): NeedsYou[] {
   });
 }
 
+/**
+ * A dialogue between your agents waiting on you: one proposed from the composer (confirm its caps)
+ * or paused at its cap (Continue?). One a friend chairs is theirs to decide, not yours.
+ */
+function dialogueItems(state: DomainState): NeedsYou[] {
+  return Object.values(state.dialogues ?? {}).flatMap((d) => {
+    if (d.remoteChair || (d.status !== 'paused' && d.status !== 'proposed')) return [];
+    const topic = convTopic(d.channel ?? 'room');
+    const what = clip(firstLine(d.topic, 200), 200);
+    const base = { id: `dialogue:${d.id}`, kind: 'decision' as const, from: d.participants.map((p) => p.agent.label).join(' and '), ...(topic ? { topic } : {}), askedAt: Math.round(d.updatedAt) };
+    return [
+      d.status === 'paused'
+        ? {
+            ...base,
+            title: clip(`Your agents paused after ${d.turns.filter((t) => t.by !== 'person').length} turns: continue?`, 500),
+            detail: what,
+            actions: [
+              { label: 'Continue', tone: 'main' as const, method: 'dialogues.continue', args: [d.id] },
+              { label: 'Stop', tone: 'danger' as const, method: 'dialogues.stop', args: [d.id] },
+            ],
+          }
+        : {
+            ...base,
+            title: 'Start this dialogue between your agents?',
+            detail: what,
+            actions: [
+              { label: 'Start', tone: 'main' as const, method: 'dialogues.confirm', args: [d.id] },
+              { label: 'Cancel', tone: 'danger' as const, method: 'dialogues.stop', args: [d.id] },
+            ],
+          },
+    ];
+  });
+}
+
 /** Everything waiting for you, in no order and uncut (needsYou sorts and keeps 50), minus what you dismissed. */
 export function allNeeds(state: DomainState): NeedsYou[] {
   const dismissed = state.dismissedNeeds ?? [];
@@ -494,6 +536,7 @@ export function waitingNeeds(state: DomainState): NeedsYou[] {
     ...worktreeKnockItems(state),
     ...sharedPlanItems(state),
     ...sentinelItems(state),
+    ...dialogueItems(state),
   ];
 }
 

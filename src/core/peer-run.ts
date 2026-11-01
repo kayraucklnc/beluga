@@ -206,7 +206,7 @@ export class PeerRun {
       ts: Date.now(),
       owner: peerId,
       ownerName: peerName(this.state, peerId),
-      by: opts.viaAgent ? 'your Claude' : 'you',
+      by: opts.viaAgent ? 'your agent' : 'you',
       command: command.slice(0, 8000),
       ...(opts.project ? { cwd: opts.project } : opts.cwd ? { cwd: opts.cwd } : {}),
       status: 'waiting',
@@ -371,7 +371,7 @@ export class PeerRun {
     const state = this.state;
     const cwd = await this.where(from, body, level === 'full');
     const name = peerName(state, from);
-    const who = `${name}${body.viaAgent ? "'s Claude" : ''}`;
+    const who = `${name}${body.viaAgent ? "'s agent" : ''}`;
     const facts: RequestFacts = { peerId: from, kind: 'command', needs: ['shell'], command: body.command, folder: cwd, ...(body.project ? { project: body.project } : {}) };
     // The gateway decided already; otherwise your rules and capabilities decide (when attached), else trust alone.
     if (hooks.approved) gate = 'run';
@@ -383,7 +383,7 @@ export class PeerRun {
     if (gate === 'ask' && (this.access || !this.always.has(from))) {
       hooks.asking?.();
       const answer = await this.deps.approve(
-        `${name} (#${from.slice(0, 6)})${body.viaAgent ? "'s Claude" : ''} wants to run a command on your computer`,
+        `${name} (#${from.slice(0, 6)})${body.viaAgent ? "'s agent" : ''} wants to run a command on your computer`,
         `in ${tilde(cwd, this.home)}\n$ ${clean(body.command)}\nstops after ${formatDuration(body.timeoutSec * 1000)} · no input${body.why ? `\nwhy: ${clean(body.why)}` : ''}\n${this.access ? `Always = run this command from ${name} in this folder without asking (a rule you can change in Settings › People & access)` : `Always = run ${name}'s commands without asking until Beluga quits`}`,
         from,
       );

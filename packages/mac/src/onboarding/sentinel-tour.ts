@@ -33,7 +33,7 @@ export const TOUR_SENTINELS: readonly TourSentinel[] = [
   {
     id: 'brief',
     name: 'Morning brief',
-    said: ['Every morning at 7,', 'have Claude sum up what changed', 'and send it to my phone.'],
+    said: ['Every morning at 7,', 'have my agent sum up what changed', 'and send it to my phone.'],
     trigger: 'schedule',
     when: 'Every day at 7:00',
     steps: [
@@ -46,7 +46,7 @@ export const TOUR_SENTINELS: readonly TourSentinel[] = [
   {
     id: 'ci',
     name: 'Fix the build',
-    said: ['When the tests fail on GitHub,', 'have Claude fix them in a worktree', 'and merge once the checks pass.'],
+    said: ['When the tests fail on GitHub,', 'have my agent fix them in a worktree', 'and merge once the checks pass.'],
     trigger: 'github',
     when: 'When a workflow fails',
     steps: [

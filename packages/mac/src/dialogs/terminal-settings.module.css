@@ -100,3 +100,93 @@
   padding: 8px 10px;
   border-radius: 6px;
 }
+
+/* ---- Colours (BLG-536): each theme as it looks */
+.themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 12px 14px 14px;
+}
+.themeCard {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.themeCard:hover {
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.themeCardOn {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.themeLines {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  background: var(--term-bg);
+  color: var(--text);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: hidden;
+}
+.themeName {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 0.88rem;
+}
+.themeName > svg {
+  color: var(--accent);
+}
+.themeDots {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+}
+.themeDots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ---- Keys in the terminal view (BLG-537) */
+.keyList {
+  display: grid;
+  grid-template-columns: 1fr;
+  padding: 4px 14px 10px;
+}
+.keyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  border-bottom: 0.5px solid var(--hairline);
+  font-size: 0.92rem;
+}
+.keyRow:last-child {
+  border-bottom: 0;
+}
+.keyFrom {
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-2);
+  font-size: 0.78rem;
+}
+.keyKeys {
+  margin-left: auto;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+}

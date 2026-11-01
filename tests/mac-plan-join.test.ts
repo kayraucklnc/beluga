@@ -54,7 +54,7 @@ describe('right after approving', () => {
 
   it('says what it sets up: the branch first when there is none yet', () => {
     const ms = [open('API', []), open('UI', []), open('Docs', [])] as unknown as Parameters<typeof settingUp>[1];
-    expect(settingUp({ plan: {} } as Parameters<typeof settingUp>[0], ms.slice(0, 1))).toBe('Setting up: making the plan’s branch, then starting a Claude for “API”');
-    expect(settingUp({ plan: { branch: 'plan/x' } } as Parameters<typeof settingUp>[0], ms)).toBe('Setting up: starting a Claude for “API”, “UI” and “Docs”');
+    expect(settingUp({ plan: {} } as Parameters<typeof settingUp>[0], ms.slice(0, 1))).toBe('Setting up: making the plan’s branch, then starting an agent for “API”');
+    expect(settingUp({ plan: { branch: 'plan/x' } } as Parameters<typeof settingUp>[0], ms)).toBe('Setting up: starting an agent for “API”, “UI” and “Docs”');
   });
 });

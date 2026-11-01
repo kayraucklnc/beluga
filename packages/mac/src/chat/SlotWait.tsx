@@ -34,7 +34,7 @@ export function SlotWaitNotice({ wait, requestId }: { wait: SlotWait; requestId?
             <Button size="small" icon="play" onClick={startNow} title="Starts it now, past the limit">
               Start now
             </Button>
-            <Button size="small" variant="quiet" icon="gear" onClick={() => ui.patch({ settings: 'claude' })} title="Settings › Claude › Working at once">
+            <Button size="small" variant="quiet" icon="gear" onClick={() => ui.patch({ settings: 'claude' })} title="Settings › Agent › Working at once">
               Change the limit
             </Button>
           </div>

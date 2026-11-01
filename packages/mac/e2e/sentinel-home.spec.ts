@@ -77,7 +77,7 @@ test('Ask Sentinel is docked beside the page; × closes it until you ask again',
   await sidebar(page).getByRole('button', { name: /^Sentinel/ }).click();
   await expect(main(page).getByRole('region', { name: 'Watching' })).toBeVisible();
   await expect(panel).toHaveCount(0);
-  await main(page).getByRole('button', { name: 'Ask Claude' }).click();
+  await main(page).getByRole('button', { name: 'Ask Your Agent' }).click();
   await expect(panel).toBeVisible();
   await panel.getByRole('button', { name: 'Close' }).click();
   // ⌘K › Go to Sentinel Chat opens it too.
@@ -94,7 +94,7 @@ test('Ask Sentinel’s panel is resized by its edge, and its message box stays o
   // It slid in: measured once it's there.
   await panel.evaluate((el) => Promise.allSettled(el.getAnimations({ subtree: true }).map((x) => x.finished)));
   // Narrow, the box's bar keeps one line: no chip wraps, nothing runs off the edge.
-  const bar = panel.getByRole('button', { name: 'Model and effort' }).locator('..');
+  const bar = panel.getByRole('button', { name: 'Agent, model and effort' }).locator('..');
   const fits = async (): Promise<void> => {
     const b = (await bar.boundingBox())!;
     const p = (await panel.boundingBox())!;
@@ -115,7 +115,7 @@ test('Ask Sentinel’s panel is resized by its edge, and its message box stays o
   await shoot(page, 'ask-wide');
   // Kept: it comes back at that width.
   await panel.getByRole('button', { name: 'Close' }).click();
-  await main(page).getByRole('button', { name: 'Ask Claude' }).click();
+  await main(page).getByRole('button', { name: 'Ask Your Agent' }).click();
   await expect(panel).toBeVisible();
   await panel.evaluate((el) => Promise.allSettled(el.getAnimations({ subtree: true }).map((x) => x.finished)));
   expect(Math.abs((await panel.boundingBox())!.width - wider)).toBeLessThan(2);
@@ -136,8 +136,8 @@ test('Ask Sentinel’s panel is resized by its edge, and its message box stays o
 test('asking about one sentinel opens the chat beside its page, naming it', async ({ page }) => {
   await openSentinel(page);
   await main(page).getByRole('row', { name: /^Morning brief/ }).click();
-  await main(page).getByRole('textbox', { name: 'Ask Claude about this sentinel' }).fill('Make it weekly on Mondays');
-  await main(page).getByRole('textbox', { name: 'Ask Claude about this sentinel' }).press('Enter');
+  await main(page).getByRole('textbox', { name: 'Ask your agent about this sentinel' }).fill('Make it weekly on Mondays');
+  await main(page).getByRole('textbox', { name: 'Ask your agent about this sentinel' }).press('Enter');
   const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
   await expect(panel).toContainText('Make it weekly on Mondays');
   await expect(panel).toContainText('Morning brief');
@@ -262,7 +262,7 @@ test('with nothing set up: what it can do as scenes, the box, ideas, and every r
     await expect(rows).toHaveCount(left - 1, { timeout: 10_000 });
   }
   const first = main(page).getByTestId('sentinel-first');
-  await expect(first).toContainText('Let Claude keep an eye on things');
+  await expect(first).toContainText('Let your agent keep an eye on things');
   // Shown before it's explained: a few scenes, one line each, and the dots to go between them.
   const show = first.getByRole('region', { name: 'What Sentinel can do' });
   await expect(show.locator('[data-slide="sleep"]')).toContainText('Ready to merge');
@@ -287,7 +287,7 @@ test('with nothing set up: what it can do as scenes, the box, ideas, and every r
   await expect(first.getByRole('list', { name: 'Ideas' }).getByRole('listitem').first()).toHaveText('Suggest Some for Me');
   // The box asks Claude in the panel beside the page.
   await first.getByRole('textbox', { name: 'What should Beluga keep an eye on?' }).fill('Every morning, tell me what changed in bob-api');
-  await first.getByRole('button', { name: 'Ask Claude' }).click();
+  await first.getByRole('button', { name: 'Ask Your Agent' }).click();
   // The panel slides in from the right, and the conversation goes on there.
   await expect(panel.locator('[data-sentinel-chat]')).toBeVisible();
   await expect(panel).toContainText('Every morning, tell me what changed in bob-api');

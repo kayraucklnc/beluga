@@ -5,6 +5,11 @@ export const setupId = (wsId: string): string => `${wsId}:setup`;
 export const runId = (wsId: string): string => `${wsId}:run`;
 /** A GitHub setup step Beluga runs where you can see it (installing gh, logging in), BLG-213. */
 export const githubId = (wsId: string): string => `${wsId}:github`;
+/** The agent's own terminal (Claude Code's or Codex's) on a workspace's conversation, BLG-534. */
+export const agentTermId = (wsId: string): string => `${wsId}:agent`;
+export const isAgentTerm = (key: string): boolean => key.endsWith(':agent');
+/** A shell split beside the agent's terminal: `<wsId>:pane:1`, `<wsId>:pane:2`… */
+export const paneTermId = (wsId: string, n: number): string => `${wsId}:pane:${n}`;
 /** Shells of the global Terminal tab (not tied to a workspace): `shell:1`, `shell:2`… */
 export const globalShellId = (n: number): string => `shell:${n}`;
 export const isGlobalShell = (key: string): boolean => /^shell:\d+$/.test(key);
@@ -36,5 +41,5 @@ export function terminalLabel(key: string, names: Readonly<Record<string, string
   const named = names[key];
   if (named) return named;
   if (isGlobalShell(key)) return `Shell ${globalShellNumber(key)}`;
-  return key.endsWith(':setup') ? 'Setup' : key.endsWith(':run') ? 'Run' : key.endsWith(':github') ? 'GitHub' : 'Shell';
+  return key.endsWith(':setup') ? 'Setup' : key.endsWith(':run') ? 'Run' : key.endsWith(':github') ? 'GitHub' : isAgentTerm(key) ? 'Agent' : 'Shell';
 }

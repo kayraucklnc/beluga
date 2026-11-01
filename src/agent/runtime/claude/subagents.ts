@@ -1,8 +1,8 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { AGENT_SCRATCH_MARK, buildAgentScratchNote, summarizeTool } from './prompt.js';
-import { agentScratchName } from '../shared/scratch-dir.js';
-import type { SubAgentEvent } from './types.js';
+import { AGENT_SCRATCH_MARK, buildAgentScratchNote, summarizeTool } from '../../prompt.js';
+import { agentScratchName } from '../../../shared/scratch-dir.js';
+import type { SubAgentEvent } from '../../types.js';
 
 /** Tools that launch a sub-agent in Claude Code. */
 export const SUBAGENT_TOOLS = new Set(['Task', 'Agent']);

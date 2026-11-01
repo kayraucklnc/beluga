@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
-import { openPlans } from './helpers.js';
+import { openWork } from './helpers.js';
 
 /** A plan's page is two parts, the plan and its chat (KLD-54): no right panel, a chat toggle in the header (⌥⌘0), a chat as wide as you leave it, and no modes in the plan's own conversation. */
 
@@ -8,7 +8,7 @@ const main = (page: Page) => page.locator('main');
 const chat = (page: Page) => page.getByRole('complementary', { name: 'Conversation' });
 
 async function openPlan(page: Page, name: RegExp): Promise<void> {
-  await openPlans(page);
+  await openWork(page, 'Plans');
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await page.getByRole('button', { name: /^Project: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();
@@ -36,7 +36,7 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   await expect(main(page).getByRole('button', { name: 'Hide the Chat' })).toHaveAttribute('aria-pressed', 'true');
 
   // 380 wide, wider from the keyboard on its edge, and kept.
-  // (Within a pixel: its edge's hairline is drawn on one side or the other.)
+  // (Within a pixel: the page's width splits into fractions.)
   expect(Math.abs((await chat(page).boundingBox())!.width - 380)).toBeLessThanOrEqual(1);
   const edge = page.getByRole('separator', { name: 'Resize the chat' });
   await edge.focus();
@@ -52,8 +52,8 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   await expect(chat(page)).toHaveCount(0);
   await main(page).getByRole('button', { name: 'Show the Chat' }).click();
   expect(Math.abs((await chat(page).boundingBox())!.width - 428)).toBeLessThanOrEqual(1);
-  // Elsewhere (a page with the panel: the Tasks board has none), the panel is as you left it.
-  await sidebar(page).getByRole('button', { name: /^Overview/ }).click();
+  // Elsewhere (the group chat), the panel is as you left it.
+  await sidebar(page).getByRole('button', { name: /^Group chat/ }).click();
   await expect(page.getByRole('button', { name: /^(Show|Hide) the panel/ })).toBeEnabled();
 });
 

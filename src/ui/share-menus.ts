@@ -40,7 +40,7 @@ export function shareWhoMenu(state: AppState, dir: string): MenuSpec {
     options: [
       { id: 'sw-all', label: 'Everyone in the room', hint: 'read-only' },
       ...people.map((p) => ({ id: `sw-peer:${p.peerId}`, label: `Only ${p.name}`, hint: 'read-only, nobody else sees it' })),
-      { id: 'sw-all-rw', label: 'Everyone, and my Claude may edit files there', hint: 'for folders you work on together' },
+      { id: 'sw-all-rw', label: 'Everyone, and my agent may edit files there', hint: 'for folders you work on together' },
       { id: 'close', label: 'Cancel', hint: 'Esc' },
     ],
   };

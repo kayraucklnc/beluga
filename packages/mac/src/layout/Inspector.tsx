@@ -3,6 +3,7 @@ import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
 import { formatTokens } from '@beluga/ui/work-models.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { speedWords } from '@beluga/shared/local-endpoints.js';
 import { unreadCount } from '@beluga/core/work-store.js';
 import { issuesOfWorkspace } from '@beluga/core/board/model.js';
 import { noticeAgo, noticeLook } from '@beluga/ui/notice-models.js';
@@ -120,7 +121,7 @@ function WorkspaceTasks({ id, projectId }: { id: string; projectId: string }) {
           </button>
         ))
       ) : (
-        <div className={s.dim}>No task yet. Claude links the ones it opens or moves from here.</div>
+        <div className={s.dim}>No task yet. Your agent links the ones it opens or moves from here.</div>
       )}
     </Panel>
   );
@@ -208,7 +209,7 @@ function WorkspaceDetails({ id }: { id: string }) {
             {ctx.compacting ? 'Compacting…' : `${contextPct(ctx)}% · ${formatTokenCount(ctx.used)} of ${formatTokenCount(ctx.window)}`}
           </Field>
         ) : null}
-        {tokens ? <Field label="Claude">{`${formatTokens(tokens)} tokens${ws.usage?.cost ? ` · $${ws.usage.cost.toFixed(2)}` : ''}`}</Field> : null}
+        {tokens ? <Field label="Agent">{`${formatTokens(tokens)} tokens${ws.usage?.local ? ` · ${speedWords(ws.usage.local.tps)}` : ws.usage?.cost ? ` · $${ws.usage.cost.toFixed(2)}` : ''}`}</Field> : null}
         {state.disk !== undefined ? <Field label="Disk">{formatBytes(state.disk)}</Field> : null}
         {setup ? <Field label="Setup">{setup.status === 'running' ? 'Running…' : setup.status === 'done' ? 'Done' : `Failed${setup.detail ? ` (${setup.detail})` : ''}`}</Field> : null}
         {ws.handedTo ? <Field label="Handed to">{ws.handedTo}</Field> : null}

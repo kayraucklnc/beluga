@@ -4,6 +4,8 @@ import { Icon, type IconName } from '../components/Icon.js';
 import { Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/beluga.js';
+import { useMyAgent } from '../lib/agent-words.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { TonePill } from '../plans/marks.js';
 import { STEP_ICON, TRIGGER_ICON, iconOf } from './sentinel-model.js';
 import r from '../tasks/task-ref.module.css';
@@ -42,11 +44,12 @@ export function StepChips({ steps }: { steps: ReadonlyArray<{ readonly kind: Ste
   );
 }
 
-/** Claude's mark as the steps show it (a round copper chip): the page's ask box and Claude's banner. */
+/** Your agent's mark (Claude Code, Codex, a local model) as the steps show it (a round copper chip): the page's ask box and its banner. */
 export function ClaudeMark() {
+  const agent = useMyAgent();
   return (
     <span className={s.chip} data-kind="claude" aria-hidden="true">
-      <Icon name="claude" size={11} />
+      <Icon name={agentMark(agent)} size={11} />
     </span>
   );
 }

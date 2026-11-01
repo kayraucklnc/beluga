@@ -2,6 +2,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { modelLabel, modelOf } from '@beluga/ui/menus.js';
 import { clampThreshold, contextWindowFor, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { LOCAL_RUNTIME, speedWords } from '@beluga/shared/local-endpoints.js';
 import { cx } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { type MeterModel, breakdownRows, meterModel, usageLine, whenText } from './context-model.js';
@@ -31,6 +32,22 @@ function useMeter(channel: string): MeterModel | undefined {
   return useMemo(() => (on ? meterModel({ context, log }, channel) : undefined), [on, context, log, channel]);
 }
 
+/**
+ * A local or bring-your-own model's conversation (BLG-450): its tokens so far and how fast its
+ * last turn wrote. There's no plan behind it, so this is what it shows instead of limits.
+ */
+function useLocalRun(channel: string): { tokens: number; tps?: number } | undefined {
+  return useApp(
+    (st) => {
+      const ws = channel.startsWith('ws:') ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(3)) : undefined;
+      if (ws?.agent?.runtime !== LOCAL_RUNTIME) return undefined;
+      const u = ws.usage;
+      return { tokens: u ? u.input + u.output + u.cacheWrite : 0, ...(u?.local?.tps ? { tps: u.local.tps } : {}) };
+    },
+    (a, b) => a?.tokens === b?.tokens && a?.tps === b?.tps,
+  );
+}
+
 /** Open on hover (after a beat), stay open while the pointer is over it; a click pins it. */
 function useHoverOpen(): { open: boolean; setOpen: (v: boolean) => void; hover: { onPointerEnter: () => void; onPointerLeave: () => void } } {
   const [open, setOpen] = useState(false);
@@ -56,6 +73,7 @@ function useHoverOpen(): { open: boolean; setOpen: (v: boolean) => void; hover: 
  */
 export function ContextMeter({ channel }: { channel: string }) {
   const model = useMeter(channel);
+  const local = useLocalRun(channel);
   const { open, setOpen, hover } = useHoverOpen();
   if (!model) return null;
   const label = model.compacting ? 'Compacting…' : `${model.pct}%`;
@@ -71,6 +89,7 @@ export function ContextMeter({ channel }: { channel: string }) {
         >
           <Ring pct={model.pct} spinning={model.compacting} />
           {label}
+          {local?.tps && !model.compacting ? <span className={s.speed} data-local-speed="">{`· ${local.tps} tok/s`}</span> : null}
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -91,12 +110,13 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
   const modelName = useApp((st) => modelLabel(st, picked));
   // A workspace someone shared with you: their Claude, so only they can compact it.
   const theirs = useApp((st) => st.view.kind === 'shared');
+  const local = useLocalRun(channel);
   const info = model.info;
   const rows = info ? breakdownRows(info) : [];
   const at = clampThreshold(prefs.autoCompactAt);
   const compact = (): void => {
     api.session.compact(channel).then(
-      () => (model.busy ? toast(client, 'Claude compacts this conversation when it finishes what it’s doing', 'info') : undefined),
+      () => (model.busy ? toast(client, 'Your agent compacts this conversation when it finishes what it’s doing', 'info') : undefined),
       (err: unknown) => toast(client, `Couldn’t compact: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     );
   };
@@ -137,6 +157,12 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
           {formatTokenCount(info?.window ?? contextWindowFor(picked))}
           {modelName ? ` · ${modelName}` : ''}
         </dd>
+        {local ? (
+          <>
+            <dt>This conversation</dt>
+            <dd data-local-usage="">{`${formatTokenCount(local.tokens)} tokens · ${speedWords(local.tps)}`}</dd>
+          </>
+        ) : null}
         <dt>Last compacted</dt>
         <dd>{model.last ? `${whenText(model.last.ts)} · ${formatTokenCount(model.last.compact.pre ?? 0)} → ${formatTokenCount(model.last.compact.post ?? 0)}` : 'Not yet'}</dd>
         <dt>Auto-compact</dt>
@@ -144,11 +170,11 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
       </dl>
       {theirs ? (
         <div className={s.actions}>
-          <span className={s.hint}>This is the owner’s Claude: only they can compact it.</span>
+          <span className={s.hint}>This is the owner’s agent: only they can compact it.</span>
         </div>
       ) : (
         <div className={s.actions}>
-          <span className={s.hint}>Claude keeps decisions, open tasks and file paths. The chat stays here.</span>
+          <span className={s.hint}>Your agent keeps decisions, open tasks and file paths. The chat stays here.</span>
           <button type="button" className={s.compact} disabled={model.compacting} onClick={compact}>
             {model.compacting ? 'Compacting…' : model.busy ? 'Compact After Turn' : 'Compact Now'}
           </button>

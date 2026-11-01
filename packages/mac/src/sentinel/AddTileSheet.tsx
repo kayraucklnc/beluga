@@ -52,7 +52,7 @@ export function AddTileSheet({ dashboardId, close }: { dashboardId: string; clos
       out.set(head, g);
     };
     for (const c of metrics) add(`${c.project} · ${c.sentinel}`, { pick: { kind: 'metric', ref: c.ref }, label: c.label, ...(c.value ? { value: c.value } : {}), icon: c.kind === 'rows' ? 'table' : c.kind === 'output' ? 'file' : 'chartLine', ...(c.onIt ? { on: true, hint: 'on this board' } : {}) });
-    for (const c of steps) add(`${c.project} · ${c.sentinel}`, { pick: { kind: 'step', ref: c.ref, label: c.label }, label: c.label, hint: c.kind === 'claude' ? 'what Claude wrote' : c.kind === 'http' ? 'the service’s answer' : 'what it printed', icon: c.kind === 'claude' ? 'claude' : c.kind === 'http' ? 'globe' : 'terminal' });
+    for (const c of steps) add(`${c.project} · ${c.sentinel}`, { pick: { kind: 'step', ref: c.ref, label: c.label }, label: c.label, hint: c.kind === 'claude' ? 'what the agent wrote' : c.kind === 'http' ? 'the service’s answer' : 'what it printed', icon: c.kind === 'claude' ? 'claude' : c.kind === 'http' ? 'globe' : 'terminal' });
     // What each sentinel said last, together at the end (one line each, not under every sentinel).
     type Item = { pick: Pick; label: string; hint?: string; value?: string; icon: IconName; on?: boolean };
     const said: Item[] = state.items.map((i) => ({ pick: { kind: 'report', sentinelId: i.id, label: i.name }, label: i.name, hint: `${projectName(i.projectId)} · its latest report`, icon: 'file' }));
@@ -79,7 +79,7 @@ export function AddTileSheet({ dashboardId, close }: { dashboardId: string; clos
     if (describing) {
       const said = pick?.kind === 'new' && !words.trim() ? newSourceAsk(pick.source, what) : words.trim();
       const went = await a.act(() => api.dashboard.ask(dashboardId, said));
-      if (!went) return 'Couldn’t ask Claude: see the message above';
+      if (!went) return 'Couldn’t ask your agent: see the message above';
       return close();
     }
     if (!pick) return;
@@ -106,7 +106,7 @@ export function AddTileSheet({ dashboardId, close }: { dashboardId: string; clos
 
   const newSource = pick?.kind === 'new' ? NEW_SOURCES.find((s) => s.id === pick.source) : undefined;
   return (
-    <FormSheet title={`Add to ${d?.name ?? 'the board'}`} icon="gauge" submitLabel={describing ? 'Ask Claude' : `Add to ${d?.name ?? 'the Board'}`} canSubmit={ready} width={880} onCancel={close} onSubmit={submit}>
+    <FormSheet title={`Add to ${d?.name ?? 'the board'}`} icon="gauge" submitLabel={describing ? 'Ask Your Agent' : `Add to ${d?.name ?? 'the Board'}`} canSubmit={ready} width={880} onCancel={close} onSubmit={submit}>
       <div className={x.sheet}>
         <textarea
           className={x.describe}
@@ -158,7 +158,7 @@ export function AddTileSheet({ dashboardId, close }: { dashboardId: string; clos
 
           <div className={x.right}>
             {words.trim() ? (
-              <p className={x.quiet}>Claude puts it together from what your sentinels keep. When nothing fetches it yet, it sets up a sentinel that does: a draft you look over and turn on first.</p>
+              <p className={x.quiet}>Your agent puts it together from what your sentinels keep. When nothing fetches it yet, it sets up a sentinel that does: a draft you look over and turn on first.</p>
             ) : !pick ? (
               <p className={x.quiet}>Pick something on the left to see how it can look.</p>
             ) : newSource ? (
@@ -172,7 +172,7 @@ export function AddTileSheet({ dashboardId, close }: { dashboardId: string; clos
                     </button>
                   ))}
                 </div>
-                <p className={x.quiet}>Claude sets up the sentinel that fetches it (paused, for you to turn on) with your project’s own keys, and adds its tile here.</p>
+                <p className={x.quiet}>Your agent sets up the sentinel that fetches it (paused, for you to turn on) with your project’s own keys, and adds its tile here.</p>
               </>
             ) : pick.kind === 'heading' ? (
               <>

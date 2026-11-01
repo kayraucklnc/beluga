@@ -21,7 +21,7 @@ export const MCP_STATUS: Record<McpServerRow['status'], { readonly words: string
   disabled: { words: 'Turned off', tone: 'muted' },
 };
 
-/** How long the list stays fresh: asking means starting Claude Code, so the box and Settings share one. */
+/** How long a list stays fresh: asking means starting its agent, so the box and Settings share one. */
 const FRESH_MS = 60_000;
 
 interface McpState {
@@ -29,59 +29,80 @@ interface McpState {
   readonly checking: boolean;
   /** The server a sign-in is waiting on (one at a time). */
   readonly signingIn?: string;
+  /** The server being turned on or off. */
+  readonly turning?: string;
 }
 
-let state: McpState = { checking: false };
-let checkedAt = 0;
+/** Whose MCP servers an agent uses: Codex its own, everything else Claude Code's (a local model is Claude Code pointed elsewhere). */
+export const mcpRuntimeOf = (runtime: string | undefined): 'claude' | 'codex' => (runtime === 'codex' ? 'codex' : 'claude');
+
+/** One list per runtime (BLG-518): '' is your agent's, 'claude' and 'codex' each one's own. */
+const IDLE: McpState = { checking: false };
+const states = new Map<string, McpState>();
+const checkedAt = new Map<string, number>();
 const listeners = new Set<() => void>();
-const set = (patch: Partial<McpState>): void => {
-  state = { ...state, ...patch };
+const keyOf = (runtime: string | undefined): string => runtime ?? '';
+const stateOf = (runtime: string | undefined): McpState => states.get(keyOf(runtime)) ?? IDLE;
+const set = (runtime: string | undefined, patch: Partial<McpState>): void => {
+  states.set(keyOf(runtime), { ...stateOf(runtime), ...patch });
   for (const l of listeners) l();
 };
 
-/** Ask Claude Code again how each of your MCP servers is. */
-export async function checkMcp(client: SocketClient): Promise<void> {
-  if (state.checking) return;
-  set({ checking: true });
+/** Ask again how each of your MCP servers is: your agent's, or `runtime`'s. */
+export async function checkMcp(client: SocketClient, runtime?: string): Promise<void> {
+  if (stateOf(runtime).checking) return;
+  set(runtime, { checking: true });
   try {
-    set({ rows: await client.api.claudeCode.mcpServers() });
-    checkedAt = Date.now();
+    set(runtime, { rows: await client.api.claudeCode.mcpServers(runtime) });
+    checkedAt.set(keyOf(runtime), Date.now());
   } catch {
-    set({ rows: state.rows ?? [] });
+    set(runtime, { rows: stateOf(runtime).rows ?? [] });
   } finally {
-    set({ checking: false });
+    set(runtime, { checking: false });
   }
 }
 
 /** Sign in to one: its page opens in your browser, and the row waits until you're back. */
-export async function signInMcp(client: SocketClient, row: McpServerRow): Promise<void> {
-  set({ signingIn: row.name });
+export async function signInMcp(client: SocketClient, row: McpServerRow, runtime?: string): Promise<void> {
+  set(runtime, { signingIn: row.name });
   try {
-    const started = await client.api.claudeCode.mcpSignIn(row.name);
+    const started = await client.api.claudeCode.mcpSignIn(row.name, runtime);
     if ('error' in started) return toast(client, started.error, 'error');
     if ('url' in started) {
       await openExternal(started.url);
-      const ok = await client.api.claudeCode.mcpSignedIn(row.name);
+      const ok = await client.api.claudeCode.mcpSignedIn(row.name, runtime);
       toast(client, ok ? `Signed in to ${row.label}` : `Didn’t hear back from ${row.label}. Try again when you’re ready.`, ok ? 'success' : 'warn');
     }
-    await checkMcp(client);
+    await checkMcp(client, runtime);
   } finally {
-    set({ signingIn: undefined });
+    set(runtime, { signingIn: undefined });
   }
 }
 
-/** Your MCP servers (Settings › Claude and the box you type in), asked for once a minute at most. */
-export function useMcp(client: SocketClient): McpState {
+/** Turn one on or off (a row with canTurnOff), then look again how it is. */
+export async function setMcpEnabled(client: SocketClient, row: McpServerRow, on: boolean, runtime?: string): Promise<void> {
+  set(runtime, { turning: row.name, rows: stateOf(runtime).rows?.map((r) => (r.name === row.name ? { ...r, status: on ? 'pending' : 'disabled' } : r)) });
+  try {
+    const done = await client.api.claudeCode.mcpSetEnabled(row.name, on, runtime);
+    if ('error' in done) toast(client, done.error, 'error');
+    await checkMcp(client, runtime);
+  } finally {
+    set(runtime, { turning: undefined });
+  }
+}
+
+/** Your MCP servers (Settings › Agent and the box you type in), asked for once a minute at most: your agent's, or `runtime`'s. */
+export function useMcp(client: SocketClient, runtime?: string): McpState {
   const now = useSyncExternalStore(
     (l) => {
       listeners.add(l);
       return () => void listeners.delete(l);
     },
-    () => state,
+    () => stateOf(runtime),
   );
   useEffect(() => {
-    if (Date.now() - checkedAt > FRESH_MS) void checkMcp(client);
-  }, [client]);
+    if (Date.now() - (checkedAt.get(keyOf(runtime)) ?? 0) > FRESH_MS) void checkMcp(client, runtime);
+  }, [client, runtime]);
   return now;
 }
 

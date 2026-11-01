@@ -20,7 +20,8 @@ export const CLAUDE_CODE_HANDLERS = {
   'claudeCode.output': (s, sessionId, agentId, file) => claudeCodeOf(s).output(sessionId, agentId, file),
   'claudeCode.taskOutput': (s, sessionId, agentId, taskId) => claudeCodeOf(s).taskOutput(sessionId, agentId, taskId),
   'claudeCode.skills': (s, channel) => listSkills(s.workspaces?.inChannel(channel)?.path, claudeHome()),
-  'claudeCode.mcpServers': async (s) => (await s.backend?.mcpServers?.(projectRoots(s))) ?? [],
-  'claudeCode.mcpSignIn': async (s, name) => (await s.backend?.mcpSignIn?.(projectRoots(s), name)) ?? { error: 'Your Claude isn’t running here.' },
-  'claudeCode.mcpSignedIn': (s, name) => s.backend?.mcpSignedIn?.(name),
+  'claudeCode.mcpServers': async (s, runtime) => (await s.backend?.mcpServers?.(projectRoots(s), runtime)) ?? [],
+  'claudeCode.mcpSignIn': async (s, name, runtime) => (await s.backend?.mcpSignIn?.(projectRoots(s), name, runtime)) ?? { error: 'Your agent isn’t running here.' },
+  'claudeCode.mcpSignedIn': (s, name, runtime) => s.backend?.mcpSignedIn?.(name, runtime),
+  'claudeCode.mcpSetEnabled': async (s, name, enabled, runtime) => (await s.backend?.mcpSetEnabled?.(projectRoots(s), name, enabled, runtime)) ?? { error: 'Your agent’s servers are turned on and off in its own settings.' },
 } satisfies ClaudeCodeHandlers;

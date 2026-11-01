@@ -84,7 +84,7 @@ export const SLIDES: readonly Slide[] = [
     id: 'sleep',
     icon: 'pulse',
     line: 'Your site goes down at 3 a.m.; by morning a fix waits for your merge',
-    prompt: 'Watch my website every 5 minutes. When it stops answering, have Claude find out why on its own, open a task for it, fix it in a new worktree and open a pull request for me to merge, and tell me when it’s back.',
+    prompt: 'Watch my website every 5 minutes. When it stops answering, have the agent find out why on its own, open a task for it, fix it in a new worktree and open a pull request for me to merge, and tell me when it’s back.',
     ms: 8200,
     scene: () => (
       <div className={s.night}>
@@ -215,8 +215,8 @@ export const SLIDES: readonly Slide[] = [
   {
     id: 'fix',
     icon: 'wrench',
-    line: 'When the tests break, Claude fixes them and asks you to merge',
-    prompt: 'When the tests fail on GitHub for one of my projects, have Claude find out why, fix it in a new worktree and open a pull request for me to merge.',
+    line: 'When the tests break, your agent fixes them and asks you to merge',
+    prompt: 'When the tests fail on GitHub for one of my projects, have the agent find out why, fix it in a new worktree and open a pull request for me to merge.',
     ms: 7000,
     scene: () => (
       <div className={s.fix}>
@@ -243,7 +243,7 @@ export const SLIDES: readonly Slide[] = [
         <div className={s.diff}>
           <div className={s.diffHead}>
             <Icon name="claude" size={12} />
-            Claude · checkout.test.ts
+            Agent · checkout.test.ts
           </div>
           <div className={s.diffLine} data-kind="del" style={ms(1600)}>
             <b>−</b> timeout: 2000
@@ -264,7 +264,7 @@ export const SLIDES: readonly Slide[] = [
     id: 'review',
     icon: 'review',
     line: 'Every pull request read before you get to it',
-    prompt: 'When a pull request opens in one of my projects, have Claude read the change and tell me what to look at, in a few lines.',
+    prompt: 'When a pull request opens in one of my projects, have the agent read the change and tell me what to look at, in a few lines.',
     ms: 6000,
     scene: () => (
       <div className={s.review}>
@@ -279,7 +279,7 @@ export const SLIDES: readonly Slide[] = [
         <div className={s.comment} style={ms(1800)}>
           <span className={s.commentWho}>
             <Icon name="claude" size={12} />
-            Claude on line 48
+            Agent on line 48
           </span>
           A retried webhook can refund twice: check it’s new first.
         </div>

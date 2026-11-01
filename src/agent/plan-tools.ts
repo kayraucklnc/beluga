@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
 import { DEFAULT_LABELS } from '../core/board/labels.js';
 import type { BodyInput, MilestoneInput, PlanOp, TaskInput } from '../core/plans/edit.js';
@@ -176,5 +176,5 @@ export function createPlanToolDefs(plan: PlanTools) {
 }
 
 export function createPlanTools(plan: PlanTools) {
-  return createSdkMcpServer({ name: 'beluga_plan', version: '0.1.0', tools: createPlanToolDefs(plan) });
+  return toolSuite({ name: 'beluga_plan', version: '0.1.0', tools: createPlanToolDefs(plan) });
 }

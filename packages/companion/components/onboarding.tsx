@@ -68,7 +68,7 @@ export function Illustration({ page }: { readonly page: 0 | 1 | 2 }) {
               <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
                 Approval
               </T>
-              <T v="caption">Your Claude · now</T>
+              <T v="caption">Your agent · now</T>
             </View>
           </View>
           <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
@@ -92,7 +92,7 @@ export function Illustration({ page }: { readonly page: 0 | 1 | 2 }) {
             <Text style={{ color: ink.peach, fontSize: 12, fontWeight: '800' }}>✳</Text>
           </View>
           <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
-            Claude
+            Your agent
           </T>
           <View style={{ flex: 1 }} />
           <Hourglass color={ink.peach} size={14} />

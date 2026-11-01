@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentRef } from '../../protocol.js';
 import { AVATAR_MAX } from './avatars.js';
 import { NameSchema, PeerIdSchema, PresenceSchema, ProfileSchema } from './schemas.js';
 
@@ -34,8 +35,8 @@ export const LinkMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('presence'), presence: PresenceSchema }),
   /** A direct message (end-to-end: the link is a Noise channel between the two of you). */
   z.object({ t: z.literal('dm'), id: msgId, text: z.string().max(8_000), ts: z.number().int().min(0), x: z.unknown().optional() }),
-  /** Someone's Claude started (or stopped) answering in a conversation: `g` a group's id, or none for your direct messages. */
-  z.object({ t: z.literal('live'), g: groupId.optional(), for: z.string().min(1).max(80), state: z.enum(['thinking', 'idle']) }),
+  /** Someone's Claude started (or stopped) answering in a conversation: `g` a group's id, or none for your direct messages; `agent`: which of theirs (BLG-498; an older Mac leaves it out). */
+  z.object({ t: z.literal('live'), g: groupId.optional(), for: z.string().min(1).max(80), state: z.enum(['thinking', 'idle']), agent: AgentRef.optional().catch(undefined) }),
   /** Chat files (core/chat-files): ask for a piece of a file by checksum, in a conversation you share. */
   z.object({ t: z.literal('f_get'), rid: msgId, sha: hex64, g: groupId.optional(), off: z.number().int().min(0), len: z.number().int().min(1).max(FILE_PIECE) }),
   z.object({ t: z.literal('f_data'), rid: msgId, off: z.number().int().min(0), d: z.string().max(Math.ceil(FILE_PIECE / 3) * 4) }),

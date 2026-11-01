@@ -9,6 +9,9 @@ import type { Workspace } from '../../workspaces/types.js';
 import type { WorkspaceController, WorktreeEvent } from '../workspace-controller.js';
 import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
+import { agentLabel, agentName } from '../../shared/agent-label.js';
+import { type AgentRef, defaultAgentOf } from '../../protocol.js';
+import { chosenAgent } from '../settings.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
 import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine, reposPrompt } from './prompt.js';
@@ -154,8 +157,39 @@ export class BoardWork {
     return { kind: 'person', id: this.deps.selfId(), name: this.deps.selfName() };
   }
 
-  myClaude(): Actor {
-    return { kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName() };
+  /** This Mac's agent by name ("Claude", "Codex"). */
+  private agent(): string {
+    return agentName(defaultAgentOf(this.deps.store.getState().self));
+  }
+
+  /**
+   * Who works a task (BLG-498): `agent`, or your default (null). It takes effect at the task's next
+   * start; a worktree already working it keeps the agent it opened with (switching an agent mid-run
+   * would lose its session). → what happened, in words, for the screen to show.
+   */
+  setAgent(ref: string, agent: AgentRef | null): string {
+    const issue = this.board.setAgent(ref, agent ?? undefined, this.me());
+    const who = agent ? agentName(agent, { model: true }) : `${this.agent()} (your default)`;
+    const doing = worktreeDoing(issue, (id) => this.workspaces().some((w) => w.id === id && !w.archived));
+    const ws = doing ? this.workspaces().find((w) => w.id === doing) : undefined;
+    return ws ? `${ws.name} keeps the agent it started with; ${who} works ${issue.key} from its next start` : `${who} works ${issue.key} when it starts`;
+  }
+
+  /**
+   * Your agent, as the board records it (BLG-498: its activity shows the real agent's mark): the
+   * one picked for `channel`'s conversation (`ws:<id>`), else your default.
+   */
+  myClaude(channel?: string): Actor {
+    return { kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName(), agent: this.agentIn(channel) };
+  }
+
+  /** The agent that runs in a conversation (`ws:<id>`): its workspace's pick, else its project's agent (agentFor), else your default. */
+  private agentIn(channel: string | undefined): AgentRef {
+    const ws = channel?.startsWith(WS) ? this.workspaces().find((w) => w.id === channel.slice(WS.length)) : undefined;
+    if (ws?.agent) return ws.agent;
+    const st = this.deps.store.getState();
+    const project = ws ? st.projects.find((p) => p.id === ws.projectId)?.name : undefined;
+    return project && st.prefs.projectAgents?.[project] ? chosenAgent(st.prefs, project) : defaultAgentOf(st.self);
   }
 
   /**
@@ -227,12 +261,13 @@ export class BoardWork {
   /**
    * A draft (from draft, maybe changed) added as a task: its title, goal, criteria, labels and
    * priority, for whoever it names on the team; with `more`, those too (under it when `epic`). → the first (or the epic), then the rest.
+   * `agent` (BLG-498): who works them when they start (none: your default).
    */
-  addDraft(place: string, d: TaskDraft): Issue[] {
+  addDraft(place: string, d: TaskDraft, agent?: AgentRef): Issue[] {
     const { projectId, board } = this.placeOf(place);
     const who = d.epic ? undefined : this.whom(projectId, d.for);
-    const first = this.board.create({ projectId, board, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), ...(who ? { assignee: who } : {}), brief: draftBrief(d) }, this.me());
-    return [first, ...this.addMore(first, {}, d)];
+    const first = this.board.create({ projectId, board, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), ...(who ? { assignee: who } : {}), ...(agent ? { agent } : {}), brief: draftBrief(d) }, this.me());
+    return [first, ...this.addMore(first, agent ? { agent } : {}, d)];
   }
 
   /** The person a draft names, if they're on the project's team (you or a teammate). */
@@ -279,11 +314,11 @@ export class BoardWork {
     const made = this.addMore(now, input, d);
     if (!made.length) return;
     const list = andList(made.map((i) => i.key));
-    this.deps.toast?.(d.epic ? `${now.key} is an epic: Claude added ${list} under it` : `Claude also made ${list}, from what you wrote`);
+    this.deps.toast?.(d.epic ? `${now.key} is an epic: ${this.agent()} added ${list} under it` : `${this.agent()} also made ${list}, from what you wrote`);
   }
 
   /** A draft's `more`: beside the first (or under it, an epic), in its column, each for whom it names. */
-  private addMore(first: Issue, input: Pick<NewIssue, 'labels' | 'priority' | 'assignee' | 'parent'>, d: TaskDraft): Issue[] {
+  private addMore(first: Issue, input: Pick<NewIssue, 'labels' | 'priority' | 'assignee' | 'parent' | 'agent'>, d: TaskDraft): Issue[] {
     return (d.more ?? []).map((m) => {
       const who = this.whom(first.projectId, m.for) ?? input.assignee;
       return this.board.create(
@@ -296,6 +331,8 @@ export class BoardWork {
           ...(m.priority ? { priority: m.priority } : input.priority ? { priority: input.priority } : {}),
           ...(who ? { assignee: who } : {}),
           ...(d.epic ? { parent: first.id } : input.parent ? { parent: input.parent } : {}),
+          // One New Task message, one agent for all it made.
+          ...(input.agent ? { agent: input.agent } : {}),
           // Asked for as private, the rest of them are too (BLG-501).
           ...(first.private ? { private: true } : {}),
           brief: draftBrief(m),
@@ -308,8 +345,9 @@ export class BoardWork {
   /**
    * Start a worktree for a task (from the latest origin, or `base`), named after it, and open it;
    * with `claude`, your Claude starts on the task there with its brief. → the workspace's id.
+   * The worktree runs `opts.agent`, else the task's own agent, else your default (BLG-497).
    */
-  async start(ref: string, opts: { readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean; /** What your Claude is told instead of working the task through (it implies `claude`), and the line the conversation shows for it. */ readonly prompt?: (issue: Issue, ws: Workspace) => string; readonly shown?: string } = {}): Promise<string> {
+  async start(ref: string, opts: { readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean; readonly agent?: AgentRef; /** What your Claude is told instead of working the task through (it implies `claude`), and the line the conversation shows for it. */ readonly prompt?: (issue: Issue, ws: Workspace) => string; readonly shown?: string } = {}): Promise<string> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Worktrees need a project folder');
     // Claude still writing it: its worktree is named after, and Claude starts with, the real words.
@@ -327,7 +365,8 @@ export class BoardWork {
     this.expecting.push(ticket);
     let ws: Workspace | undefined;
     try {
-      ws = await controller.newWorktree(issue.projectId, name, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}) });
+      const agent = opts.agent ?? issue.agent;
+      ws = await controller.newWorktree(issue.projectId, name, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}), ...(agent ? { agent } : {}) });
     } finally {
       const at = this.expecting.indexOf(ticket);
       if (at >= 0) this.expecting.splice(at, 1);
@@ -352,8 +391,9 @@ export class BoardWork {
    * One worktree for several tasks (a plan milestone's one Claude does them in order): named
    * `name`, from the latest origin or `base`, linked to every task (the first goes In Progress,
    * all are your Claude's). Nobody is asked anything: the caller sends the brief. → the workspace.
+   * `agent`: the agent it runs (a plan's own, BLG-497); none: your default.
    */
-  async startShared(refs: readonly string[], name: string, opts: { readonly base?: string; readonly quiet?: boolean } = {}): Promise<Workspace> {
+  async startShared(refs: readonly string[], name: string, opts: { readonly base?: string; readonly quiet?: boolean; readonly agent?: AgentRef } = {}): Promise<Workspace> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Worktrees need a project folder');
     if (!refs.length) throw new Error('No tasks to start');
@@ -366,7 +406,7 @@ export class BoardWork {
     this.expecting.push(ticket);
     let ws: Workspace | undefined;
     try {
-      ws = await controller.newWorktree(first.projectId, slug, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}) });
+      ws = await controller.newWorktree(first.projectId, slug, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}), ...(opts.agent ? { agent: opts.agent } : {}) });
     } finally {
       const at = this.expecting.indexOf(ticket);
       if (at >= 0) this.expecting.splice(at, 1);
@@ -432,7 +472,7 @@ export class BoardWork {
 
   /** Make (or rewrite) the task a conversation is doing from Claude's definition. */
   private define(channel: string, def: TaskDefinition, current: Issue | undefined): Issue {
-    const by: Actor = this.myClaude();
+    const by: Actor = this.myClaude(channel);
     const wsId = channel.startsWith(WS) ? channel.slice(WS.length) : undefined;
     const ws = wsId ? this.workspaces().find((w) => w.id === wsId) : undefined;
     const projectId = current?.projectId ?? ws?.projectId;
@@ -495,7 +535,7 @@ export class BoardWork {
     return [
       '',
       'Being worked on in this project right now, in other worktrees (coordinate: don’t redo their work, and leave a task_note on theirs if you must touch what they own):',
-      ...others.map(({ issue, place, working }) => `- ${issue.key} “${issue.title}” (${issue.status === 'in_review' ? 'in review' : 'in progress'}) in worktree ${place.name}${place.branch ? ` on ${place.branch}` : ''}${working ? ', its Claude is working now' : ''}`),
+      ...others.map(({ issue, place, working }) => `- ${issue.key} “${issue.title}” (${issue.status === 'in_review' ? 'in review' : 'in progress'}) in worktree ${place.name}${place.branch ? ` on ${place.branch}` : ''}${working ? ', its agent is working now' : ''}`),
     ].join('\n');
   }
 
@@ -561,11 +601,11 @@ export class BoardWork {
     const text = await describe(project.root, project.name).catch(() => undefined);
     if (!text || this.board.state().projects[projectId]?.context) return;
     try {
-      this.board.setContext(projectId, text, `${this.deps.selfName()}’s Claude`);
+      this.board.setContext(projectId, text, agentLabel(defaultAgentOf(this.deps.store.getState().self), this.deps.selfName(), false));
     } catch {
       return; // The project went meanwhile.
     }
-    this.deps.toast?.(`Claude wrote what ${project.name} is about: Tasks › ⋯ › About This Project`);
+    this.deps.toast?.(`${this.agent()} wrote what ${project.name} is about: Tasks › ⋯ › About This Project`);
   }
 
   private onAction(action: Action): void {
@@ -614,7 +654,7 @@ export class BoardWork {
 
   private toolsFor(channel: string, current: Issue | undefined, planning = false): BoardTools {
     const board = this.board;
-    const by = (): Actor => ({ kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName() });
+    const by = (): Actor => this.myClaude(channel);
     const state = (): ReturnType<Board['state']> => board.state();
     const pick = (key: string | undefined): Issue => {
       if (key) return board.need(key);
@@ -651,7 +691,7 @@ export class BoardWork {
       const place = w ? this.workspaces().find((x) => x.id === w && !x.archived) : undefined;
       if (!place) return undefined;
       const working = busyChannels(this.deps.store.getState().log).has(`${WS}${place.id}`);
-      return `worktree ${place.name}${place.branch ? ` (${place.branch})` : ''}${`${WS}${place.id}` === channel ? ', this conversation' : working ? ', its Claude is working there now' : ''}`;
+      return `worktree ${place.name}${place.branch ? ` (${place.branch})` : ''}${`${WS}${place.id}` === channel ? ', this conversation' : working ? ', its agent is working there now' : ''}`;
     };
     return {
       ...(current ? { current: current.key } : {}),

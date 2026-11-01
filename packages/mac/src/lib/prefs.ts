@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { DEFAULT_FIRE, type FireLook, fireLookOf } from '../chat/fire-look.js';
 import { DEFAULT_MENU_BAR, type MenuBarLook, menuBarLookOf } from '../menubar/menubar-look.js';
-import { type TermThemePref, themeOf } from './terminal-import-model.js';
+import { type TermKeysPref, type TermThemePref, termKeysOf, themeOf } from './terminal-import-model.js';
+import { type ConvoMode, clampBoth, isConvoMode } from './convo-mode.js';
 import { type ShortcutOverrides, keyPlatform, overridesOf } from './shortcuts-model.js';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
@@ -65,6 +66,23 @@ export interface UiPrefs {
   readonly termTheme: TermThemePref | null;
   /** Option sends Meta (Esc+) in the terminal, instead of typing special characters. */
   readonly termOptionMeta: boolean;
+  /** Keys brought from another terminal (Settings › Terminal › Import from…), over Beluga's terminal keys (BLG-537). */
+  readonly termKeys: TermKeysPref | null;
+  /** In the terminal view, the terminal's keys win over Beluga's shortcuts (⌘T, ⌘W, ⌘1…). */
+  readonly termKeysFirst: boolean;
+  /**
+   * The terminal view is on (BLG-534): conversations can show as Claude Code's own terminal app, and
+   * their header has Chat · Terminal · Both. Off (as for most people): every conversation is the chat.
+   */
+  readonly termView: boolean;
+  /** How each conversation shows (BLG-534): the chat, the agent's own terminal, or both side by side (workspace id → mode). */
+  readonly convoModes: Readonly<Record<string, ConvoMode>>;
+  /** How a conversation you haven't switched opens. */
+  readonly convoDefault: ConvoMode;
+  /** In Both, the chat's share of the width beside the terminal (0.25–0.6). */
+  readonly bothChat: number;
+  /** The panel of visuals beside the terminal, in pixels. */
+  readonly visualsWidth: number;
   /** A file open full size wraps its long lines (instead of scrolling sideways). */
   readonly readerWrap: boolean;
   /** Chats open as tabs above the conversation (`dm:<peerId>` / `group:<id>`; the main channel is always first). */
@@ -146,6 +164,13 @@ export const DEFAULT_PREFS: UiPrefs = {
   termScrollback: 5000,
   termTheme: null,
   termOptionMeta: true,
+  termKeys: null,
+  termKeysFirst: true,
+  termView: false,
+  convoModes: {},
+  convoDefault: 'chat',
+  bothChat: 0.38,
+  visualsWidth: 520,
   readerWrap: false,
   chatTabs: [],
   changeLook: 'diff',
@@ -171,7 +196,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts) };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, convoDefault: isConvoMode(saved.convoDefault) ? saved.convoDefault : 'chat', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true };
   } catch {
     return DEFAULT_PREFS;
   }

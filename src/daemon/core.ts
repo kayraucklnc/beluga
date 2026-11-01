@@ -1,17 +1,22 @@
 import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../config.js';
-import { createClaudeBackend } from '../agent/runner.js';
+import { runtimeFor } from '../agent/runtime/registry.js';
+import { claudeStatus } from '../agent/runtime/claude/status.js';
+import type { AgentRuntime, RuntimeId } from '../agent/runtime/types.js';
 import { createMockBackend } from '../agent/mock.js';
-import { findConversation } from '../agent/claude-sessions.js';
+import { createCodexRuntime } from '../agent/runtime/codex/index.js';
+import { ScriptedCodex } from '../agent/runtime/codex/scripted.js';
+import { findConversation } from '../agent/runtime/claude/claude-sessions.js';
 import { otherTools } from '../agent/other-tools.js';
 import { copyNative, pasteText } from '../core/clipboard.js';
 import { DEFAULT_LINK } from '../core/project-invites.js';
 import { type SessionOptions, Session } from '../core/session.js';
-import { loadSettings, saveSettings } from '../core/settings.js';
+import { chosenAgent, loadSettings, publishedAgents, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
 import { leaveNetwork, networkSwitch } from '../core/network.js';
 import { launchBoard } from '../core/board/launch.js';
+import { launchDialogues } from '../core/dialogues/launch.js';
 import { launchSentinel } from '../core/sentinel/launch.js';
 import { launchAssistant } from '../core/assistant/launch.js';
 import { launchChat } from '../core/chat/launch.js';
@@ -57,6 +62,14 @@ interface Room {
 }
 
 const roomInvite = (room: Room): string | undefined => (room.reach ? encodeInvite({ ...room.reach, secret: room.secret }) : undefined);
+
+let claudeWithStatus: AgentRuntime | undefined;
+/** The runtimes, Claude's saying whether it's signed in (a local model's side calls go to Claude only then, BLG-503). */
+function withClaudeStatus(id?: RuntimeId): AgentRuntime | undefined {
+  const rt = runtimeFor(id);
+  if (!rt || rt.id !== 'claude' || rt.status) return rt;
+  return (claudeWithStatus ??= { ...rt, status: () => claudeStatus() });
+}
 
 function lanAddress(): string | undefined {
   return Object.values(os.networkInterfaces())
@@ -235,7 +248,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     url: room.url,
     ...(room.fallbackUrl ? { fallbackUrl: room.fallbackUrl } : {}),
     keys: deriveKeys(room.secret),
-    profile: { name: config.name, shares: shares.infos, agent: config.agent },
+    profile: { name: config.name, shares: shares.infos, agent: config.agent, agents: publishedAgents(saved), defaultAgent: chosenAgent(saved) },
     identity,
   });
   const hub = room.hub;
@@ -291,17 +304,26 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     saveSettings: (patch) => void saveSettings(patch),
     createAgent: demo
       ? (bridge) => createMockBackend(bridge, Number(belugaEnv('DEMO_PACE')) || 2.6) // unhurried, so you can watch workspaces run side by side
-      : config.agent
-        ? (bridge) =>
-            createClaudeBackend({
+      : undefined,
+    // The demo's Codex: the real Codex runtime over a scripted app-server, so a worktree can run on it (BLG-462).
+    ...(demo ? { alsoRuntimes: [createCodexRuntime({ connect: new ScriptedCodex({ stepMs: 600 }).connect })] } : {}),
+    // Your agent through the runtime seam (agent/runtime): Claude, the only one registered yet.
+    ...(!demo && config.agent
+      ? {
+          // runtime.agent stays unset (Claude): the routed backend's fallback, so side calls and usage keep a
+          // Claude to fall back on; each run follows its place's agent, side calls your default (session.sideRoute).
+          runtime: {
+            runtimes: withClaudeStatus,
+            options: {
               cwd: agentCwd,
               autoEdit: primary?.writable ?? false,
               additionalDirectories: config.shares.slice(1).map((s) => s.root),
-              bridge,
-              model: config.model,
-              claudePath: belugaEnv('CLAUDE_PATH') ?? claudeCodePath(),
-            })
-        : undefined,
+              ...(config.model ? { model: config.model } : {}),
+              executablePath: belugaEnv('CLAUDE_PATH') ?? claudeCodePath(),
+            },
+          },
+        }
+      : {}),
     launchDir: process.cwd(),
     terminals,
     savedPeople: saved.people,
@@ -323,6 +345,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopChat = (): void => undefined;
   let stopFriendShares = (): void => undefined;
   let stopBoard = (): void => undefined;
+  let stopDialogues = (): void => undefined;
   let stopSentinel = (): void => undefined;
   let stopAssistant = (): void => undefined;
   let stopCompanion = async (): Promise<void> => undefined;
@@ -344,6 +367,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopFriendShares = launchFriendShares({ session, store, demo: Boolean(demo) });
     // Tasks (the board): opened by worktrees, moved by pull requests, kept true by Claude.
     if (opts.network) stopBoard = launchBoard({ session, store, demo: Boolean(demo) });
+    // Dialogues between your agents, chaired by Beluga (core/dialogues): saved beside plans.
+    if (opts.network) stopDialogues = launchDialogues({ session, store, demo: Boolean(demo) });
     // Sentinel: watchers that run on a schedule or by hand, do a few steps and leave a report (docs/sentinel.md).
     if (opts.network) stopSentinel = launchSentinel({ session, store, demo: Boolean(demo) });
     // "Your Mac": one conversation with your Claude for the whole Mac, from the phone and the sidebar (core/assistant).
@@ -358,7 +383,12 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     store.dispatch({ type: 'hosting', hosting: { phase: 'ready', copied: true } });
     session.system('Demo mode: bob, mia and every Claude are simulated. Nothing leaves your computer.');
     seedDemoContext(store);
-    setTimeout(() => session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }), 300);
+    setTimeout(() => {
+      session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } });
+      // A second and a third provider, so the Usage tab shows a card for each shape (BLG-458).
+      session.updateUsage({ plan: 'plus', windows: [{ label: 'Weekly', pct: 24 }] }, { runtime: 'codex', model: 'gpt-5', label: 'Codex' });
+      session.updateUsage({ tokens: { input: 182_000, output: 41_500 }, tokensPerSec: 38 }, { runtime: 'local', model: 'qwen3', label: 'Local' });
+    }, 300);
     // bob "arrives" a moment later so you first see how inviting works (sooner at a faster pace: the e2e tests).
     const soon = (ms: number): number => ms * Math.min(1, Number(process.env.KLAUD_DEMO_PACE) || 1);
     setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), soon(2500));
@@ -385,6 +415,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     stopAssistant();
     stopSentinel();
     stopBoard();
+    stopDialogues();
     await stopCompanion();
     await stopNetwork();
     stopEarnings();

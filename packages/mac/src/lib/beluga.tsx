@@ -41,7 +41,7 @@ export interface Recipient {
 export const recipientPrefix = (to: Recipient): string => (to.claude ? (to.self ? '@claude ' : `@claude:${to.name} `) : `@${to.name} `);
 
 /** "bob's Claude", "your Claude", "bob". */
-export const recipientLabel = (to: Recipient): string => (to.claude ? (to.self ? 'your Claude' : `${to.name}’s Claude`) : to.name);
+export const recipientLabel = (to: Recipient): string => (to.claude ? (to.self ? 'your agent' : `${to.name}’s agent`) : to.name);
 
 export type SettingsPane = 'general' | 'appearance' | 'claude' | 'notifications' | 'workspaces' | 'terminal' | 'fire' | 'menubar' | 'environment' | 'people' | 'phone' | 'voice' | 'keyboard' | 'about';
 

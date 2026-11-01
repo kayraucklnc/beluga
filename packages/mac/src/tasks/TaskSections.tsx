@@ -157,7 +157,7 @@ export function FilesList({ issue }: { issue: Issue }) {
       {files.length ? (
         <ProofItems issue={issue} items={files} />
       ) : (
-        <div className={t.relationEmpty}>{inApp() ? 'Drop files here, or on the task’s card, for the work to use. Claude gets them too.' : 'Files added for the work show here.'}</div>
+        <div className={t.relationEmpty}>{inApp() ? 'Drop files here, or on the task’s card, for the work to use. Your agent gets them too.' : 'Files added for the work show here.'}</div>
       )}
     </section>
   );
@@ -219,7 +219,7 @@ export function ProofList({ issue }: { issue: Issue }) {
       {taskProof(issue).length ? (
         <ProofItems issue={issue} />
       ) : link === undefined ? (
-        <div className={t.relationEmpty}>Screenshots, pages and results that show it works. Claude adds them as it goes.</div>
+        <div className={t.relationEmpty}>Screenshots, pages and results that show it works. The agent adds them as it goes.</div>
       ) : null}
     </section>
   );
@@ -246,7 +246,7 @@ export function ProofItems({ issue, items = taskProof(issue), readOnly = false }
 function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnType<typeof localImage>[]; onRemove: (() => void) | undefined }) {
   const actions = useActions();
   const [preview, setPreview] = useState(false);
-  const by = `${proof.by.kind === 'claude' ? 'Claude' : proof.by.kind === 'person' ? proof.by.name : 'Beluga'} · ${ago(proof.at)}`;
+  const by = `${proof.by.kind === 'claude' ? 'Agent' : proof.by.kind === 'person' ? proof.by.name : 'Beluga'} · ${ago(proof.at)}`;
   const remove = onRemove ? <IconButton icon="x" label={`Remove ${proof.title}`} className={t.proofRemove} onClick={onRemove} /> : null;
   if (proof.kind === 'graph' && proof.body) {
     return (

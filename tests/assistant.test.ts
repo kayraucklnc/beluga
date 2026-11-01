@@ -73,7 +73,7 @@ describe('Your Mac’s tools', () => {
     const store = new Store(initialState('room', 'auto'));
     store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'beluga', root: '/Users/k/beluga', base: 'main', workspaces: [{ id: 'wt-1', projectId: 'p1', projectRoot: '/Users/k/beluga', name: 'login', path: '/x', kind: 'worktree', branch: 'beluga/login', createdAt: 1, external: false }] }] as never });
     store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r1', requester: ME, event: 'started', text: '', ts: 1, channel: 'ws:wt-1', itemId: 'i1' });
-    expect(listWork(store)).toMatch(/beluga · \/Users\/k\/beluga[\s\S]*worktree "login" · id wt-1 · branch beluga\/login · Claude working/);
+    expect(listWork(store)).toMatch(/beluga · \/Users\/k\/beluga[\s\S]*worktree "login" · id wt-1 · branch beluga\/login · agent working/);
     const started: unknown[] = [];
     const { a } = assistant(store, tmp(), {
       startWorktree: async (projectId, message, opts) => {

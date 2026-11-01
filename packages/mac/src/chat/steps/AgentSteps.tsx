@@ -168,7 +168,7 @@ export const AgentSteps = memo(function AgentSteps({ item, running, part, subs: 
 
   return (
     <>
-      <div className={s.list} role="list" aria-label="Claude's steps">
+      <div className={s.list} role="list" aria-label="The agent's steps">
         {/* One keyed list with the step Claude is on: when it finishes it stays the same row (no
             remount, so nothing blinks or restarts) and only changes how it reads. A row leaving the
             last few closes up into the fold above it, whose count ticks up (KLD-51). */}

@@ -65,7 +65,7 @@ export function NewLabelSheet({ projectId, issueId, close }: { projectId: string
           <span className={n.colorName}>{LABEL_COLOR_INFO[color].label}</span>
         </div>
       </Field>
-      <Field label="What it’s for" hint="Optional. Claude reads it when it picks labels." htmlFor="label-hint">
+      <Field label="What it’s for" hint="Optional. Your agent reads it when it picks labels." htmlFor="label-hint">
         <TextInput id="label-hint" value={hint} placeholder="Slow screens and heavy queries" onChange={setHint} maxLength={80} />
       </Field>
       {own.length ? (

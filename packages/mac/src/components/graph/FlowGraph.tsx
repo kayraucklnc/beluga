@@ -368,11 +368,12 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         zoomOnScroll={false}
         panOnScroll={!inline}
         preventScrolling={!inline}
+        // React Flow's Space-to-pan listens on the whole window and swallows Space there: inline (in a
+        // chat or a document) Space scrolls the page; dragging still pans.
+        panActivationKeyCode={inline ? null : 'Space'}
         zoomOnPinch
         panOnDrag
-        // React Flow listens for these on the whole window: in a conversation or a document Space
-        // scrolls the page (it held Space for panning), and nothing in a graph is deleted by a key.
-        panActivationKeyCode={inline ? null : 'Space'}
+        // Nothing in a graph is deleted by a key (React Flow listens for Backspace on the whole window).
         deleteKeyCode={null}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} className={g.dots} />

@@ -8,6 +8,8 @@ import { claudeCodeOf } from '../core/claude-code/launch.js';
 import { type ViewFetchArgs, viewFetch } from '../companion/view-fetch.js';
 import { needBoard } from '../core/board/registry.js';
 import { needCompanion } from '../companion/registry.js';
+import { CLAUDE_AGENT } from '../protocol.js';
+import { providersOf } from '../agent/usage.js';
 import { currentClient } from '../core/client-context.js';
 import type { Session } from '../core/session.js';
 import type { TaskDraft } from '../agent/task-drafter.js';
@@ -43,6 +45,13 @@ export const COMPANION_HANDLERS = {
   'companion.askPerson': (s, a) => needCompanion(s).askPerson(callerOf(), a),
   'companion.signOut': (s) => needCompanion(s).signOut(callerOf()),
   'companion.keepAwake': (s, mode) => s.setPrefs({ keepAwake: mode }),
+  'companion.defaultAgent': (s, runtime) => {
+    // One of your providers by its runtime (its card's agent); Claude is "no default set", as on the Mac.
+    const me = s.store.getState().peers.find((p) => p.peerId === s.selfId) ?? s.store.getState().self;
+    const agent = providersOf(me).find((a) => a.runtime === runtime);
+    if (!agent) throw new Error(`No ${runtime} agent on this Mac`);
+    s.setPrefs({ defaultAgent: runtime === CLAUDE_AGENT.runtime ? null : agent });
+  },
   'companion.openOnMac': async (s, target) => {
     const view = macViewFor(s.store.getState(), target);
     if (!view) return { opened: false, why: 'That isn’t on your Mac any more' };
@@ -65,8 +74,8 @@ export const COMPANION_HANDLERS = {
     return phoneDraft(d, a.several);
   },
   'companion.addTask': (s, a) => {
-    const { projectId, more, epic, ...first } = a;
-    const [issue, ...rest] = needBoard(s).addDraft(projectId, { ...first, ...(more?.length ? { more } : {}), ...(epic ? { epic: true as const } : {}) });
+    const { projectId, more, epic, agent, ...first } = a;
+    const [issue, ...rest] = needBoard(s).addDraft(projectId, { ...first, ...(more?.length ? { more } : {}), ...(epic ? { epic: true as const } : {}) }, agent);
     return { id: issue!.id, key: issue!.key, ...(rest.length ? { more: rest.map((i) => ({ id: i.id, key: i.key })) } : {}) };
   },
   'companion.files.list': (s, topic, rel) => needCompanion(s).filesList(topic, rel),

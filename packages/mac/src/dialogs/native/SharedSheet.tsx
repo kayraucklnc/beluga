@@ -64,7 +64,7 @@ export function SharedSheet({ menu, close }: NativeMenuProps<'shared'>) {
     >
       <div className={v.role}>
         <Tag tone={w.role === 'contribute' ? 'claude' : 'muted'}>{w.role === 'contribute' ? 'You can work here' : 'Following along'}</Tag>
-        <span>{w.role === 'contribute' ? `Talk to ${owner}’s Claude here. It runs on ${owner}’s computer.` : 'Read-only: you see the conversation and the files.'}</span>
+        <span>{w.role === 'contribute' ? `Talk to ${owner}’s agent here. It runs on ${owner}’s computer.` : 'Read-only: you see the conversation and the files.'}</span>
       </div>
       <div className={v.tiles}>
         {OPEN.map((o) => (

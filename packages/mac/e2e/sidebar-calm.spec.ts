@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
-test('the top of the sidebar is Your Mac, Overview, Work (tasks, issues, actions and plans), Sentinel, the chat and Files', async ({ page }) => {
+test('the top of the sidebar is Your Mac, Overview, Work (tasks, issues and plans), Sentinel, the chat and Files', async ({ page }) => {
   // The places themselves: a running plan's row sits under Work (KLD-18, BLG-197) and isn't one of them.
   const top = sidebar(page).locator('section').first().getByRole('button').and(page.locator(':not([data-plan-row])'));
   await expect(top.nth(0)).toHaveAccessibleName(/^Your Mac/);

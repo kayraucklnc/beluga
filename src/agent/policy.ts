@@ -26,10 +26,14 @@ const WRITE_TOOLS: Readonly<Record<string, string>> = {
 const ALWAYS_OK = new Set([
   'TodoWrite',
   'ToolSearch',
+  // A skill only loads its instructions; every tool it then uses is gated as usual.
+  'Skill',
   // continue_in_worktree is only offered in main folders, and decides who must confirm itself.
   ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report', 'continue_in_worktree'].map((n) => `mcp__beluga__${n}`),
   // set_project_setup: only your own worktree runs have it, and what it sets asks you before it first runs by itself.
   'mcp__beluga__set_project_setup',
+  // end_dialogue: only a chaired dialogue's turn has it (core/dialogues); it only ends that dialogue.
+  'mcp__beluga__end_dialogue',
   // The gateway's look-and-wait tools (core/gateway); ask_person and run_on ask, and the gateway checks trust itself.
   ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__beluga__${n}`),
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).

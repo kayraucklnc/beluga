@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeWindow, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/usage.js';
+import { describeWindow, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/runtime/claude/usage.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { personMenu } from '../src/ui/menus.js';
@@ -49,7 +49,7 @@ describe('usage', () => {
     ];
     const s = reduce(reduce(initialState('r'), { type: 'peers', peers }), { type: 'welcome', self: peers[0]! });
     const menu = personMenu(s, 1)!;
-    expect(menu.intro.join('\n')).toContain('Claude usage (pro):  5-hour 42%   ·   week 10%');
+    expect(menu.intro.join('\n')).toContain('Claude plan usage (pro):  5-hour 42%   ·   week 10%');
     expect(menu.intro.join('\n')).toContain('How much do you trust bob? Now: Ask me each time.');
     const full = reduce(s, { type: 'trust_level', peerId: 'b', level: 'full' });
     expect(personMenu(full, 1)!.intro.join('\n')).toContain('Now: Full trust');

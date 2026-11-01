@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { decodeImage } from '../../../src/image/decode.js';
 import { expect, test, type Page } from './fixtures.js';
-import { openPlans } from './helpers.js';
+import { openWork } from './helpers.js';
 
 /**
  * Images a message shows by their path on this Mac (`![shot](</Users/…/shot.png>)`, the way Claude
@@ -86,14 +86,14 @@ test('an animated GIF a message shows plays: the file comes as it is, every fram
 
 test('the plan chat takes a dropped image, and shows a message’s screenshots as thumbnails, like any chat', async ({ page }) => {
   await page.goto('/');
-  await openPlans(page);
+  await openWork(page, 'Plans');
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await page.getByRole('button', { name: /^Project: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();
   }
   await page.locator('main').getByRole('button', { name: /^Card checkout for launch,/ }).click();
   const chat = page.getByRole('complementary', { name: 'Conversation' });
-  const box = chat.getByRole('textbox', { name: 'Message Claude about the plan' });
+  const box = chat.getByRole('textbox', { name: 'Message your agent about the plan' });
   await box.fill('this one:');
   // Dropped on the box: it waits as a thumbnail, referenced in the words.
   await chat.locator('form').evaluate((form, b64) => {

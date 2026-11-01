@@ -9,9 +9,21 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'no
 import path from 'node:path';
 import { z } from 'zod';
 import { ENV_KEY, type EnvKeys, type EnvVar, MAX_ENV_VALUE, MAX_ENV_VARS, envProblems, envRecord, importEnv, mergeEnv, parseEnvText } from '../shared/env-vars.js';
+import { ENDPOINT_ID, endpointIdFor } from '../shared/local-endpoints.js';
 import type { Project } from '../workspaces/types.js';
 import { belugaHome } from './home.js';
 import type { Store } from './store.js';
+
+/** One local or bring-your-own endpoint (see shared/local-endpoints.ts). */
+export const Endpoint = z.object({
+  id: z.string().regex(ENDPOINT_ID),
+  label: z.string().min(1).max(40),
+  baseUrl: z.string().url().max(500).refine((u) => /^https?:\/\//.test(u), 'Use an http:// or https:// address'),
+  key: z.string().max(4000).optional(),
+  models: z.array(z.string().min(1).max(40)).max(20).default([]),
+});
+export type Endpoint = z.infer<typeof Endpoint>;
+const MAX_ENDPOINTS = 12;
 
 const Vars = z.record(z.string().regex(ENV_KEY), z.string().max(MAX_ENV_VALUE));
 
@@ -26,12 +38,17 @@ export const EnvFile = z.object({
    * reads and changes its .env files without asking.
    */
   projects: z.record(z.string(), z.object({ vars: Vars.default({}), dotenv: z.boolean().optional(), claudeDotenv: z.boolean().default(false), newKeysBack: z.boolean().optional() })).default({}),
+  /**
+   * Anthropic-compatible endpoints your Claude Code can run against (BLG-449): kept here with your
+   * other secrets, never published. Screens get them without the key (local-endpoints.ts).
+   */
+  endpoints: z.array(Endpoint).max(MAX_ENDPOINTS).default([]),
   /** 2: `dotenv` unset means on. Files without it said false for "never switched on". */
   v: z.number().optional(),
 });
 export type EnvFile = z.infer<typeof EnvFile>;
 
-const EMPTY: EnvFile = { global: {}, claudeDotenv: false, projects: {}, v: 2 };
+const EMPTY: EnvFile = { global: {}, claudeDotenv: false, projects: {}, endpoints: [], v: 2 };
 
 /** A file from before .env loaded by default: its "off" was only never switched on, so it's the default now. */
 function upgrade(file: EnvFile): EnvFile {
@@ -316,6 +333,35 @@ export class EnvVars {
     const project = this.project(projectId);
     if (!project) throw new Error('That project is gone');
     this.data = { ...this.data, projects: this.withProject(project.root, { newKeysBack: on }) };
+    this.save();
+  }
+
+  /** Your endpoints, keys and all: for runs on this Mac only (never a screen: see local-endpoints.ts). */
+  endpoints(): readonly Endpoint[] {
+    return this.data.endpoints;
+  }
+
+  /**
+   * Add or change an endpoint. `key`: undefined keeps the one it has, '' removes it. A new one
+   * (no id) gets an id from its label. → its id.
+   */
+  saveEndpoint(change: { readonly id?: string; readonly label: string; readonly baseUrl: string; readonly key?: string; readonly models?: readonly string[] }): string {
+    const list = this.data.endpoints;
+    const before = change.id ? list.find((e) => e.id === change.id) : undefined;
+    if (change.id && !before) throw new Error('That endpoint is gone');
+    const id = before?.id ?? endpointIdFor(change.label, list.map((e) => e.id));
+    const key = change.key === undefined ? before?.key : change.key || undefined;
+    const models = [...new Set((change.models ?? before?.models ?? []).map((m) => m.trim()).filter(Boolean))];
+    const parsed = Endpoint.safeParse({ id, label: change.label.trim(), baseUrl: change.baseUrl.trim().replace(/\/+$/, ''), ...(key ? { key } : {}), models });
+    if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'That endpoint doesn’t look right');
+    if (!before && list.length >= MAX_ENDPOINTS) throw new Error(`Up to ${MAX_ENDPOINTS} endpoints`);
+    this.data = { ...this.data, endpoints: before ? list.map((e) => (e.id === id ? parsed.data : e)) : [...list, parsed.data] };
+    this.save();
+    return id;
+  }
+
+  removeEndpoint(id: string): void {
+    this.data = { ...this.data, endpoints: this.data.endpoints.filter((e) => e.id !== id) };
     this.save();
   }
 

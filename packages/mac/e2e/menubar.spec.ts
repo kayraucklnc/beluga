@@ -19,7 +19,7 @@ test('picks what the menu-bar number counts and when the whale spouts', async ({
   await expect(settings.getByRole('radio', { name: /here$/ })).toHaveAttribute('aria-checked', 'true');
   await page.waitForTimeout(2500);
   // Tuning the spout makes it your own.
-  await settings.getByRole('radio', { name: 'While Claude Works' }).click();
+  await settings.getByRole('radio', { name: 'While an Agent Works' }).click();
   await settings.getByRole('slider', { name: 'Splash' }).fill('1');
   await expect(settings.getByRole('radio', { name: /Your Own/ })).toHaveAttribute('aria-checked', 'true');
   await page.waitForTimeout(3000);

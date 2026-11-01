@@ -128,7 +128,7 @@ function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] 
         roomCard: () => openPerson(ui, bits.index),
       }
     : undefined;
-  const roomLine = bits ? ` · in your room${bits.claude ? ' · Claude on' : ''}${bits.following ? ' · you follow their screen' : ''}` : '';
+  const roomLine = bits ? ` · in your room${bits.claude ? ' · agent on' : ''}${bits.following ? ' · you follow their screen' : ''}` : '';
   return (
     <ActionsContext items={() => friendItems(f, groups, { open: () => openDm(client, f.peerId), card: () => openFriendCard(client, f.peerId), say, addTo, room })}>
       <Row
@@ -157,7 +157,7 @@ function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] 
               </Tip>
             ) : null}
             {bits?.claude ? (
-              <Tip label={`${f.name}’s Claude is on in this room`}>
+              <Tip label={`${f.name}’s agent is on in this room`}>
                 <Icon name="claude" size={12} className={side.claudeMark} />
               </Tip>
             ) : null}
@@ -306,7 +306,7 @@ function RoomPersonRow({ p, sent }: { p: RoomPerson & { index: number }; sent: b
         data-person-row={p.peerId}
         icon={<Avatar name={p.name} id={p.peerId} size={18} />}
         label={<span className={s.whoName}>{p.name}</span>}
-        detail={`${p.name} · in your room${p.agent ? ' · Claude on' : ''}${sent ? ' · friend request sent' : ''}`}
+        detail={`${p.name} · in your room${p.agent ? ' · agent on' : ''}${sent ? ' · friend request sent' : ''}`}
         onClick={() => openPerson(ui, p.index, document.querySelector<HTMLElement>(`[data-person-row="${CSS.escape(p.peerId)}"]`))}
         trailing={
           sent ? (

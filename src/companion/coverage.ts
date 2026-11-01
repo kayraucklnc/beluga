@@ -170,7 +170,8 @@ export const PHONE: Record<Method, Side> = {
   'workbench.runSetup': 'mac',
   'workbench.setScript': 'mac',
   'workbench.shareScripts': 'mac',
-  'workbench.setModel': 'mac',
+  'workbench.setModel': 'phone',
+  'workbench.setAgent': 'phone',
   'workbench.createPr': 'mac',
   'workbench.quickPr': 'mac',
   'workbench.mergeToBase': 'mac',
@@ -192,6 +193,9 @@ export const PHONE: Record<Method, Side> = {
   'workbench.editPrPrompt': 'mac',
   'workbench.resetPrPrompt': 'mac',
   'workbench.measureDisk': 'mac',
+  // Setting up your agents (onboarding, Settings › Agent): the Mac's.
+  'workbench.checkAgents': 'mac',
+  'workbench.agentSignIn': 'mac',
   'workbench.search': 'mac',
   'workbench.openHit': 'mac',
   'workbench.saveTemplate': 'mac',
@@ -207,6 +211,10 @@ export const PHONE: Record<Method, Side> = {
   'env.testDatabase': 'mac',
   'env.importDotenv': 'mac',
   'env.newKeysBack': 'mac',
+  'env.endpoints': 'mac',
+  'env.saveEndpoint': 'mac',
+  'env.removeEndpoint': 'mac',
+  'env.checkEndpoints': 'mac',
 
   // ---- images in a message: a photo from the phone goes in as bytes, never as a Mac path
   'attachments.add': 'phone',
@@ -301,6 +309,7 @@ export const PHONE: Record<Method, Side> = {
   'claudeCode.mcpServers': 'mac',
   'claudeCode.mcpSignIn': 'mac',
   'claudeCode.mcpSignedIn': 'mac',
+  'claudeCode.mcpSetEnabled': 'mac',
   // A step's details are code (commands, diffs); the phone gets steps in words in its views.
   'agent.steps': 'mac',
   'agent.step': 'mac',
@@ -335,6 +344,8 @@ export const PHONE: Record<Method, Side> = {
   'board.remove': 'mac',
   // Start a task in a new worktree (with Claude on it), as the Mac's Start does.
   'board.start': 'phone',
+  // Who works a task from its next start (BLG-498): a pick from a list, as the Mac's task page has it.
+  'board.setAgent': 'phone',
   'board.settleGone': 'mac',
   'board.setAutoTasks': 'mac',
   'board.createBoard': 'mac',
@@ -356,6 +367,13 @@ export const PHONE: Record<Method, Side> = {
   'board.unarchive': 'mac',
   'board.emptyArchive': 'mac',
 
+  // ---- dialogues: the phone reads the thread and stops it (the Mac starts and steers it)
+  'dialogues.start': 'mac',
+  'dialogues.confirm': 'phone',
+  'dialogues.continue': 'phone',
+  'dialogues.stop': 'phone',
+  'dialogues.interject': 'mac',
+
   // ---- plans: approve, decide at a milestone's gate, send back with words; never edit their structure
   'plans.create': 'phone',
   'plans.here': 'mac',
@@ -366,6 +384,8 @@ export const PHONE: Record<Method, Side> = {
   'plans.setPaused': 'mac',
   'plans.setParallel': 'mac',
   'plans.setTestsAt': 'mac',
+  // Who works the plan's milestones and tasks from here on (BLG-498): a pick from a list.
+  'plans.setWorkAgent': 'phone',
   'plans.tidyUp': 'mac',
   'plans.pass': 'phone',
   'plans.recheck': 'phone',
@@ -428,6 +448,7 @@ export const PHONE: Record<Method, Side> = {
   'git.worktreeAt': 'mac',
   'view.fetch': 'mac',
   'files.searchContent': 'mac',
+  'files.searchNames': 'mac',
   'files.save': 'mac',
   'files.formatter': 'mac',
   'files.format': 'mac',
@@ -455,6 +476,7 @@ export const PHONE: Record<Method, Side> = {
   'companion.signOut': 'phone',
   // Your Mac's one setting the phone may change (BLG-127): whether it stays awake for the phone.
   'companion.keepAwake': 'phone',
+  'companion.defaultAgent': 'phone',
   // The Mac app's window shows what the phone has open; an icon the views named by its checksum.
   'companion.openOnMac': 'phone',
   'companion.icon': 'phone',
@@ -491,6 +513,11 @@ export const PHONE: Record<Method, Side> = {
   'voice.transcribe': 'mac',
   // Settings › Terminal › Import from…, and the welcome's terminal step: Mac settings only.
   'terminalImport.detect': 'mac',
+  // The agent's own terminal in a conversation (BLG-534) opens on the Mac, and its visuals open
+  // beside it there. The phone sees when it drives a conversation, and can give it back to the chat.
+  'agentTerm.open': 'mac',
+  'agentTerm.visual': 'mac',
+  'agentTerm.takeOver': 'phone',
   // Sentinel (docs/sentinel.md): the phone runs one, pauses or resumes it, reads its runs and
   // reports, and answers a run waiting for a merge. Making and changing sentinels is the Mac's.
   'sentinel.run': 'phone',

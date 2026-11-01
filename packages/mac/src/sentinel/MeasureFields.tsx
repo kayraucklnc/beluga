@@ -18,7 +18,7 @@ import s from './sentinel.module.css';
 const FROM: ReadonlyArray<{ readonly value: MeasureFrom; readonly label: string; readonly description: string }> = [
   { value: 'previous', label: 'The step before', description: 'A number, JSON, CSV or “name: value” lines' },
   { value: 'source', label: 'A source', description: 'A database query, a command or a request, run here as you' },
-  { value: 'claude', label: 'What Claude keeps', description: 'The Claude step before calls sentinel_measure for each one' },
+  { value: 'claude', label: 'What the agent keeps', description: 'The agent step before calls sentinel_measure for each one' },
 ];
 
 type UnitChoice = MetricUnit | 'rows' | 'series' | 'output';
@@ -87,7 +87,7 @@ export function MeasureFields({ step, change }: { step: MeasureStep; change: (pa
             ))}
           </div>
         ) : (
-          <p className={s.hint}>{step.from === 'claude' ? 'Every number Claude keeps, as it names them.' : 'Every top-level number it finds, by its name.'} Add one to name, label and format it.</p>
+          <p className={s.hint}>{step.from === 'claude' ? 'Every number the agent keeps, as it names them.' : 'Every top-level number it finds, by its name.'} Add one to name, label and format it.</p>
         )}
         <div>
           <Button
@@ -103,7 +103,7 @@ export function MeasureFields({ step, change }: { step: MeasureStep; change: (pa
             Add a Number
           </Button>
         </div>
-        <span className={s.help}>{step.from === 'claude' ? 'Its name is what Claude passes to sentinel_measure.' : 'Where: a JSON path ($.items[0].statistics.subscriberCount, rows[0].count) or a column; empty: its name.'}</span>
+        <span className={s.help}>{step.from === 'claude' ? 'Its name is what the agent passes to sentinel_measure.' : 'Where: a JSON path ($.items[0].statistics.subscriberCount, rows[0].count) or a column; empty: its name.'}</span>
       </div>
       {rows ? (
         <div className={s.controlRow}>

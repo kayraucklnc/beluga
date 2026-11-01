@@ -78,7 +78,7 @@ export const MetricSpecSchema = z.object({
 
 /** A step as given: ids and names are filled in when missing. */
 export const StepInputSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: text(20_000), where: z.enum(['project', 'worktree', 'mac']).default('project'), model: text(80).optional(), effort: text(20).optional() }),
+  z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: text(20_000), where: z.enum(['project', 'worktree', 'mac']).default('project'), runtime: z.string().regex(/^[a-z][\w-]{0,31}$/).optional(), model: text(80).optional(), effort: text(20).optional() }),
   // Empty until it's filled in (a new step from Add a Step): a run says so.
   z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: text(4000).default(''), code: text(SCRIPT_CODE_MAX).optional(), language: z.enum(SCRIPT_LANGUAGES).optional(), cwd: z.enum(['project', 'home']).default('project'), timeoutSec: z.number().int().min(1).max(3600).default(120) }),
   z.object({ kind: z.literal('notify'), id: stepId, name: stepName, title: text(200).optional(), body: text(4000).optional(), phone: z.boolean().default(false) }),

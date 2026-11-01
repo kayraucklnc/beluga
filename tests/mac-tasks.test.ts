@@ -41,7 +41,7 @@ describe('keys and titles', () => {
     const entry = (assignee: Parameters<typeof activityText>[0]['assignee']) => ({ id: 'a', at: 0, by: me, kind: 'assignee' as const, text: 'assigned this to Kay’s Claude', assignee });
     expect(activityText(entry({ kind: 'claude', owner: 'p-me', ownerName: 'Kay' }), 'p-me')).toBe('assigned this to your Claude');
     expect(activityText(entry({ kind: 'person', id: 'p-me', name: 'Kay' }), 'p-me')).toBe('assigned this to you');
-    expect(activityText(entry({ kind: 'claude', owner: 'p-me', ownerName: 'Kay' }), 'p-bob')).toBe('assigned this to Kay’s Claude');
+    expect(activityText(entry({ kind: 'claude', owner: 'p-me', ownerName: 'Kay' }), 'p-bob')).toBe("assigned this to Kay's Claude");
     expect(activityText(entry(null), 'p-me')).toBe('unassigned this');
   });
 });
@@ -177,8 +177,8 @@ describe('the Tasks view', () => {
     expect(onItWords(both)).toBe('You and ata · working');
     expect(onItWords(onIt(me, { here: false, running: false }, [{ peerId: 'p-ata', name: 'ata' }]))).toBe('ata · on it');
     expect(onItWords(onIt(me, { here: false, running: false }, [{ peerId: 'a', name: 'a' }, { peerId: 'b', name: 'b' }, { peerId: 'c', name: 'c' }]))).toBe('a, b and 1 more · on it');
-    expect(onItTip(both[0]!, 'Running npm test')).toBe('Your Claude is working: Running npm test');
-    expect(onItTip({ ...both[1]!, running: true })).toBe('ata’s Claude is working on it');
+    expect(onItTip(both[0]!, 'Running npm test')).toBe('Your agent is working: Running npm test');
+    expect(onItTip({ ...both[1]!, running: true })).toBe('ata’s agent is working on it');
   });
 
   it('offers you, then people, never a Claude (BLG-278)', () => {

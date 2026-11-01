@@ -199,7 +199,7 @@ function Head({ view, data, warnings, shape, setShape, copy, onExpand, inFull, o
             </span>
           </Tip>
         ) : data.mode === 'snapshot' && data.at ? (
-          <Tip label="These rows are from when Claude fetched them. Its source runs on its owner’s computer.">
+          <Tip label="These rows are from when the agent fetched them. Its source runs on its owner’s computer.">
             <span className={v.status}>{ago(data.at, now)}</span>
           </Tip>
         ) : null}

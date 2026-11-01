@@ -52,7 +52,7 @@ function Body({ task }: { task: TaskView }) {
   const facts = factsOf(task);
   const scopes = scopeChoices(facts);
   const preview = ruleFor(facts, task.peerName, { scope, command, expiry }, Date.now(), 'r_preview00');
-  const who = `${task.peerName}${task.by === 'agent' ? '’s Claude' : ''}`;
+  const who = `${task.peerName}${task.by === 'agent' ? '’s agent' : ''}`;
   const answer = async (decision: Parameters<typeof api.gateway.decide>[1]): Promise<void> => {
     setBusy(true);
     setError(undefined);
@@ -114,8 +114,8 @@ function Body({ task }: { task: TaskView }) {
   );
   return (
     <Sheet
-      title={task.secret ? `${who} wants ${task.secret.label}` : task.kind === 'run' ? `${who} wants to run a command on your Mac` : task.kind === 'file' ? `${who} wants a file from your Mac` : `${who} wants your Claude to do something`}
-      subtitle={waiting && task.secret ? 'This is a secret. You’re asked each time: if you allow it, Beluga sends this one file, and their Claude is told you approved it.' : waiting ? (task.by === 'agent' ? `${task.peerName} asked their Claude, and it asks yours.` : `${task.peerName} asks you directly.`) : stateLabel(task)}
+      title={task.secret ? `${who} wants ${task.secret.label}` : task.kind === 'run' ? `${who} wants to run a command on your Mac` : task.kind === 'file' ? `${who} wants a file from your Mac` : `${who} wants your agent to do something`}
+      subtitle={waiting && task.secret ? 'This is a secret. You’re asked each time: if you allow it, Beluga sends this one file, and their agent is told you approved it.' : waiting ? (task.by === 'agent' ? `${task.peerName} asked their agent, and it asks yours.` : `${task.peerName} asks you directly.`) : stateLabel(task)}
       badge={<Avatar name={task.peerName} id={task.peerId} claude={task.by === 'agent'} size={32} />}
       close={closeRequest}
       footer={footer}

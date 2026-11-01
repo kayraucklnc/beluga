@@ -89,7 +89,7 @@ export function lastCheckedLabel(lastCheck: number | null | undefined, now: numb
 }
 
 const BLOCKER_WORDS: Record<UpdateBlocker, string> = {
-  claude: 'Claude to finish',
+  claude: 'your agent to finish',
   terminal: 'programs in your terminals to finish',
   room: 'friends to leave your room (or you to leave theirs)',
   you: 'you to step away for 10 minutes',

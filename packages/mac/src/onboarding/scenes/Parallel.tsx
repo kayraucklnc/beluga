@@ -48,7 +48,7 @@ const REPOS: readonly Repo[] = [
 ];
 
 const BEAT_MS = 1500;
-const LABEL: Record<Status, string> = { working: 'Claude working', pr: 'Pull request', merged: 'Merged' };
+const LABEL: Record<Status, string> = { working: 'Agent working', pr: 'Pull request', merged: 'Merged' };
 const ICON: Record<Status, 'spark' | 'pr' | 'merge'> = { working: 'spark', pr: 'pr', merged: 'merge' };
 
 function LaneRow({ lane, step, live }: { readonly lane: Lane; readonly step: number; readonly live: boolean }) {

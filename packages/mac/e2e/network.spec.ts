@@ -52,6 +52,34 @@ test('a direct message goes to bob, and his answer comes back', async ({ page })
   await expect(friend(page, 'bob')).not.toHaveAccessibleName(/unread/);
 });
 
+test('a chat with a friend opens scrolled all the way down', async ({ page }) => {
+  const fill = async (name: string): Promise<void> => {
+    await friend(page, name).click();
+    const box = page.getByRole('textbox', { name: `Message ${name}` });
+    for (let i = 1; i <= 14; i++) {
+      await box.fill(`Line ${i}\n\nwith a second paragraph`);
+      await box.press('Enter');
+    }
+    await expect(page.getByRole('log', { name: `Conversation with ${name}` })).toContainText('Line 14');
+  };
+  const atBottom = async (name: string): Promise<void> => {
+    const log = page.getByRole('log', { name: `Conversation with ${name}` });
+    await expect(log).toBeVisible();
+    await expect.poll(() => log.evaluate((el) => el.scrollHeight > el.clientHeight + 100)).toBe(true);
+    await expect.poll(() => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThan(4);
+  };
+  await fill('mia');
+  await fill('bob');
+  // Reading further up in bob's chat doesn't carry over: mia's opens at her newest message.
+  await page.getByRole('log', { name: 'Conversation with bob' }).evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await friend(page, 'mia').click();
+  await atBottom('mia');
+  await friend(page, 'bob').click();
+  await atBottom('bob');
+});
+
 /** SHOTS=<folder>: save screenshots there. */
 const shot = async (page: Page, name: string): Promise<void> => {
   if (!process.env.SHOTS) return;

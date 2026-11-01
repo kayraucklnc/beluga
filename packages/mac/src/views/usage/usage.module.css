@@ -133,6 +133,53 @@
   color: var(--claude);
   background: color-mix(in srgb, var(--claude) 13%, transparent);
 }
+/* The make-default chip on a provider card: a soft pill, filled when it's your default. */
+.defaultChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 9px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-3) 12%, transparent);
+  cursor: default;
+}
+.defaultChip:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.defaultChipOn,
+.defaultChipOn:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.providerDetails {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--card-line);
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.agentTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.providerDetails dd {
+  margin: 0;
+  color: var(--text-2);
+}
+.friendAgent {
+  color: var(--text-3);
+  font-size: 0.8rem;
+}
 .subhead {
   margin: 0 0 6px;
   color: var(--text-3);

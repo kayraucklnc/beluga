@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { type McpServerStatus, type Options, query } from '@anthropic-ai/claude-agent-sdk';
-import type { McpServerRow, McpSignIn } from '../shared/mcp.js';
+import type { McpServerRow, McpSignIn } from '../../../shared/mcp.js';
 import { type OwnerMcpEntry, ownerMcpEntries } from './owner-mcp.js';
 
 /** How long Claude Code gets to say how each server is (a local one may take a while to start). */

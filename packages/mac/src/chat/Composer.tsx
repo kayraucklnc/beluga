@@ -1,3 +1,4 @@
+import type { AgentRef } from '@beluga/protocol.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { waitingNote } from '@beluga/core/friend-share-people.js';
 import { type AppState, type View, channelOf, peerName } from '@beluga/core/store.js';
@@ -5,13 +6,17 @@ import { localDirKey } from '@beluga/core/local-key.js';
 import { workspaceMentions } from '@beluga/core/mentions.js';
 import { composeState, queueIn } from '@beluga/ui/compose.js';
 import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@beluga/ui/suggest.js';
+import { roomAgentTags } from '@beluga/shared/agent-tags.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { secretIn } from '@beluga/shared/secret-text.js';
 import { steeredMessages } from '@beluga/shared/claude-notices.js';
+import { fallbackFor, runtimeHere } from '@beluga/shared/runtime-fallbacks.js';
+import { defaultAgentOf } from '@beluga/protocol.js';
 import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { recipientLabel, recipientPrefix, toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
+import { agentName, useAgentNameIn, useMyAgentName } from '../lib/agent-words.js';
 import { sameDeep, sameFields } from '../lib/stable.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
@@ -64,27 +69,29 @@ let boxOf: string | undefined;
 
 /** The words in the box, before you start typing: what it does here. */
 function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectId: string; peerId?: string } }): string {
+  const agent = agentName(defaultAgentOf(state.self));
   const q = state.questions[0];
   if (q && q.channel === channelOf(state.view)) return q.question.kind === 'plan' ? 'Approve the plan above, or say what to change' : 'Type your own answer, or pick an option above';
   const p = ui.pending;
   if (p?.kind === 'peer_run') return `A command to run on ${peerName(state, p.peerId ?? '')}'s computer`;
-  if (p?.kind === 'remote') return 'Describe the task for their Claude';
+  if (p?.kind === 'remote') return 'Describe the task for their agent';
   if (p?.kind === 'setup' || p?.kind === 'run') return `The project's ${p.kind} command (empty to clear it)`;
   if (p) return `Name for the new ${p.kind}${state.projects.find((x) => x.id === p.projectId)?.root ? ` in ${state.projects.find((x) => x.id === p.projectId)?.name}` : ''}`;
   const v = state.view;
   if (v.kind === 'draft') {
     // A chat in a project runs in its main folder: questions only.
     const project = state.projects.find((x) => x.id === v.projectId && x.root);
-    return project ? `Ask about ${project.name}…` : 'Ask Claude anything. Your first message starts the chat';
+    return project ? `Ask about ${project.name}…` : `Ask ${agent} anything. Your first message starts the chat`;
   }
-  if (v.kind === 'draft_worktree') return 'What should Claude work on in the new worktree?';
+  if (v.kind === 'draft_worktree') return `What should ${agent} work on in the new worktree?`;
   if (v.kind === 'search') return 'Search every conversation';
   if (v.kind === 'assistant') return 'Ask your Mac anything';
   if (v.kind === 'sentinel_chat') return 'Ask Sentinel: “what did my sentinels find?”, “watch my open pull requests”…';
   if (v.kind === 'workspace') {
     const ws = state.projects.flatMap((x) => x.workspaces).find((w) => w.id === v.id);
     if (ws?.askOnly) return `Ask about ${state.projects.find((x) => x.root && x.workspaces.includes(ws))?.name ?? 'this project'}…`;
-    return `Tell Claude what to do in ${ws?.name ?? 'this workspace'}`;
+    // The worktree's own agent (a Codex worktree says Codex), else yours.
+    return `Tell ${ws?.agent ? agentName(ws.agent) : agent} what to do in ${ws?.name ?? 'this workspace'}`;
   }
   if (v.kind === 'shared') {
     const w = state.shared.find((x) => x.id === v.id);
@@ -92,7 +99,7 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
     if (waiting) return waiting;
     return w?.role === 'view' ? `You're following ${w.name}` : `Message ${w?.name ?? 'the workspace'}`;
   }
-  return state.peers.length <= 1 ? 'Message your Claude' : 'Message the room';
+  return state.peers.length <= 1 ? `Message your ${agent}` : 'Message the room';
 }
 
 /** Where what you say in a friend's worktree runs (BLG-260): on their Mac (as ever) or in your own copy. */
@@ -109,8 +116,8 @@ function RunOnChip({ wsId, ownerName, value, onChange }: { wsId: string; ownerNa
     <ActionsDropdown
       align="start"
       items={[
-        { label: `${ownerName}’s Mac`, hint: `Their Claude, in their worktree`, icon: 'people', checked: value === 'owner', onSelect: () => pick('owner') },
-        { label: 'This Mac', hint: 'Your Claude, in your copy, on the same branch', icon: 'laptop', checked: value === 'here', onSelect: () => pick('here') },
+        { label: `${ownerName}’s Mac`, hint: 'Their agent, in their worktree', icon: 'people', checked: value === 'owner', onSelect: () => pick('owner') },
+        { label: 'This Mac', hint: 'Your agent, in your copy, on the same branch', icon: 'laptop', checked: value === 'here', onSelect: () => pick('here') },
       ]}
     >
       <button type="button" className={cx(s.chip, value === 'here' && s.chipOn)} aria-label={`Runs on ${value === 'here' ? 'this Mac' : `${ownerName}’s Mac`}`}>
@@ -136,6 +143,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const prefs = usePrefs();
   const buffer = useUi((u) => u.buffer);
   const pending = useUi((u) => u.pending);
+  const agent = useMyAgentName();
   // Only what the box reads (and what it works out from the rest), so it isn't drawn again for
   // events that change none of it. Worked out on each render too, so the words you type count.
   const state = useApp(
@@ -165,6 +173,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const channel = channelOf(state.view);
+  const agentHere = useAgentNameIn(channel);
   const draftKey = draftKeyOf(state.view);
   const shared = state.view.kind === 'shared';
   const compose = state.compose;
@@ -252,7 +261,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const mentionWorld = useMentionWorld(channel, { tasks: !shared, project: state.project });
   // "/fron…": Claude's skills and custom commands here, beside Beluga's commands.
   const skills = useSkills(channel, !shared && buffer.startsWith('/') && !buffer.includes(' '));
+  // On Codex they're translated: each says what doesn't carry over (BLG-461).
+  const skillsOn = useApp((st) => (fallbackFor(runtimeHere(st.projects.flatMap((p) => p.workspaces).find((w) => w.id === wsId)?.agent, st.self), 'skills') ? 'mapped' : 'native'));
 
+  // Your agents (which run on this Mac), for the room's "@codex" (BLG-520).
+  const runtimes = useApp((st) => st.runtimes);
   // Suggestions as you type: commands, people and Claudes, workspaces, folders, tasks.
   const suggestions: Suggestion[] = useMemo(
     () =>
@@ -264,13 +277,16 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             dirCache: state.dirCache,
             listLocalDirs: (dir) => state.dirCache[localDirKey(dir)] ?? [],
             workspaces: state.view.kind === 'room' ? workspaceMentions(state.projects) : [],
+            // In the room: each agent by name, with its mark ("@codex", "@bob:codex", BLG-520).
+            ...(state.view.kind === 'room' ? { agentTags: roomAgentTags(state.peers, state.selfId, runtimes) } : {}),
             friends: state.friends,
             projects: state.projects.filter((p) => p.root),
             ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
             ...(mentionWorld.tasks ? { tasks: mentionWorld.tasks } : {}),
             skills,
+            skillsOn,
           }),
-    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills, skillsOn, runtimes],
   );
   const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 
@@ -330,7 +346,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     // Its words left the box when it was sent; its branch and name go with them.
     worktreeChoices.delete(projectId);
     setWorktreeState({ name: '' });
-    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
+    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}), ...(worktree.agent ? { agent: worktree.agent } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
   };
   const deliver = (text: string, urgent: boolean): void => {
     if (readOnly) return;
@@ -372,7 +388,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     const secret = state.view.kind === 'room' && !typed.startsWith('/') ? secretIn(typed) : undefined;
     if (secret && secretWarned.current !== typed) {
       secretWarned.current = typed;
-      toast(client, `That looks like ${secret}, and everyone in the room would see it. Put it in Settings › Environment instead: your Claude uses it from there. Send again to share it anyway.`, 'warn');
+      toast(client, `That looks like ${secret}, and everyone in the room would see it. Put it in Settings › Environment instead: your ${agent} uses it from there. Send again to share it anyway.`, 'warn');
       return;
     }
     secretWarned.current = undefined;
@@ -518,7 +534,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               <Icon name="sparkles" size={11} />
               By the way
             </span>
-            <span className={s.planHint}>A side question: answered above, Claude keeps working and won’t remember it</span>
+            <span className={s.planHint}>A side question: answered above, {agentHere} keeps working and won’t remember it</span>
             <span className={s.flex} />
             <span className={s.planKeys}>
               <Kbd>esc</Kbd> to leave
@@ -571,7 +587,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             rows={1}
             value={buffer}
             disabled={readOnly}
-            placeholder={aside ? 'Ask Claude something on the side…' : to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : state.placeholder}
+            placeholder={aside ? `Ask ${agentHere} something on the side…` : to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? `Describe what to build: ${agent} plans it into milestones and tasks` : state.placeholder}
             onChange={(e) => set(e.target.value)}
             onKeyDown={onKey}
             onPaste={att.onPaste}
@@ -588,7 +604,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
                 ...(tasksMode ? [{ label: 'Discard the Draft', danger: true, separate: true, onSelect: () => setMode('act') }] : []),
               ]}
             >
-              <button type="button" className={cx(s.chip, s.chipOn)} title="This conversation is the plan’s own: its Claude plans and runs it here" aria-label={`Mode: ${MODE_INFO.tasks.label}`}>
+              <button type="button" className={cx(s.chip, s.chipOn)} title="This conversation is the plan’s own: its agent plans and runs it here" aria-label={`Mode: ${MODE_INFO.tasks.label}`}>
                 <Icon name="graph" size={12} />
                 {tasksMode ? MODE_INFO.tasks.label : 'Plan'}
                 <Icon name="chevronDown" size={9} />
@@ -609,10 +625,10 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </ActionsDropdown>
           ) : null}
           {canRunHere && sharedWs ? <RunOnChip wsId={sharedWs.id} ownerName={state.sharedProjects.find((p) => p.owner === sharedWs.owner)?.ownerName ?? 'Their'} value={runOn} onChange={setRunOn} /> : null}
-          {!shared ? <ModelPicker channel={channel} /> : null}
+          {!shared ? <ModelPicker channel={channel} {...(draftProject ? { draft: worktree.agent, onDraft: (agent: AgentRef | undefined) => setWorktree({ ...worktree, agent }) } : {})} /> : null}
           {!shared && channel !== 'draft' ? <McpChip /> : null}
           {burning && state.prefs.effort === 'max' ? (
-            <Tip label="Max effort: Claude thinks as hard as it can">
+            <Tip label={`Max effort: ${agentHere} thinks as hard as it can`}>
               <span className={m.tag}>
                 <Icon name="flame" size={11} className={m.flicker} />
                 Max
@@ -623,15 +639,15 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           {channel !== 'draft' ? <ContextMeter channel={channel} /> : null}
           {/* While you talk, only your voice's control shows: two square buttons side by side stopped Claude by mistake. */}
           {compose.busy && !talking ? (
-            <Tip label="Stop Claude here · your queued messages come back to the box" keys={shortcutKeys('conv-stop')}>
-              <button type="button" className={s.stop} aria-label="Stop Claude" onClick={() => stopClaude({ client, ui, actions }, channel)}>
+            <Tip label={`Stop ${agentHere} here · your queued messages come back to the box`} keys={shortcutKeys('conv-stop')}>
+              <button type="button" className={s.stop} aria-label={`Stop ${agentHere}`} onClick={() => stopClaude({ client, ui, actions }, channel)}>
                 <span className={s.stopMark} />
               </button>
             </Tip>
           ) : null}
           {!readOnly ? <MicButton box={ref} /> : null}
           {draftProject ? (
-            <Tip label={worktree.name.trim() && !buffer.trim() ? `Create ${worktree.name.trim()} without a task` : 'Make the branch and folder, then Claude starts on the task'} keys={sendKeys}>
+            <Tip label={worktree.name.trim() && !buffer.trim() ? `Create ${worktree.name.trim()} without a task` : `Make the branch and folder, then ${worktree.agent ? agentName(worktree.agent) : agent} starts on the task`} keys={sendKeys}>
               <button type="button" className={cx(d.create, canCreate && d.createReady)} onClick={() => send(false)} aria-disabled={!canCreate}>
                 <Icon name="branch" size={12} />
                 Create Worktree
@@ -645,14 +661,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               </button>
             </Tip>
           ) : queueing ? (
-            <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label="Claude is working">
-              <Tip label="Claude is working: this waits its turn in the queue" keys={sendKeys}>
+            <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label={`${agentHere} is working`}>
+              <Tip label={`${agentHere} is working: this waits its turn in the queue`} keys={sendKeys}>
                 <button type="button" className={s.splitMain} aria-label="Queue" onClick={() => send(false)} disabled={!buffer.trim()}>
                   <Icon name="clock" size={12} />
                   <span className={s.chipLabel}>Queue</span>
                 </button>
               </Tip>
-              <Tip label="Steer: Claude reads this at its next step, without stopping" keys={shortcutKeys('composer-steer')}>
+              <Tip label={`Steer: ${agentHere} reads this at its next step, without stopping`} keys={shortcutKeys('composer-steer')}>
                 <button type="button" className={s.splitAlt} onClick={() => send(true)} disabled={!buffer.trim()}>
                   Steer
                 </button>

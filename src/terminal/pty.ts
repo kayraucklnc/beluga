@@ -124,6 +124,16 @@ const DROPPED_ENV = [
   'TMUX_PANE',
   'CLAUDECODE',
   'CLAUDE_CODE_ENTRYPOINT',
+  // A Claude Code session's own markers (when Beluga itself runs under one): a `claude` started in
+  // a terminal here is a session of its own, not a child that keeps no transcript (BLG-534).
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_PID',
+  'CLAUDE_AGENT_SDK_VERSION',
 ];
 
 /** Environment for the child: ours, minus outer-terminal hints, plus TERM/COLORTERM and overrides. */

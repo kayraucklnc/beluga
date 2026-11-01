@@ -26,6 +26,11 @@
 .warn {
   color: var(--warn);
 }
+/* A local model's speed beside its context (BLG-450): quieter than the percentage. */
+.speed {
+  color: var(--text-3);
+  font-weight: 400;
+}
 .full {
   color: var(--error);
 }

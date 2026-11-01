@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { openWork } from './helpers.js';
 
 /** Sync with Linear (BLG-74): connect a key and a team in the demo's pretend Linear, its issues come over, and the sheet says how it syncs. */
 
@@ -8,9 +9,7 @@ const KEY = `lin_api_${'d'.repeat(40)}`;
 
 test('connects a project to Linear and brings its issues over', async ({ page }) => {
   await page.goto('/');
-  // Tasks lives under Work (BLG-197).
-  await sidebar(page).getByRole('button', { name: 'Work', exact: true }).click();
-  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Tasks' }).click();
+  await openWork(page, 'Tasks');
   await expect(page.getByRole('tablist', { name: 'Show' })).toBeVisible();
   await page.getByRole('button', { name: 'Tasks Options' }).click();
   await page.getByRole('menuitem', { name: 'Sync with Linear…' }).click();

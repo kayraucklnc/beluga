@@ -56,9 +56,9 @@ export function NetworkSettings() {
         </Row>
       ) : null}
       {net.enabled ? (
-        <Row label="Who can ask your Claude in chats" detail="Your Claude answers only messages that ask for it, on your Claude login, from that chat’s history. You can always ask it yourself; people who aren’t your friends need your trust.">
+        <Row label="Who can ask your agent in chats" detail="Your agent answers only messages that ask for it, on your own sign-in, from that chat’s history. You can always ask it yourself; people who aren’t your friends need your trust.">
           <Select<'everyone' | 'trusted' | 'off'>
-            label="Who can ask your Claude in chats"
+            label="Who can ask your agent in chats"
             value={chatClaude}
             options={[
               { value: 'everyone', label: 'Friends in the chat' },

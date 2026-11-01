@@ -235,7 +235,7 @@ export function WorktreeInfoPage({ ws, agent, origin }: { ws: Workspace; agent?:
             {info?.conductor?.prTitle ? <Field label="Pull request">{info.conductor.prTitle}</Field> : null}
             {info?.creator ? (
               <Field label="Made by">
-                Claude in “{info.creator.title ?? info.creator.sessionId.slice(0, 8)}”{info.creator.at ? `, ${day(info.creator.at)}` : ''}
+                Claude Code in “{info.creator.title ?? info.creator.sessionId.slice(0, 8)}”{info.creator.at ? `, ${day(info.creator.at)}` : ''}
                 {info.creator.cwd ? ` (ran in ${info.creator.cwd})` : ''}
               </Field>
             ) : null}

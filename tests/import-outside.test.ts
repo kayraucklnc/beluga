@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 const CLAUDE_HOME = mkdtempSync(path.join(os.tmpdir(), 'beluga-claude-home-'));
 process.env.CLAUDE_CONFIG_DIR = CLAUDE_HOME;
 
-const { conversationsUnder, encodeProjectDir, findConversation } = await import('../src/agent/claude-sessions.js');
+const { conversationsUnder, encodeProjectDir, findConversation } = await import('../src/agent/runtime/claude/claude-sessions.js');
 const { otherTools } = await import('../src/agent/other-tools.js');
 const { Session } = await import('../src/core/session.js');
 const { ShareService } = await import('../src/core/shares.js');

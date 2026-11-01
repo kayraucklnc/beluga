@@ -29,6 +29,8 @@ export const conversationOf = (topic: Topic): string => topic.replace(/^chat:/, 
 const short = (text: string): string => (text.length > 32 ? `${text.slice(0, 31)}…` : text);
 /** `up:` refs of files the phone `put` (store.put), to send along. */
 type Files = readonly string[] | undefined;
+/** An agent as the calls send it (src/protocol.ts AgentRef). */
+type PickedRef = { runtime: string; label: string; model?: string };
 const withFiles = (files: Files) => (files?.length ? { files: [...files] } : {});
 
 /** One task's draft as the phone sends it back to be added. */
@@ -37,6 +39,8 @@ type PhoneDraft = { title: string; goal: string; acceptance: string[]; labels: s
 export const calls = {
   /** Since 1.13 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
   keepAwake: (mode: 'off' | 'power' | 'always'): Call => make('companion.keepAwake', [mode], 'Keep your Mac awake'),
+  /** Since 1.32 (BLG-459): one of your providers (by its runtime) becomes your default agent. */
+  defaultAgent: (runtime: string): Call => make('companion.defaultAgent', [runtime], 'Make it your default agent'),
   /** 1.14: a new empty chat on Your Mac (open on the Mac now) → its id; one deleted for good. */
   newMacChat: (): Call => make('assistant.newChat', [], 'New chat'),
   deleteMacChat: (topic: Topic): Call => make('assistant.deleteChat', [macChatOf(topic)], 'Delete the chat'),
@@ -51,13 +55,19 @@ export const calls = {
    * with Claude on your words (`plan`: it plans first, as the Mac's Plan mode), → its id; or a plan
    * Claude drafts for you to approve, → the plan.
    */
-  startWorktree: (project: string, text: string, plan = false): Call => make('workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}) }], `Start "${short(text)}"`),
+  // `agent` (1.35, BLG-506): who works it; only to a Mac with SINCE.workAgents (the caller checks).
+  startWorktree: (project: string, text: string, plan = false, agent?: PickedRef): Call => make('workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}), ...(agent ? { agent } : {}) }], `Start "${short(text)}"`),
   /** 1.12: a new worktree with photos: its words and photos go the way a question's do → its topic. */
-  startWorktreeWith: (project: string, text: string, plan: boolean, files: Files): Call => make('companion.ask', [{ target: { project, worktree: true, ...(plan ? { plan: true } : {}) }, text, ...withFiles(files) }], `Start "${short(text)}"`),
+  startWorktreeWith: (project: string, text: string, plan: boolean, files: Files, agent?: PickedRef): Call => make('companion.ask', [{ target: { project, worktree: true, ...(plan ? { plan: true } : {}), ...(agent ? { agent } : {}) }, text, ...withFiles(files) }], `Start "${short(text)}"`),
   createPlan: (project: string, goal: string): Call => make('plans.create', [{ projectId: project, goal }], `Plan "${short(goal)}"`),
   /** How a plan runs (1.5): Step by Step, Check-ins or Autopilot. */
   setAutonomy: (plan: string, autonomy: 'step' | 'gated' | 'autopilot', label: string): Call => make('plans.setAutonomy', [plan, autonomy], `Run as ${label}`),
+  /** 1.32 (BLG-446): a model of this conversation's runtime, or another runtime's agent (null: your default again). */
+  setModel: (topic: Topic, value: string, label: string): Call => make('workbench.setModel', [channelOf(topic), value], `Use ${label}`),
+  setAgent: (topic: Topic, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('workbench.setAgent', [channelOf(topic), agent], `Use ${label}`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
+  /** Give a conversation the Mac's terminal drives back to the chat (1.36, BLG-534). */
+  takeOver: (topic: Topic): Call => make('agentTerm.takeOver', [channelOf(topic).replace(/^ws:/, '')], 'Take over'),
   /** A request you asked of a friend's Claude (a `conv:task:<id>`): stop it, or (1.27) remove it from your lists. */
   /** 1.27: take a needs-you item off every list (here and the Mac's) without answering it. */
   dismissNeed: (id: string): Call => make('needs.dismiss', [id], 'Dismiss'),
@@ -81,7 +91,12 @@ export const calls = {
   comment: (key: string, text: string): Call => make('board.comment', [key, text], `Comment on ${key}`),
   move: (key: string, status: string, label: string): Call => make('board.move', [key, status as never], `Move ${key} to ${label}`),
   /** Start a task in a new worktree with Claude on it (the Mac's Start with Claude) → the worktree's id. */
-  start: (key: string): Call => make('board.start', [key, { claude: true }], `Start ${key}`),
+  // `agent` (1.35, BLG-506, Start with…): who works this start; only to a Mac with SINCE.workAgents (the caller checks).
+  start: (key: string, agent?: PickedRef): Call => make('board.start', [key, { claude: true, ...(agent ? { agent } : {}) }], agent ? `Start ${key} with ${agent.label}` : `Start ${key}`),
+  /** 1.35 (BLG-498): who works a task from its next start (null: your default) → what happened, in words. */
+  setTaskAgent: (key: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('board.setAgent', [key, agent], `${key}: ${label}`),
+  /** 1.35 (BLG-498): who works a plan's milestones and tasks from here on (null: your default) → in words. */
+  setPlanAgent: (planId: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('plans.setWorkAgent', [planId, agent], `Plan's agent: ${label}`),
   /** A task described in words: Claude's draft first, then it's added. */
   // 1.24 (BLG-322) `several`: only to a Mac that has it (SINCE.severalTasks); an older one drafts one task.
   draftTask: (projectId: string, text: string, several = false): Call => make('companion.draftTask', [{ projectId, text, ...(several ? { several } : {}) }], 'Draft a task'),
@@ -93,7 +108,7 @@ export const calls = {
   /** Merging a worktree (its conversation): look first, merge, Claude resolves the conflicts. */
   mergeCheck: (topic: Topic): Call => make('companion.mergeCheck', [topic], 'Check the merge'),
   merge: (topic: Topic): Call => make('companion.merge', [topic], 'Merge'),
-  resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask Claude to resolve'),
+  resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask your agent to resolve'),
   /** 1.8: one of a worktree's branch steps (Archive, Squash and Merge, Fix with Claude…), as the Mac's toolbar does it. */
   branchStep: (topic: Topic, step: PhoneBranchStep, label: string): Call => make('companion.branchStep', [topic, step], label),
   /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
@@ -128,8 +143,12 @@ export const calls = {
   deleteMessage: (topic: Topic, id: string, everyone: boolean): Call => make('network.messages.delete', [conversationOf(topic), id, everyone ? { everyone: true } : {}], 'Delete the message'),
   editMessage: (topic: Topic, id: string, text: string): Call => make('network.messages.edit', [conversationOf(topic), id, text], `Edit to "${short(text)}"`),
   clearChat: (topic: Topic): Call => make('network.clear', [conversationOf(topic)], 'Clear the chat'),
+  /** 1.34 (BLG-466): a dialogue between agents: Stop it, or Continue? → yes. */
+  dialogueStop: (id: string): Call => make('dialogues.stop', [id], 'Stop the dialogue'),
+  dialogueContinue: (id: string): Call => make('dialogues.continue', [id], 'Continue the dialogue'),
+  dialogueConfirm: (id: string): Call => make('dialogues.confirm', [id], 'Start the dialogue'),
   /** Ask a friend's Claude yourself; the answer (and files) come back in the topic it returns. */
-  askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s Claude`),
+  askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s agent`),
   screenshot: (peerId: string, name: string): Call => make('companion.askPerson', [{ peerId, text: 'Take a screenshot of your desktop and send it to me.', needs: ['screen'] }], `Screenshot of ${name}'s desktop`),
   // Sentinel (1.21, docs/sentinel.md): Run Now, Pause / Turn On, one run with its report's text.
   sentinelRun: (id: string, name: string): Call => make('sentinel.run', [id], `Run ${short(name)}`),

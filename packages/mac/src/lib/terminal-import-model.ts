@@ -1,4 +1,5 @@
 import type { ImportedTheme, TermColors, TerminalFound, TerminalLook } from '../../../../src/terminal/import/look.js';
+import type { ImportedKey } from '../../../../src/terminal/import/keys.js';
 
 /**
  * Bringing another terminal's look into Beluga's (BLG-212), the window's side: what an import
@@ -42,6 +43,23 @@ export interface TermLookPrefs {
   readonly termCursorBlink: boolean;
   readonly termScrollback: number;
   readonly termOptionMeta: boolean;
+  /** Keys brought from another terminal (BLG-537), over Beluga's terminal keys. */
+  readonly termKeys: TermKeysPref | null;
+}
+
+/** Imported keys as kept in your settings: the keys, and the terminal they came from. */
+export interface TermKeysPref {
+  readonly from: string;
+  readonly keys: readonly ImportedKey[];
+}
+
+/** Saved keys as they were saved, or null (an older or damaged setting). */
+export function termKeysOf(raw: unknown): TermKeysPref | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (!Array.isArray(r['keys'])) return null;
+  const keys = (r['keys'] as unknown[]).filter((k): k is ImportedKey => !!k && typeof (k as ImportedKey).chord === 'string' && typeof (k as ImportedKey).action === 'string').slice(0, 300);
+  return { from: typeof r['from'] === 'string' ? r['from'] : '', keys };
 }
 
 export const SCROLLBACK_CHOICES: readonly number[] = [1000, 5000, 10_000, 50_000, 100_000];
@@ -72,6 +90,7 @@ export function importPatch(look: TerminalLook, from: string, fontInstalled: (fa
   if (look.cursorBlink !== undefined) patch.termCursorBlink = look.cursorBlink;
   if (look.scrollback !== undefined) patch.termScrollback = nearestScrollback(look.scrollback);
   if (look.optionMeta !== undefined) patch.termOptionMeta = look.optionMeta;
+  if (look.keys?.length) patch.termKeys = { from, keys: look.keys };
   return { patch, ...(skippedFont ? { skippedFont } : {}) };
 }
 
@@ -92,6 +111,7 @@ export function importSummary(look: TerminalLook, fontInstalled: (family: string
   if (look.lineHeight !== undefined) out.push(`${look.lineHeight.toFixed(2)}× lines`);
   if (look.scrollback !== undefined) out.push(`${nearestScrollback(look.scrollback).toLocaleString('en-US')} lines back`);
   if (look.optionMeta !== undefined) out.push(look.optionMeta ? 'Option as Meta' : 'Option types symbols');
+  if (look.keys?.length) out.push(`${look.keys.length} ${look.keys.length === 1 ? 'key' : 'keys'} (tabs, splits…)`);
   return out;
 }
 

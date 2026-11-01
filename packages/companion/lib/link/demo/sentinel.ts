@@ -130,7 +130,7 @@ export function sentinelNeeds(d: DemoSentinels): NeedsYou[] {
         id: `sentinel:${r.id}`,
         kind: 'decision',
         title: r.headline,
-        detail: `Checks passed · Claude’s review: ship, a two-line fix with a test${r.pr ? `\nPull request #${r.pr.number}` : ''}`,
+        detail: `Checks passed · The agent’s review: ship, a two-line fix with a test${r.pr ? `\nPull request #${r.pr.number}` : ''}`,
         from: s.summary.name,
         topic: s.summary.topic,
         askedAt: r.startedAt + 10 * MIN,

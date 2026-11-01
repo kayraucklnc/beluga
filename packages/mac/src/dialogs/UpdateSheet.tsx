@@ -71,7 +71,7 @@ function Ready() {
       <Notes text={available.notes} />
       {claude > 0 && !installing ? (
         <p className={cx(s.line, s.warn)}>
-          Claude is working ({claude} {claude === 1 ? 'run' : 'runs'}). Restart Now stops it; Update When Idle waits until it’s done.
+          Your agent is working ({claude} {claude === 1 ? 'run' : 'runs'}). Restart Now stops it; Update When Idle waits until it’s done.
         </p>
       ) : null}
       {state.choice === 'idle' && !installing ? <p className={s.line}>{idleLine(state.waitingOn)}</p> : null}

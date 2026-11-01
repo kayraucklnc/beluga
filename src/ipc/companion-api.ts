@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_UPLOADS, PHONE_BRANCH_STEPS, PHONE_USE, PhoneOp, UploadRef, VoiceModelId } from '../companion/protocol.js';
 import { NEEDS } from '../core/gateway/protocol.js';
+import { AgentRef } from '../protocol.js';
 import { KEEP_AWAKE } from '../shared/settings-schema.js';
 import { SourceSchema, ViewQuerySchema } from '../shared/view-spec.js';
 
@@ -66,7 +67,8 @@ export const COMPANION_API = {
       z
         .object({
           target: z.union([
-            z.object({ project: z.string().min(1).max(200), worktree: z.literal(true).optional(), plan: z.boolean().optional() }).strict(),
+            // `agent` (1.35, BLG-506): who works a new worktree; none: your default.
+            z.object({ project: z.string().min(1).max(200), worktree: z.literal(true).optional(), plan: z.boolean().optional(), agent: AgentRef.optional() }).strict(),
             z.object({ topic: z.string().regex(/^conv:[\w:.-]{1,200}$/) }).strict(),
           ]),
           text: z.string().max(64_000),
@@ -91,6 +93,8 @@ export const COMPANION_API = {
   'companion.signOut': { args: z.tuple([]) },
   // Keep the Mac awake for the phone (Settings › Phone's own switch, from the phone): off, on power, always (BLG-127).
   'companion.keepAwake': { args: z.tuple([z.enum(KEEP_AWAKE)]) },
+  // Make one of your providers the default agent, from the phone's usage cards, by its runtime (BLG-459).
+  'companion.defaultAgent': { args: z.tuple([z.string().regex(/^[a-z][\w-]{0,31}$/)]) },
   // Open on your Mac: the Mac app's window comes to the front showing what the phone has open (a
   // topic, or a needs-you item without one) → { opened, why? } (why not: the Mac app isn't open).
   'companion.openOnMac': {
@@ -135,8 +139,8 @@ export const COMPANION_API = {
   'companion.draftTask': { args: z.tuple([z.object({ projectId: z.string().min(1).max(200), text: z.string().min(1).max(8000), several: z.boolean().optional() }).strict()]) },
   // Add a draft (maybe changed on the phone) as a task in a project → the task ({ id, key }); 1.24: with
   // `more` (under it when `epic`; at most MAX_TASKS in all, agent/task-drafter.ts), those too (`more` in
-  // the answer), each for the teammate `for` names.
-  'companion.addTask': { args: z.tuple([phoneDraft.extend({ projectId: z.string().min(1).max(200), epic: z.boolean().optional(), more: z.array(phoneDraft).max(11).optional() }).strict()]) },
+  // the answer), each for the teammate `for` names. 1.35 (BLG-498) `agent`: who works them when they start (none: your default).
+  'companion.addTask': { args: z.tuple([phoneDraft.extend({ projectId: z.string().min(1).max(200), epic: z.boolean().optional(), more: z.array(phoneDraft).max(11).optional(), agent: AgentRef.optional() }).strict()]) },
   // A worktree's files, read-only (BLG-42), through the file gate: never outside the worktree (links
   // followed and checked again), never a secret. A folder → FolderView; names that match → FoundView;
   // a page of a file (512 KB, from `off`) → FilePageView. Nothing on the phone can change a file.

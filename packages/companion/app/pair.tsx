@@ -29,7 +29,7 @@ type Stage = 'intro' | 'connect' | 'scan' | 'code' | 'dialing' | 'waiting' | 'pa
 
 const EASE = Easing.bezier(0.22, 1, 0.36, 1);
 const PAGES = [
-  { eyebrow: 'Beluga for your phone', title: 'Your Mac,\nin your pocket', body: 'What Claude is doing on your Mac, wherever you are.' },
+  { eyebrow: 'Beluga for your phone', title: 'Your Mac,\nin your pocket', body: 'What your agent is doing on your Mac, wherever you are.' },
   { eyebrow: 'Needs you', title: 'Answer in\na swipe', body: 'Approvals, questions and requests come to you. Right to approve, left to decline.' },
   { eyebrow: 'Ask', title: 'Ask your Mac\nanything', body: 'Start work from the couch. The answer, pictures and files come back here.' },
 ] as const;

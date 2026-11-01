@@ -11,10 +11,10 @@ describe('@friend in the message box', () => {
     // Each friend twice: the person, then their Claude.
     expect(suggest('@m', ctx)).toEqual([
       { label: '@mia', hint: "mia, the person: they're told you mentioned them", value: '@mia ', enter: 'complete', kind: 'person' },
-      { label: '@claude:mia', hint: "ask mia's Claude, on their Mac", value: '@claude:mia ', enter: 'complete', kind: 'claude' },
+      { label: '@claude:mia', hint: "ask mia's agent, on their Mac", value: '@claude:mia ', enter: 'complete', kind: 'claude' },
     ]);
     expect(suggest('please ask @Bo', ctx).map((s) => s.label)).toEqual(['@BobStone', '@claude:BobStone']);
-    expect(suggest('please ask @Bo', ctx)[1]).toMatchObject({ hint: "ask Bob Stone's Claude, on their Mac (offline: it goes when they’re back)", value: 'please ask @claude:BobStone ', kind: 'claude' });
+    expect(suggest('please ask @Bo', ctx)[1]).toMatchObject({ hint: "ask Bob Stone's agent, on their Mac (offline: it goes when they’re back)", value: 'please ask @claude:BobStone ', kind: 'claude' });
     expect(suggest('@claude:m', ctx).map((s) => s.label)).toEqual(['@claude:mia']);
     expect(suggest('@mia ', ctx)).toEqual([]);
   });
@@ -27,7 +27,7 @@ describe('@friend in the message box', () => {
   it('your Claude knows @claude:Name is a friend’s Claude to ask, @Name the person, and to give their notification a summary', () => {
     const prompt = buildSystemAppend('kay');
     expect(prompt).toContain('"@claude:Name" in the user');
-    expect(prompt).toContain('"@Name" alone is the person, not their Claude');
+    expect(prompt).toContain('"@Name" alone is the person, not their agent');
     expect(prompt).toContain('Give ask_person a summary');
   });
 });
@@ -61,7 +61,7 @@ describe('@ata is Ata, @claude:ata is Ata’s Claude', () => {
   it('draws @claude:ata as a pill for a friend who isn’t in the room', async () => {
     const { resolveMention } = await import('../packages/mac/src/chat/mentions.js');
     const world = { friends: [{ name: 'ata', peerId: 'a1' }], peers: [], projects: [], workspaces: [] };
-    expect(resolveMention('claude:ata', world)).toEqual({ kind: 'claude', label: 'ata’s Claude', id: 'a1' });
+    expect(resolveMention('claude:ata', world)).toEqual({ kind: 'claude', label: 'ata’s agent', id: 'a1' });
     expect(resolveMention('ata', world)).toEqual({ kind: 'friend', label: 'ata', id: 'a1' });
   });
 });

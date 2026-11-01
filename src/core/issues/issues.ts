@@ -123,7 +123,7 @@ export class GitHubIssues {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
     this.notTeammates(task, opts);
-    const ws = await this.workOn(task, 'investigate', (t) => investigatePrompt(t, issue, repo), `asked Claude to investigate #${number}`, () => `Investigate #${number} “${issue.title}”: find out why it happens and reproduce it, without fixing it yet.`, opts.note);
+    const ws = await this.workOn(task, 'investigate', (t) => investigatePrompt(t, issue, repo), `asked the agent to investigate #${number}`, () => `Investigate #${number} “${issue.title}”: find out why it happens and reproduce it, without fixing it yet.`, opts.note);
     return { task: task.id, key: task.key, ws };
   }
 
@@ -143,7 +143,7 @@ export class GitHubIssues {
       task,
       'fix',
       (t, w, here) => (here ? fixAfterInvestigationPrompt(t, issue, this.deps.prPrompt(w)) : fixPrompt(t, issue, repo, this.deps.prPrompt(w))),
-      `asked Claude to fix #${number}`,
+      `asked the agent to fix #${number}`,
       (here) => (here ? `Now fix #${number} the way the investigation points to, and open a pull request that closes it.` : `Fix #${number} “${issue.title}”, and open a pull request that closes it.`),
       opts.note,
     );

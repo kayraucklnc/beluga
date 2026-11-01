@@ -2,6 +2,7 @@ import type { Actor } from '../../board/model.js';
 import type { Action, DomainState, Store } from '../../store.js';
 import { planTitle } from '../../plans/model.js';
 import { type BelugaTrigger, sentinelOfChannel } from '../model.js';
+import { agentName } from '../../../shared/agent-label.js';
 import { type TriggerContext, type TriggerDeps, type TriggerEvent, clip } from './types.js';
 
 /**
@@ -150,7 +151,7 @@ export function belugaEvent(t: BelugaTrigger, a: Action, st: DomainState, mem: M
       const place = workspaceOf(st, a.channel.slice(3));
       if (!place || place.ws.kind !== 'worktree' || !inProject(place.project.id)) return undefined;
       const from = madeBy(st, a.channel);
-      return { summary: clip(`Beluga: Claude finished in ${place.ws.name}`, 130), payload: { event: 'claude-finished', project: place.project.name, worktree: place.ws.name, branch: place.ws.branch, answer: clip(a.text, 2000) }, ...(from ? { from } : {}) };
+      return { summary: clip(`Beluga: ${agentName(a.agent)} finished in ${place.ws.name}`, 130), payload: { event: 'claude-finished', project: place.project.name, worktree: place.ws.name, branch: place.ws.branch, answer: clip(a.text, 2000) }, ...(from ? { from } : {}) };
     }
     case 'gw_task': {
       const task = a.task;

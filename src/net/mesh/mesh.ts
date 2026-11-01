@@ -24,6 +24,7 @@ import { NameSchema, type Profile } from './schemas.js';
 import { type ChatExtras, type ChatFile, type FriendView, type GroupView, type InvitationView, type MessageView, type NetworkSummary, type Presence, dmConversation, groupConversation } from './views.js';
 import { type LinkMessage, PROTO } from './wire.js';
 import { isLate } from '../patient-timer.js';
+import type { AgentRef } from '../../protocol.js';
 
 /**
  * Your Mac on the Beluga network: no server and no host. It listens at an address derived from
@@ -75,7 +76,7 @@ interface MeshEvents {
   /** A link to someone came up (what waited for them can go now). */
   link: [string];
   /** Someone's Claude started or stopped answering message `for` in a conversation. */
-  live: [{ readonly conversation: string; readonly from: string; readonly for: string; readonly state: 'thinking' | 'idle' }];
+  live: [{ readonly conversation: string; readonly from: string; readonly for: string; readonly state: 'thinking' | 'idle'; readonly agent?: AgentRef }];
   /** A chat file frame (f_get / f_data / f_err) from someone you're linked to (core/chat-files checks it). */
   file: [string, FileFrame];
 }
@@ -406,9 +407,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
   }
 
   /** Tell the others in a conversation that your Claude is answering message `id` (or stopped). */
-  sendLive(conversation: string, id: string, state: 'thinking' | 'idle'): void {
+  sendLive(conversation: string, id: string, state: 'thinking' | 'idle', agent?: AgentRef): void {
     const g = conversation.startsWith('group:') ? conversation.slice(6) : undefined;
-    for (const peerId of this.peopleIn(conversation)) this.links.get(peerId)?.send({ t: 'live', ...(g ? { g } : {}), for: id, state });
+    for (const peerId of this.peopleIn(conversation)) this.links.get(peerId)?.send({ t: 'live', ...(g ? { g } : {}), for: id, state, ...(agent ? { agent } : {}) });
   }
 
   /** Say who you're pulling chat files from (their pieces get the file allowance on the link). */
@@ -840,7 +841,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
         return;
       case 'live': {
         const conversation = msg.g ? groupConversation(msg.g) : dmConversation(from);
-        if (this.shares(conversation, from)) this.emit('live', { conversation, from, for: msg.for, state: msg.state });
+        if (this.shares(conversation, from)) this.emit('live', { conversation, from, for: msg.for, state: msg.state, ...(msg.agent ? { agent: msg.agent } : {}) });
         return;
       }
       case 'f_get':

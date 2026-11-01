@@ -13,7 +13,7 @@ import { ASSISTANT_TITLE, THIS_COMPUTER } from '@beluga/shared/assistant.js';
 type Way = 'describe' | 'recipe' | 'build';
 
 const WAYS: ReadonlyArray<{ readonly value: Way; readonly label: string; readonly icon: 'claude' | 'wand' | 'wrench'; readonly hint: string }> = [
-  { value: 'describe', label: 'Describe it', icon: 'claude', hint: 'Say what it should do; Claude writes it' },
+  { value: 'describe', label: 'Describe it', icon: 'claude', hint: 'Say what it should do; your agent writes it' },
   { value: 'recipe', label: 'Recipe', icon: 'wand', hint: 'Start from one that works, then change anything' },
   { value: 'build', label: 'Build it yourself', icon: 'wrench', hint: 'A name and a project; you add when it runs and its steps' },
 ];
@@ -101,7 +101,7 @@ export function NewSentinelSheet({ projectId, way: first = 'describe', close }: 
           />
         </div>
         {way === 'describe' ? (
-          <Field label="What should it do?" htmlFor="sentinel-words" hint={`Claude sets it up in ${projectName ?? ASSISTANT_TITLE}, looking at the project first when that helps. It starts paused: look it over, then Turn On.`}>
+          <Field label="What should it do?" htmlFor="sentinel-words" hint={`Your agent sets it up in ${projectName ?? ASSISTANT_TITLE}, looking at the project first when that helps. It starts paused: look it over, then Turn On.`}>
             <TextArea
               id="sentinel-words"
               value={words}

@@ -8,7 +8,7 @@ import { expect, test, type Locator, type Page } from './fixtures.js';
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 // A conversation's message box (not a plan page's name or chat, which may still be leaving the screen).
-const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea):not([aria-label="Plan name"]):not([aria-label="Message Claude about the plan"])');
+const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea):not([aria-label="Plan name"]):not([aria-label="Message your agent about the plan"])');
 const unreadSection = (page: Page) => sidebar(page).getByRole('region', { name: 'Unread' });
 const row = (page: Page, name: string): Locator => sidebar(page).getByRole('button', { name, exact: true });
 const projectRow = (page: Page, name: string): Locator => sidebar(page).getByRole('button', { name, exact: true }).and(page.locator('[aria-expanded]'));
@@ -53,7 +53,7 @@ test('a run that finishes while you are elsewhere marks its row and project unti
   await expect(auth).toHaveAttribute('data-signal-row', 'unread', { timeout: 40_000 });
   await expect(auth.locator('[data-signal="unread"]')).toHaveText('1');
   await expect(auth.getByText('add-auth')).toHaveCSS('font-weight', '650');
-  await expect(auth).toHaveAttribute('title', /Claude finished · 1 new message/);
+  await expect(auth).toHaveAttribute('title', /Your agent finished · 1 new message/);
 
   // The project adds it up, and folded, that's how you notice.
   const project = projectRow(page, 'bob-api');
@@ -64,7 +64,7 @@ test('a run that finishes while you are elsewhere marks its row and project unti
   await project.getByRole('button', { name: "Show what's in bob-api" }).first().click();
 
   // It's in Unread, a click away; opening it reads it (it stays there, plain, while you're in it).
-  const listed = unreadSection(page).getByRole('button', { name: /^add-auth · Claude finished/ });
+  const listed = unreadSection(page).getByRole('button', { name: /^add-auth · Your agent finished/ });
   await expect(listed).toBeVisible();
   await listed.click();
   await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
@@ -93,9 +93,9 @@ test("Claude's question makes the row need you until it's answered; Unread comes
   const hero = row(page, 'new-hero');
   await expect(hero).toHaveAttribute('data-signal-row', 'needs');
   await expect(hero.locator('[data-signal="needs"]')).toBeVisible();
-  await expect(hero).toHaveAttribute('title', /Claude asks a question/);
+  await expect(hero).toHaveAttribute('title', /Your agent asks a question/);
   await expect(projectRow(page, 'landing').locator('[data-tally]')).toHaveAttribute('data-tally', /^[1-9]/);
-  await expect(unreadSection(page).getByRole('button', { name: /^new-hero · Claude asks a question/ })).toBeVisible();
+  await expect(unreadSection(page).getByRole('button', { name: /^new-hero · Your agent asks a question/ })).toBeVisible();
 
   // Settings › Appearance can leave the section out.
   await page.keyboard.press('Meta+,');
@@ -116,7 +116,7 @@ test("Claude's question makes the row need you until it's answered; Unread comes
   // Answering does.
   await page.getByRole('button', { name: /Signed cookies/ }).click();
   await expect(hero).not.toHaveAttribute('data-signal-row', 'needs', { timeout: 15_000 });
-  await expect(unreadSection(page).getByRole('button', { name: /^new-hero · Claude asks/ })).toHaveCount(0);
+  await expect(unreadSection(page).getByRole('button', { name: /^new-hero · Your agent asks/ })).toHaveCount(0);
   if (startedEmpty) {
     await openWorkspace(page, 'add-auth', 'bob-api');
     await expect(unreadSection(page)).toHaveCount(0);

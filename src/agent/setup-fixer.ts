@@ -1,4 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { Complete } from './runtime/types.js';
 
 const FIX_TIMEOUT_MS = 90_000;
 const OUTPUT_CHARS = 4000;
@@ -39,29 +39,21 @@ const LOOK =
   "Be quick: look at the README, manifests, lockfiles, Makefile/justfile, Procfile and scripts only. Prefer the project's own tooling (a Makefile or justfile target, a package.json script) over generic commands, and the package manager the project's lockfile belongs to. Never suggest anything that installs into the system (sudo, brew, `make install`) or deploys.";
 
 /** One read-only look at the project by a model (no commands): what it said at the end, or undefined on any trouble. */
-async function ask(dir: string, prompt: string, systemPrompt: string, opts: { claudePath?: string; model?: string }): Promise<string | undefined> {
+async function ask(dir: string, prompt: string, system: string, opts: { complete: Complete; model?: string }): Promise<string | undefined> {
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), FIX_TIMEOUT_MS);
   timer.unref();
   try {
-    const q = query({
+    return await opts.complete({
       prompt,
-      options: {
-        cwd: dir,
-        model: opts.model ?? 'sonnet',
-        tools: ['Read', 'Glob', 'Grep'],
-        allowedTools: ['Read', 'Glob', 'Grep'],
-        maxTurns: 8,
-        settingSources: [],
-        persistSession: false,
-        abortController,
-        systemPrompt,
-        ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
-      },
+      cwd: dir,
+      model: opts.model ?? 'sonnet',
+      tools: ['Read', 'Glob', 'Grep'],
+      allowedTools: ['Read', 'Glob', 'Grep'],
+      maxTurns: 8,
+      signal: abortController.signal,
+      system,
     });
-    for await (const msg of q) {
-      if (msg.type === 'result' && msg.subtype === 'success') return msg.result;
-    }
   } catch {
     // No answer.
   } finally {
@@ -76,7 +68,7 @@ const tailOf = (output: string): string => output.replace(ANSI, '').slice(-OUTPU
  * A worktree's setup failed: a model looks at the project's files (read-only, no commands) and
  * the failure, and says what the setup should be, or that it needs none. Undefined on any trouble.
  */
-export async function fixSetup(dir: string, failed: string, output: string, opts: { claudePath?: string; model?: string } = {}): Promise<SetupFix | undefined> {
+export async function fixSetup(dir: string, failed: string, output: string, opts: { complete: Complete; model?: string }): Promise<SetupFix | undefined> {
   const said = await ask(
     dir,
     `The setup command for new worktrees of this project failed.\n\nCommand: ${failed}\nOutput (end):\n"""\n${tailOf(output)}\n"""\n\nLook at the project's files and decide the right setup command (installing dependencies so the project can run), or that it needs no setup.`,
@@ -90,7 +82,7 @@ export async function fixSetup(dir: string, failed: string, output: string, opts
  * A project's Run button failed: a model looks at the files and the failure and says what the
  * run command should be, or that it doesn't know a better one (none). Undefined on any trouble.
  */
-export async function fixRun(dir: string, failed: string, output: string, opts: { claudePath?: string; model?: string } = {}): Promise<ScriptFix | undefined> {
+export async function fixRun(dir: string, failed: string, output: string, opts: { complete: Complete; model?: string }): Promise<ScriptFix | undefined> {
   const said = await ask(
     dir,
     `The Run command of this project (what its Run button starts, e.g. a dev server) failed.\n\nCommand: ${failed}\nOutput (end):\n"""\n${tailOf(output)}\n"""\n\nLook at the project's files and decide the right run command. If the command is right and the project itself is what's broken (a code error, a missing file or setting), the answer is none.`,
@@ -104,7 +96,7 @@ export async function fixRun(dir: string, failed: string, output: string, opts: 
  * A project's first new worktree, and its own files don't say how to set it up or run it: a model
  * looks (read-only) and says, for each one asked, a command or none. Undefined on any trouble.
  */
-export async function workOutScripts(dir: string, want: { setup: boolean; run: boolean }, opts: { claudePath?: string; model?: string } = {}): Promise<WorkedOutScripts | undefined> {
+export async function workOutScripts(dir: string, want: { setup: boolean; run: boolean }, opts: { complete: Complete; model?: string }): Promise<WorkedOutScripts | undefined> {
   const parts = [want.setup && 'SETUP: the one command that installs what the project needs in a fresh checkout (dependencies, including those of sub-packages with their own manifest or lockfile, chained with &&), or none if nothing does', want.run && 'RUN: the one command that starts it for development (a dev server, the app, the CLI with no arguments), or none if it isn\'t something you run (a library, docs)'].filter(Boolean);
   if (!parts.length) return {};
   const said = await ask(

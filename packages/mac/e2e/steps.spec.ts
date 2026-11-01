@@ -7,7 +7,7 @@ import { expect, test, type Page } from './fixtures.js';
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea)');
-const lastSteps = (page: Page) => page.getByRole('list', { name: "Claude's steps" }).last();
+const lastSteps = (page: Page) => page.getByRole('list', { name: "The agent's steps" }).last();
 
 async function openWorkspace(page: Page, name: string, project = 'bob-api'): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
@@ -51,11 +51,11 @@ test('once Claude answers, its steps fold away; Show Steps opens them, and Hide 
   await openWorkspace(page, 'new-hero', 'landing');
   const card = await answer(page, 'run the tests please');
   // The answer stands on its own: no steps, no "Done in 2m".
-  await expect(card.getByRole('list', { name: "Claude's steps" })).toHaveCount(0);
+  await expect(card.getByRole('list', { name: "The agent's steps" })).toHaveCount(0);
   await expect(card).not.toContainText(/Done in|steps ·/);
   await card.hover();
   await card.getByRole('button', { name: 'Show Steps' }).click();
-  const steps = card.getByRole('list', { name: "Claude's steps" });
+  const steps = card.getByRole('list', { name: "The agent's steps" });
   await expect(steps).toBeVisible();
   await card.hover();
   await card.getByRole('button', { name: 'Hide Steps' }).click();

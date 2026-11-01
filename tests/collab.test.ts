@@ -335,7 +335,7 @@ describe('on your own', () => {
     kay.session.submit('@add-auth add a test');
     await waitFor(() => kay.runs.some((r) => r.prompt === 'add a test'));
     expect(kay.runs.find((r) => r.prompt === 'add a test')?.place?.cwd).toBe(ws.path);
-    expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Sent to the Claude in add-auth'))).toBe(true);
+    expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Sent to the agent in add-auth'))).toBe(true);
   });
 
   it("opening a workspace Beluga hasn't used shows its Claude Code conversation and continues it", async () => {

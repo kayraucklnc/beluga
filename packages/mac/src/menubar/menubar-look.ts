@@ -23,8 +23,8 @@ export interface MenuBarLook {
 /** Each count: its name, what it means (said in Settings), and its word in the menu bar. */
 export const COUNTS: ReadonlyArray<{ readonly id: MenuBarCount; readonly label: string; readonly means: string; readonly word: string }> = [
   { id: 'new', label: 'What’s New for You', means: 'Conversations in Unread, unread notifications, and what waits on you (the Dock badge counts the same).', word: 'new' },
-  { id: 'waiting', label: 'Waiting for You', means: 'Only what needs your answer: approvals, Claude’s questions and people at the door.', word: 'waiting' },
-  { id: 'working', label: 'Claudes Working', means: 'Conversations where your Claude is at work right now.', word: 'working' },
+  { id: 'waiting', label: 'Waiting for You', means: 'Only what needs your answer: approvals, your agent’s questions and people at the door.', word: 'waiting' },
+  { id: 'working', label: 'Agents Working', means: 'Conversations where your agent is at work right now.', word: 'working' },
   { id: 'room', label: 'People in the Room', means: 'Everyone in your room besides you.', word: 'here' },
   { id: 'friends', label: 'Friends Online', means: 'Friends on the Beluga network who are online now.', word: 'online' },
   { id: 'none', label: 'Nothing', means: 'Just the whale. Its menu still lists what waits on you.', word: '' },
@@ -35,10 +35,10 @@ export const DEFAULT_MENU_BAR: MenuBarLook = { preset: 'classic', count: 'new', 
 type LookPart = Omit<MenuBarLook, 'preset'>;
 
 export const MENU_BAR_PRESETS: ReadonlyArray<{ readonly id: string; readonly name: string; readonly blurb: string; readonly look: LookPart }> = [
-  { id: 'classic', name: 'What’s New', blurb: 'The count, and a spout when Claude finishes', look: { count: 'new', words: false, spout: 'done', splash: 0.5, speed: 0.5 } },
+  { id: 'classic', name: 'What’s New', blurb: 'The count, and a spout when your agent finishes', look: { count: 'new', words: false, spout: 'done', splash: 0.5, speed: 0.5 } },
   { id: 'quiet', name: 'Just the Whale', blurb: 'No number, no spout', look: { count: 'none', words: false, spout: 'off', splash: 0.5, speed: 0.5 } },
   { id: 'people', name: 'Who’s Here', blurb: 'People in your room, in words', look: { count: 'room', words: true, spout: 'done', splash: 0.35, speed: 0.5 } },
-  { id: 'busy', name: 'Busy Whale', blurb: 'Claudes working, spouting while they do', look: { count: 'working', words: true, spout: 'working', splash: 0.75, speed: 0.65 } },
+  { id: 'busy', name: 'Busy Whale', blurb: 'Agents working, spouting while they do', look: { count: 'working', words: true, spout: 'working', splash: 0.75, speed: 0.65 } },
 ];
 
 const same = (a: LookPart, b: LookPart): boolean => a.count === b.count && a.words === b.words && a.spout === b.spout && Math.abs(a.splash - b.splash) < 0.001 && Math.abs(a.speed - b.speed) < 0.001;

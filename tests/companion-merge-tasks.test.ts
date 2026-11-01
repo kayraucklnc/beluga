@@ -101,7 +101,7 @@ describe('a branch’s steps from the phone', () => {
     expect(archive).toHaveBeenCalledWith('w1');
     expect(await branchStep(s, 'conv:ws:w1', 'merge_auto')).toEqual({ ok: false, message: 'An approving review is required' });
     expect(mergePr).toHaveBeenCalledWith('w1', { method: 'squash', auto: true });
-    expect(await branchStep(s, 'conv:ws:w1', 'fix_checks')).toMatchObject({ ok: true, message: expect.stringContaining('Claude') });
+    expect(await branchStep(s, 'conv:ws:w1', 'fix_checks')).toMatchObject({ ok: true, message: expect.stringContaining('agent') });
     expect(fixChecks).toHaveBeenCalledWith('w1');
     await expect(branchStep(s, 'conv:ws:nope', 'archive')).rejects.toThrow(/worktree/);
   });

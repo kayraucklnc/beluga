@@ -34,7 +34,7 @@ test('your Claude asks bob’s Claude and mia’s (after you say yes); answers c
   await expect(composer(page)).toHaveAttribute('placeholder', /webhook-retries/);
   // A fresh demo's Claude may still be at work here: ask once it's free, so the ask isn't queued.
   await expect(page.getByRole('button', { name: 'Stop Claude' })).toHaveCount(0, { timeout: 90_000 });
-  const bob = task(page, /^Task: To bob’s Claude/).last();
+  const bob = task(page, /^Task: To bob’s agent/).last();
   // Right after the network is turned on, bob can show Online before the link to him is up: then
   // your Claude says he can't be reached, and you ask again (KLD-57 found this).
   const unreachable = page.getByText("I couldn't ask bob: bob can't be reached");
@@ -57,11 +57,11 @@ test('your Claude asks bob’s Claude and mia’s (after you say yes); answers c
 
   await composer(page).fill('ask mia to review the landing page copy');
   await composer(page).press('Enter');
-  const ask = task(page, /^Task: Ask mia’s Claude\?/).last();
+  const ask = task(page, /^Task: Ask mia’s agent\?/).last();
   await expect(ask).toBeVisible({ timeout: 15_000 });
-  await expect(ask).toContainText('Your Claude wants to send this, so it asks you first');
+  await expect(ask).toContainText('Your agent wants to send this, so it asks you first');
   await ask.getByRole('button', { name: 'Ask mia' }).click();
-  const mia = task(page, /^Task: To mia’s Claude/).last();
+  const mia = task(page, /^Task: To mia’s agent/).last();
   await expect(mia).toHaveAttribute('data-state', 'awaiting_approval', { timeout: 15_000 });
   await expect(mia).toContainText('Waiting for mia to approve');
   await expect(mia).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
@@ -75,21 +75,22 @@ test('Requests lists what you sent, and Not now never sends', async ({ page }) =
   await expect(composer(page)).toHaveAttribute('placeholder', /webhook-retries/);
   await composer(page).fill('ask mia whether the hero image is final');
   await composer(page).press('Enter');
-  await expect(task(page, /^Task: Ask mia’s Claude\?/).last()).toBeVisible({ timeout: 15_000 });
+  const ask = task(page, /^Task: Ask mia’s agent\?/).last();
+  await expect(ask).toBeVisible({ timeout: 15_000 });
+  await ask.getByRole('button', { name: 'Not now' }).click();
+  await expect(task(page, /^Task: To mia’s agent/).last()).toHaveAttribute('data-state', 'cancelled');
 
   // The sidebar has Requests while one waits for you (and while you look at them).
   await sidebar(page).getByRole('button', { name: /^Requests/ }).click();
   await expect(page.locator('header').first()).toContainText('Requests');
   await page.getByRole('tab', { name: /^Sent/ }).click();
   const sent = page.getByRole('list', { name: 'Sent requests' });
-  const mine = sent.getByRole('button', { name: /^To mia’s Claude: whether the hero image is final/ });
-  await mine.click();
-  await page.getByRole('button', { name: 'Not now' }).last().click();
-  // Never sent: it leaves what waits, and Show answered has it as Cancelled.
-  await expect(sent).toContainText('Nothing waiting');
-  await page.getByRole('button', { name: /^Show answered/ }).click();
-  await expect(sent.getByRole('button', { name: /^To mia’s Claude: whether the hero image is final, Cancelled/ })).toBeVisible();
-  // What friends' Claudes asked you is the other tab.
+  await expect(sent.getByRole('button', { name: /^To bob’s agent: run the tests in bob-api, Done/ })).toBeVisible();
+  await expect(sent.getByRole('button', { name: /^To mia’s agent: whether the hero image is final, Cancelled/ })).toBeVisible();
+  await sent.getByRole('button', { name: /^To bob’s agent/ }).click();
+  const card = page.getByRole('region', { name: /^Task: To bob’s agent/ });
+  await card.getByRole('button', { name: 'Show bob’s reply' }).click();
+  await expect(card).toContainText('27 tests');
   await page.getByRole('tab', { name: /^Received/ }).click();
   await expect(page.getByRole('list', { name: 'Received requests' })).toBeVisible();
 });

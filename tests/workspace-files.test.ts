@@ -20,6 +20,7 @@ import {
   resolveInWorkspace,
   ripgrepArgs,
   searchContents,
+  searchNames,
   writeWorkspaceFile,
 } from '../src/core/workspace-files.js';
 
@@ -186,6 +187,34 @@ describe('searching a workspace', () => {
     put('node_modules/pkg/index.js', 'checkToken\n');
     const res = await searchContents(dir, 'checkToken(', {}, undefined, 'node');
     expect(res.files.map((f) => f.path).sort()).toEqual(['ignored/secret.ts', 'src/auth.ts']);
+  });
+});
+
+describe('searching names', () => {
+  beforeEach(() => {
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    put('.gitignore', 'dist/\n');
+    put('src/auth/login.ts', '');
+    put('src/auth/login.test.ts', '');
+    put('src/server.ts', '');
+    put('README.md', '');
+    put('dist/login.js', '');
+  });
+
+  for (const engine of ['node', 'auto'] as const) {
+    it(`finds files anywhere by their path, skipping what git ignores (${engine})`, async () => {
+      if (engine === 'auto' && !findRipgrep()) return;
+      const res = await searchNames(dir, 'login', {}, undefined, engine);
+      expect(res.files.map((f) => f.path)).toEqual(['src/auth/login.test.ts', 'src/auth/login.ts']);
+      expect(res.files[1]!.ranges).toEqual([[9, 14]]);
+    });
+  }
+
+  it('takes a regular expression over the whole path, and says when one doesn’t parse', async () => {
+    expect((await searchNames(dir, '^src/.*\\.test\\.ts$', { regex: true }, undefined, 'node')).files.map((f) => f.path)).toEqual(['src/auth/login.test.ts']);
+    expect((await searchNames(dir, 'readme', { caseSensitive: true }, undefined, 'node')).files).toEqual([]);
+    expect((await searchNames(dir, 'README', { caseSensitive: true }, undefined, 'node')).files.map((f) => f.path)).toEqual(['README.md']);
+    expect((await searchNames(dir, '(unclosed', { regex: true }, undefined, 'node')).error).toMatch(/Not a valid pattern/);
   });
 });
 

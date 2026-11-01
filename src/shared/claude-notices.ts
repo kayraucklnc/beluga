@@ -7,13 +7,13 @@ import type { LogItem } from '../core/store.js';
  */
 
 /** What a steered message's card says while it waits in the running turn for Claude's next step. */
-export const READS_AFTER_STEP = 'Claude reads this after its current step';
+export const READS_AFTER_STEP = 'Your agent reads this after its current step';
 
 /** What a steered message's card says while Claude's turn is being stopped so it reads it next (a long step, Send now). */
-export const STOPPING_FOR = 'Claude stops its current step to read this';
+export const STOPPING_FOR = 'Your agent stops its current step to read this';
 
 /** What a queued message's card says when Claude took it in while it worked (see AgentHost.steer). */
-export const STEERED_IN = 'Claude read this while it worked; the answer above covers it.';
+export const STEERED_IN = 'Your agent read this while it worked; the answer above covers it.';
 
 /**
  * A steered message Claude hasn't read yet (BLG-54): its card is only a note, waiting in the

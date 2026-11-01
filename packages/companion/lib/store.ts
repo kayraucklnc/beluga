@@ -623,7 +623,7 @@ class Store {
     this.offAdb?.();
     this.offAdb = watchAdb(allowed, () => this.reportControl());
     // The ongoing "Your Mac is using this phone" notice (with Stop) shows while control is allowed.
-    controlNote(allowed, 'Claude can act on this phone');
+    controlNote(allowed, 'Your agent can act on this phone');
     this.reportControl();
   }
 
@@ -713,6 +713,11 @@ class Store {
 
   view<T>(topic: Topic): CachedView<T> | undefined {
     return this.views.get(topic) as CachedView<T> | undefined;
+  }
+
+  /** Every view kept now (on screen, or the last ones), newest first. */
+  cachedViews(): Array<[Topic, CachedView]> {
+    return [...this.views].sort((a, b) => b[1].at - a[1].at) as Array<[Topic, CachedView]>;
   }
 
   private persistTimer: ReturnType<typeof setTimeout> | undefined;

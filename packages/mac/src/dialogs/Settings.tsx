@@ -2,9 +2,15 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
 import { BRANCH_PREFIX_RE, EFFORTS } from '@beluga/shared/settings-schema.js';
+import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
+import { EFFORT_INFO, agentEntries, modelInfo, myModel, myRuntime, setMyAgent } from '../chat/ModelPicker.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon, type IconName } from '../components/Icon.js';
-import { Avatar, Button, cx } from '../components/ui.js';
+import { Avatar, Button, Dot, cx } from '../components/ui.js';
+import { runtimeMark } from '@beluga/shared/agent-marks.js';
+import type { RuntimeState } from '@beluga/shared/agent-runtimes.js';
+import { CopyCommand, LOCAL_MODELS_ID, useAgents } from '../onboarding/AgentsStep.js';
+import { FIX_LABEL } from '../onboarding/agent-setup.js';
 import { APP_VERSION } from '../lib/boot.js';
 import { revealInFinder } from '../lib/files.js';
 import { type SettingsPane, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
@@ -13,6 +19,7 @@ import { EnvironmentSettings } from './EnvironmentSettings.js';
 import { ContextSettings } from './ContextSettings.js';
 import { ParallelSettings } from './ParallelSettings.js';
 import { McpSettings } from './McpSettings.js';
+import { LocalModelsSettings } from './LocalModelsSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { VoiceSettings } from './VoiceSettings.js';
@@ -36,7 +43,7 @@ import { keyPlatform } from '../lib/shortcuts-model.js';
 const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> = [
   { id: 'general', label: 'General', icon: 'gear' },
   { id: 'appearance', label: 'Appearance', icon: 'eye' },
-  { id: 'claude', label: 'Claude', icon: 'spark' },
+  { id: 'claude', label: 'Agent', icon: 'spark' },
   { id: 'notifications', label: 'Notifications', icon: 'bell' },
   { id: 'workspaces', label: 'Workspaces', icon: 'branch' },
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
@@ -143,7 +150,7 @@ function General() {
           </form>
         </Row>
         <PictureRow />
-        <Row label="Friends' requests for your Claude" detail="For people you haven't picked a trust level for.">
+        <Row label="Friends' requests for your agent" detail="For people you haven't picked a trust level for.">
           <Select
             label="Default policy"
             value={state.policy}
@@ -172,7 +179,7 @@ function General() {
         <Row label="Show times next to messages">
           <Switch label="Times" on={prefs.timestamps} onChange={(v) => setPrefs({ timestamps: v })} />
         </Row>
-        <Row label="Claude's steps once it answers" detail="Folded, the answer stands on its own; Show Steps on the answer opens them again.">
+        <Row label="The agent's steps once it answers" detail="Folded, the answer stands on its own; Show Steps on the answer opens them again.">
           <Select
             label="Steps"
             value={prefs.doneSteps}
@@ -260,26 +267,97 @@ function Appearance() {
   );
 }
 
-function ClaudePane() {
+const TONE: Record<RuntimeState, 'ok' | 'warn' | 'muted'> = { ready: 'ok', signed_out: 'warn', missing: 'muted', no_endpoint: 'muted' };
+
+/**
+ * Your agents (BLG-507): each one Beluga can run with where it stands on this Mac, and its one fix
+ * (Sign In, Get Codex, Set Up…); Check Again asks them all now. The same rows as onboarding's.
+ */
+function AgentsGroup({ mine }: { mine: string }) {
+  const { rows, checking, check, act } = useAgents();
+  return (
+    <Group title="Your agents">
+      {rows.map((row) => (
+        <div key={row.id} className={s.row} data-testid={`settings-agent-${row.id}`}>
+          <Icon name={runtimeMark(row.id)} size={18} />
+          <div className={s.rowText}>
+            <div className={s.rowLabel}>
+              {row.label}
+              {row.id === mine && row.state === 'ready' ? <span className={s.agentYours}> · yours</span> : null}
+            </div>
+            <div className={s.rowDetail}>
+              {row.detail}
+              {row.fix === 'install' ? (
+                <>
+                  {' '}
+                  <CopyCommand className={s.agentCommand} />
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div className={s.control}>
+            <Dot tone={row.state ? TONE[row.state] : 'muted'} />
+            {row.words}
+            {row.fix ? (
+              <Button size="small" onClick={() => act(row)}>
+                {FIX_LABEL[row.fix]}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ))}
+      <Row label="Signed in or installed one just now?" detail="Beluga looks again by itself when you come back to the window.">
+        <Button variant="quiet" icon="refresh" disabled={checking} onClick={() => void check()}>
+          {checking ? 'Checking…' : 'Check Again'}
+        </Button>
+      </Row>
+    </Group>
+  );
+}
+
+/**
+ * Your agent (BLG-497): one pick of runtime and model, for every conversation that picked none of
+ * its own and for @you; then how hard it thinks (only the levels its model takes) and the rest.
+ */
+function AgentPane() {
   const api = useApi();
   const macPrefs = usePrefs();
   const { ui } = useBeluga();
   const state = useApp((st) => st);
   const p = state.prefs;
+  const runtime = myRuntime(p);
+  const model = myModel(p);
+  const choices = agentChoices(state.runtimes, state.models);
+  // A model its runtime doesn't list (yet) takes every level.
+  const efforts = new Set<string>(modelInfo(state, runtime, model)?.efforts ?? EFFORTS);
+  const effortOptions = EFFORTS.filter((e) => efforts.has(e) || e === p.effort);
   return (
     <>
       <Group>
-        <Row label="Model for new conversations" detail="Each conversation can pick its own from the box you type in.">
-          <Select label="Model" value={p.model ?? ''} onChange={(v) => void api.workbench.setModel(undefined, v)} options={state.models.map((m) => ({ value: m.value, label: m.label }))} />
+        <Row label="Your agent" detail="Runs every new conversation and answers when friends write @you. A conversation can pick another in the box you type in; a project, in its settings.">
+          <Select
+            label="Your agent"
+            value={choiceForAgent({ runtime, label: '', ...(model ? { model } : {}) })}
+            onChange={(v) => {
+              const ref = agentForChoice(v, state.runtimes);
+              setMyAgent(api, ref.runtime, ref.label, ref.model ?? '');
+            }}
+            options={agentEntries(choices)}
+            placeholder={choices.find((c) => c.runtime === runtime)?.group ?? runtime}
+          />
         </Row>
-        <Row label="Thinking effort">
-          <Select label="Effort" value={p.effort ?? ''} onChange={(v) => void api.session.setPrefs({ effort: (v || undefined) as (typeof EFFORTS)[number] | undefined })} options={[{ value: '', label: 'Default' }, ...EFFORTS.map((e) => ({ value: e, label: e[0]!.toUpperCase() + e.slice(1) }))]} />
+        <Row label="Thinking effort" detail={efforts.size < EFFORTS.length ? 'Only the levels this model takes.' : undefined}>
+          <Select label="Effort" value={p.effort ?? ''} onChange={(v) => void api.session.setPrefs({ effort: (v || null) as (typeof EFFORTS)[number] | null })} options={[{ value: '', label: 'Auto', description: 'Your agent decides, case by case' }, ...effortOptions.map((e) => ({ value: e, label: EFFORT_INFO[e].label, description: EFFORT_INFO[e].detail, ...(efforts.has(e) ? {} : { disabled: true }) }))]} />
         </Row>
-        <Row label="Ask before running commands" detail="Your own Claude. Secrets stay blocked either way.">
+        <Row label="Ask before running commands" detail="Your own agent. Secrets stay blocked either way.">
           <Switch label="Self approval" on={p.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
         </Row>
       </Group>
+      <AgentsGroup mine={runtime} />
       <McpSettings />
+      <div id={LOCAL_MODELS_ID}>
+        <LocalModelsSettings />
+      </div>
       <Group title="In the chat">
         <Row label="Sub-agents">
           <Select
@@ -297,7 +375,7 @@ function ClaudePane() {
       <ContextSettings />
       <ParallelSettings />
       <Group title="Scratch folder">
-        <Row label="Give Claude a scratch folder" detail="Screenshots, JSON, logs and notes Claude makes while it works go to the workspace’s .beluga/scratch/ folder (kept out of git; never touches other tools’ .context/).">
+        <Row label="Give your agent a scratch folder" detail="Screenshots, JSON, logs and notes your agent makes while it works go to the workspace’s .beluga/scratch/ folder (kept out of git; never touches other tools’ .context/).">
           <Switch label="Scratch folder" on={p.scratchFolder} onChange={(v) => void api.session.setPrefs({ scratchFolder: v })} />
         </Row>
         <Row label="Show the Scratch tab" detail={`Watch that folder live in the right panel, newest first${shortcutKeys('panel-scratch') ? ` (${shortcutKeys('panel-scratch')})` : ''}.`}>
@@ -515,7 +593,22 @@ function About() {
   );
 }
 
-const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, fire: FireSettings, menubar: MenuBarSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, voice: VoiceSettings, keyboard: KeyboardSettings, about: About };
+const BODY: Record<SettingsPane, () => ReactNode> = {
+  general: General,
+  appearance: Appearance,
+  claude: AgentPane,
+  notifications: NotificationSettings,
+  workspaces: Workspaces,
+  terminal: TerminalSettings,
+  fire: FireSettings,
+  menubar: MenuBarSettings,
+  environment: EnvironmentSettings,
+  people: People,
+  phone: PhoneSettings,
+  voice: VoiceSettings,
+  keyboard: KeyboardSettings,
+  about: About,
+};
 
 /** Beluga's settings: this window's look on the left panes, Beluga's shared settings on the rest. */
 export function Settings() {
@@ -523,11 +616,13 @@ export function Settings() {
   const pane = useUi((u) => u.settings);
   if (!pane) return null;
   const Body = BODY[pane];
+  // Opened from the welcome (Set Up… on Your agents): over it, not hidden behind it.
+  const overWelcome = document.querySelector('[data-welcome]') ? '' : undefined;
   return (
     <Dialog.Root open onOpenChange={(v) => (v ? undefined : ui.patch({ settings: undefined }))}>
       <Dialog.Portal>
-        <Dialog.Overlay className={s.overlay} />
-        <Dialog.Content className={s.window} aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
+        <Dialog.Overlay className={s.overlay} data-over-welcome={overWelcome} />
+        <Dialog.Content className={s.window} data-over-welcome={overWelcome} aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
           <nav className={s.nav}>
             <Dialog.Title className={s.title}>Settings</Dialog.Title>
             {PANES.map((p) => (

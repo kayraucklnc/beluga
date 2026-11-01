@@ -80,7 +80,7 @@ export function messageItems(o: MessageMenuOptions): ActionItem[] {
           { label: picked ? 'Copy Selection' : 'Copy', icon: 'copy' as const, ...(picked ? { keys: chordLabel('Cmd+C') } : {}), separate: Boolean(o.lead?.length), onSelect: () => copy(picked || plainText(o.text), picked ? 'the selection' : 'the message') },
           { label: 'Copy as Markdown', onSelect: () => copy(o.text, 'as Markdown') },
           { label: 'Quote in Reply', icon: 'chat' as const, separate: true, onSelect: () => quoteInBox(o.ui, picked || o.text) },
-          ...(o.askPrefix !== undefined ? [{ label: 'Ask Claude About This', icon: 'claude' as const, onSelect: () => quoteInBox(o.ui, picked || o.text, o.askPrefix) }] : []),
+          ...(o.askPrefix !== undefined ? [{ label: 'Ask Your Agent About This', icon: 'claude' as const, onSelect: () => quoteInBox(o.ui, picked || o.text, o.askPrefix) }] : []),
         ]
       : []),
     ...(o.images ?? []).map((img, i) => ({ label: o.images!.length > 1 ? `Open ${img.label}` : 'Open Image', icon: 'image' as const, separate: i === 0 && hasText, onSelect: () => o.openImage?.(img) })),

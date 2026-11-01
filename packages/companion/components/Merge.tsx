@@ -114,7 +114,7 @@ export function MergeSheet({ topic, visible, onClose }: { readonly topic: Topic;
         )}
       </ScrollView>
       <View style={{ paddingHorizontal: 20, paddingTop: 6, gap: 10 }}>
-        {claudeFix ? <Button label="Ask Claude to resolve" Icon={Sparkles} onPress={() => void resolve()} /> : null}
+        {claudeFix ? <Button label="Ask your agent to resolve" Icon={Sparkles} onPress={() => void resolve()} /> : null}
         <Button label={busy ? 'Merging…' : (check?.confirm ?? 'Merge')} Icon={GitMerge} quiet={claudeFix} disabled={!check?.canMerge || busy} onPress={() => void merge()} />
       </View>
     </Sheet>
@@ -141,8 +141,8 @@ function Files({ files }: { readonly files: readonly string[] }) {
 const BAND: Record<string, { tone: Tone; Icon: typeof Check; title: (m: MergeView) => string }> = {
   merging: { tone: 'lavender', Icon: GitMerge, title: () => 'Merging…' },
   conflicts: { tone: 'rose', Icon: CircleAlert, title: (m) => `${m.conflicts?.length ?? 'Some'} ${m.conflicts?.length === 1 ? 'file conflicts' : 'files conflict'}` },
-  resolving: { tone: 'lavender', Icon: Sparkles, title: () => 'Claude is resolving the conflicts' },
-  resolved: { tone: 'sky', Icon: Check, title: () => 'Claude is done: check it and merge' },
+  resolving: { tone: 'lavender', Icon: Sparkles, title: () => 'Your agent is resolving the conflicts' },
+  resolved: { tone: 'sky', Icon: Check, title: () => 'Your agent is done: check it and merge' },
   merged: { tone: 'mint', Icon: Check, title: () => 'Merged' },
   blocked: { tone: 'butter', Icon: TriangleAlert, title: () => 'Not merged yet' },
 };
@@ -175,7 +175,7 @@ export function MergeBand({ topic, merge, onCheck }: { readonly topic: Topic; re
           </T>
         ) : null}
         {merge.conflicts?.length && merge.phase !== 'merged' ? <Files files={merge.conflicts} /> : null}
-        {merge.phase === 'conflicts' ? <Button label="Ask Claude to resolve" Icon={Sparkles} onPress={resolve} /> : null}
+        {merge.phase === 'conflicts' ? <Button label="Ask your agent to resolve" Icon={Sparkles} onPress={resolve} /> : null}
         {merge.phase === 'resolved' || merge.phase === 'blocked' ? (
           <Press onPress={onCheck} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', height: 34, paddingHorizontal: 14, borderRadius: 17, backgroundColor: color.card }}>
             <RefreshCw color={color.text} size={14} />
@@ -257,7 +257,7 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
       : here === 'resolve'
         ? { label: 'Resolve', Icon: Sparkles, tone: 'peach', onPress: resolve }
         : undefined;
-  const line = next && !here && !steps.length ? `Next, on your Mac: ${bare(next.label)}${next.claude ? ' (Claude does it)' : ''}` : branch.detail;
+  const line = next && !here && !steps.length ? `Next, on your Mac: ${bare(next.label)}${next.claude ? ' (your agent does it)' : ''}` : branch.detail;
   // The row itself opens every step (the next one too), under the branch's state.
   const all = [...(main ? [main] : []), ...others];
   return (
@@ -307,13 +307,13 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
             </T>
           ) : undefined
         }
-        options={all.map((s) => ({ Icon: iconOf(s), label: bare(s.label), sub: s.claude ? `Claude · ${s.hint}` : s.hint, tone: toneOf(s), onPress: () => tap(s) }))}
+        options={all.map((s) => ({ Icon: iconOf(s), label: bare(s.label), sub: s.claude ? `Your agent · ${s.hint}` : s.hint, tone: toneOf(s), onPress: () => tap(s) }))}
       />
       <Options
         window
         visible={Boolean(asking)}
         onClose={() => setAsking(undefined)}
-        title={asking?.danger ? 'This can’t be undone' : 'Claude does this in the conversation'}
+        title={asking?.danger ? 'This can’t be undone' : 'Your agent does this in the conversation'}
         options={asking ? [{ Icon: iconOf(asking), label: bare(asking.label), sub: asking.hint, tone: toneOf(asking), onPress: () => run(asking) }] : []}
       />
     </Animated.View>

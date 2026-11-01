@@ -13,12 +13,14 @@ export function RequestsNav({ whenAny }: { whenAny?: boolean } = {}) {
   const selected = useApp((st) => st.view.kind === 'requests');
   const waiting = useApp((st) => waitingForYou(st.gateway.tasks));
   const live = useApp((st) => st.gateway.tasks.filter((t) => t.state === 'sent' || t.state === 'queued' || t.state === 'working' || t.state === 'awaiting_approval').length);
-  if (!enabled || (whenAny && !waiting && !live && !selected)) return null;
+  // Calm: no row until there's a request at all; then it stays, so what you sent (and your rules) is a click away.
+  const any = useApp((st) => st.gateway.tasks.length > 0);
+  if (!enabled || (whenAny && !waiting && !live && !any && !selected)) return null;
   return (
     <Row
       icon={<Icon name="hand" size={14} />}
       label="Requests"
-      detail={waiting ? `${waiting} waiting for you` : live ? `${live} in progress` : 'Tasks between Claudes'}
+      detail={waiting ? `${waiting} waiting for you` : live ? `${live} in progress` : 'Tasks between agents'}
       selected={selected}
       onClick={() => actions.run({ type: 'view', view: { kind: 'requests' } })}
       trailing={waiting ? <Badge count={waiting} urgent /> : null}

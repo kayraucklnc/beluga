@@ -63,10 +63,10 @@ describe('the people in a chat and their Claudes', () => {
   });
 
   it('says it for the panel, with trust, the version or what they need', () => {
-    expect(claudeLine({ me: true, claude: 'working', doing: "reading Ata's notes" })).toBe("Claude: reading Ata's notes");
-    expect(claudeLine({ me: false, claude: 'idle' })).toBe('Claude idle');
+    expect(claudeLine({ me: true, claude: 'working', doing: "reading Ata's notes" })).toBe("Agent: reading Ata's notes");
+    expect(claudeLine({ me: false, claude: 'idle' })).toBe('Agent idle');
     expect(claudeLine({ me: false, claude: 'offline' })).toBe('Offline · messages wait');
-    expect(claudeLine({ me: false, claude: 'working', doing: 'answering' })).toBe('Claude answering');
+    expect(claudeLine({ me: false, claude: 'working', doing: 'answering' })).toBe('Agent answering');
     expect(versionChip({ version: '1.3.0' })).toEqual({ text: '1.3.0', behind: false });
     expect(versionChip({ update: 'them' }, '1.3.2+mac.1.3.2')).toEqual({ text: 'needs 1.3', behind: true });
     expect(versionChip({ update: 'you' })).toEqual({ text: 'update yours', behind: true });
@@ -95,9 +95,9 @@ describe('what waits on whom', () => {
       ],
     });
     expect(waiting.map(waitingLabel)).toEqual([
-      'Waiting on you: Ata’s Claude wants your private SSH key id_ed25519',
-      'Waiting on you: Your Claude wants to ask Ata’s Claude',
-      'Waiting on you: Your Claude: Run npm test',
+      'Waiting on you: Ata’s agent wants your private SSH key id_ed25519',
+      'Waiting on you: Your agent wants to ask Ata’s agent',
+      'Waiting on you: Your agent: Run npm test',
       'Waiting on Ata: run tests in ata-api',
     ]);
     expect(waiting.map((w) => w.kind)).toEqual(['secret', 'confirm', 'approval', 'request']);
@@ -113,7 +113,7 @@ describe('what waits on whom', () => {
         task({ id: 'q', question: { qid: 'q1', askedAt: 0, questions: [{ question: 'Which branch?', header: '', options: [], multiSelect: false }] } }),
       ],
     });
-    expect(waiting.map(waitingLabel)).toEqual(['Waiting on you: Ata wants to run npm test', 'Waiting on you: Ata’s Claude asks: Which branch?']);
+    expect(waiting.map(waitingLabel)).toEqual(['Waiting on you: Ata wants to run npm test', 'Waiting on you: Ata’s agent asks: Which branch?']);
   });
 
   it('is empty when nothing waits (the band hides)', () => {

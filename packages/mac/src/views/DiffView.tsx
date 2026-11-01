@@ -5,6 +5,7 @@ import { Icon } from '../components/Icon.js';
 import { Button, Empty, Segmented, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
+import { useMyAgentName } from '../lib/agent-words.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
@@ -61,6 +62,7 @@ export type Commit = { readonly hash: string; readonly subject: string };
 
 /** A commit's menu (click or right-click): copy it, or ask Claude about it. */
 export function useCommitItems(): (c: Commit) => ActionItem[] {
+  const agent = useMyAgentName();
   const { client, ui } = useBeluga();
   const actions = useActions();
   const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
@@ -74,7 +76,7 @@ export function useCommitItems(): (c: Commit) => ActionItem[] {
     return [
       { label: 'Copy Hash', icon: 'copy', onSelect: () => void copyText(c.hash).then(() => say(`Copied ${c.hash}`)) },
       { label: 'Copy Message', onSelect: () => void copyText(c.subject).then(() => say('Copied the commit message')) },
-      { label: 'Ask Claude About This Commit', icon: 'claude', separate: true, onSelect: ask },
+      { label: `Ask ${agent} About This Commit`, icon: 'claude', separate: true, onSelect: ask },
     ];
   };
 }
@@ -164,6 +166,7 @@ export function UnifiedDiff({ lines, compact }: { lines: readonly Line[]; compac
 
 /** What changed in a workspace (or one shared with you): the files, then the selected file's diff. */
 export function DiffView() {
+  const agent = useMyAgentName();
   const actions = useActions();
   const review = useApp((st) => st.review);
   const view = useApp((st) => st.view);
@@ -238,7 +241,7 @@ export function DiffView() {
         {mine ? (
           <div className={s.filesFoot}>
             <Button icon="claude" onClick={() => actions.run({ type: 'ws', id: view.id, action: 'review_claude' })}>
-              Ask Claude to review
+              Ask {agent} to review
             </Button>
           </div>
         ) : null}

@@ -161,7 +161,7 @@ export default function Settings() {
                 Icon={Cable}
                 tone="lavender"
                 label="Stay connected"
-                sub={stay ? 'Tells you when Claude finishes or needs you, screen off too' : 'Notifications with the app closed. Uses a little battery'}
+                sub={stay ? 'Tells you when your agent finishes or needs you, screen off too' : 'Notifications with the app closed. Uses a little battery'}
                 right={toggle(stay, () => {})}
                 onPress={toggleStay}
                 chevron={false}
@@ -182,7 +182,7 @@ export default function Settings() {
                 Icon={MonitorSmartphone}
                 tone="sky"
                 label="Let your Mac use this phone"
-                sub={control ? 'Your Mac’s Claude can look at this phone and tap, type and open apps when you ask' : 'Ask Claude on your Mac to do things here: screenshots, taps, open apps, install a build'}
+                sub={control ? 'Your agent on your Mac can look at this phone and tap, type and open apps when you ask' : 'Ask your agent on your Mac to do things here: screenshots, taps, open apps, install a build'}
                 right={toggle(control, () => {})}
                 onPress={toggleControl}
                 chevron={false}
@@ -295,7 +295,7 @@ export default function Settings() {
               </T>
               <Card>
                 <Row first Icon={Hand} tone="peach" label="Needs you" right={toggle(p.needsYou, () => {})} onPress={() => save({ ...p, needsYou: !p.needsYou })} chevron={false} />
-                <Row Icon={CircleCheck} tone="mint" label="Done" sub={stay ? 'When Claude finishes' : 'Things you asked from the phone'} right={toggle(p.done, () => {})} onPress={() => save({ ...p, done: !p.done })} chevron={false} />
+                <Row Icon={CircleCheck} tone="mint" label="Done" sub={stay ? 'When your agent finishes' : 'Things you asked from the phone'} right={toggle(p.done, () => {})} onPress={() => save({ ...p, done: !p.done })} chevron={false} />
                 <Row Icon={AtSign} tone="sky" label="Mentions" right={toggle(p.mentions, () => {})} onPress={() => save({ ...p, mentions: !p.mentions })} chevron={false} />
               </Card>
             </View>

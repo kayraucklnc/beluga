@@ -8,8 +8,8 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 const CLAUDE_HOME = mkdtempSync(path.join(os.tmpdir(), 'klaud-claude-home-'));
 process.env.CLAUDE_CONFIG_DIR = CLAUDE_HOME;
 
-const { encodeProjectDir, findConversation, listConversations, pathVariants, samePath, sessionTitle } = await import('../src/agent/claude-sessions.js');
-const { findCreators, worktreeAddTargets } = await import('../src/agent/worktree-creators.js');
+const { encodeProjectDir, findConversation, listConversations, pathVariants, samePath, sessionTitle } = await import('../src/agent/runtime/claude/claude-sessions.js');
+const { findCreators, worktreeAddTargets } = await import('../src/agent/runtime/claude/worktree-creators.js');
 const { describeOrigin, sourceFromPath, worktreeOrigin } = await import('../src/workspaces/origin.js');
 const { deletesSettled, removeWorktreeKeepingBranch, staleReason, sweepSetAside, worktreeFacts } = await import('../src/workspaces/others.js');
 const { parseConductorRows, inConductorRoot } = await import('../src/workspaces/conductor.js');

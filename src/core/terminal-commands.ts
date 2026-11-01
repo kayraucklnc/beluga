@@ -29,7 +29,7 @@ export function runEnvCommand(session: Session, args: readonly string[], channel
   try {
     session.env.setOne(forProject ? project?.id : undefined, key, value === '' ? undefined : value);
     const where = forProject ? ` for ${project?.name}` : '';
-    session.toast(value === '' ? `${key} removed${where}` : `${key} set${where}. New shells and Claude runs get it`, 'success');
+    session.toast(value === '' ? `${key} removed${where}` : `${key} set${where}. New shells and agent runs get it`, 'success');
   } catch (err) {
     session.toast(err instanceof Error ? err.message : String(err), 'error');
   }

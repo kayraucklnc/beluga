@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ownerMcpServers } from '../src/agent/owner-mcp.js';
+import { ownerMcpServers } from '../src/agent/runtime/claude/owner-mcp.js';
 import { decideTool } from '../src/agent/policy.js';
 
 const write = (file: string, data: unknown): void => {

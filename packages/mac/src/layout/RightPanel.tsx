@@ -6,7 +6,7 @@ import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../components/ui.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
-import { currentTab, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, setPhoneTab, showPanelTab, tabShowing, tabsOf, usePanelRuntime, useWorkspaceTabBridge } from '../lib/panel.js';
+import { currentTab, filesWsOf, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, setPhoneTab, showPanelTab, tabShowing, tabsOf, usePanelRuntime, useWorkspaceTabBridge } from '../lib/panel.js';
 import { PANEL_DEFAULT, PANEL_LABELS, type PaneId, type PanelTab, SPLIT_MAX, SPLIT_MIN, PANES_DEFAULT, clampPanelWidth, clampShare, paneKey, panelDigit, panelFits, slotOf, viewsOf } from '../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { useMaking } from '../lib/making.js';
@@ -243,6 +243,8 @@ function Pane({ pane, lead, style, badges, settled }: { pane: PaneId; lead: bool
   const tab = currentTab(state, prefs, pane);
   const open = pane === 'top' || prefs.bottomOpen || lead;
   const wsId = view.kind === 'workspace' ? view.id : undefined;
+  // On a project's page, Files is its main folder.
+  const mainId = useApp((st) => (view.kind === 'project' ? filesWsOf(st) : undefined));
   const making = useMaking();
   if (!tabs.length || !tab) return null;
   // Dropping on the pane's content puts the tab at the end of its strip.
@@ -282,7 +284,7 @@ function Pane({ pane, lead, style, badges, settled }: { pane: PaneId; lead: bool
               <div className={s.loading} />
             ) : (
               <Suspense fallback={<div className={s.loading} />}>
-                <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id } : {})} {...(view.kind === 'shared' ? { sharedWs: { id: view.id, owner: view.owner } } : {})} />
+                <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id, mainId } : {})} {...(view.kind === 'shared' ? { sharedWs: { id: view.id, owner: view.owner } } : {})} />
               </Suspense>
             )}
           </div>
@@ -293,12 +295,12 @@ function Pane({ pane, lead, style, badges, settled }: { pane: PaneId; lead: bool
 }
 
 /** The tab's content. Memoized: the panel re-renders as the conversation streams; its tabs only when their own data changes. */
-const Body = memo(function Body({ tab, wsId, projectId, sharedWs }: { tab: PanelTab; wsId: string | undefined; projectId?: string; sharedWs?: { id: string; owner: string } }) {
+const Body = memo(function Body({ tab, wsId, projectId, mainId, sharedWs }: { tab: PanelTab; wsId: string | undefined; projectId?: string; mainId?: string | undefined; sharedWs?: { id: string; owner: string } }) {
   switch (tab) {
     case 'changes':
       return wsId ? <ChangesTab key={wsId} wsId={wsId} /> : null;
     case 'files':
-      return wsId ? <FilesTab key={wsId} wsId={wsId} /> : null;
+      return wsId ? <FilesTab key={wsId} wsId={wsId} /> : mainId ? <FilesTab key={mainId} wsId={mainId} project /> : null;
     case 'terminal':
       return <TerminalPane where="panel" />;
     case 'info':

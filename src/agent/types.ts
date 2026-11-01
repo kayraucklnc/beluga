@@ -1,7 +1,8 @@
 import type { ChatAnswerRequest } from '../core/chat/claude-prompt.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from './setup-fixer.js';
 import type { DraftContext, TaskDraft } from './task-drafter.js';
-import type { ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
+import type { AgentRef, ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
+import type { UsageUpdate } from './usage.js';
 import type { StepRecord } from '../shared/steps.js';
 
 /** How far a request may reach on the owner's computer. */
@@ -9,6 +10,8 @@ export type AccessScope = 'folder' | 'full';
 
 export interface AgentRunInput {
   readonly prompt: string;
+  /** Instructions for the agent's own terminal (BLG-534), not a turn: visuals as tokens, no fences (agent/terminal-prompt.ts). */
+  readonly terminal?: boolean;
   /** The prompt's id in Claude's transcript (a UUID: the request's own), so editing that message can cut the session there. */
   readonly promptId?: string;
   readonly requesterName: string;
@@ -16,6 +19,11 @@ export interface AgentRunInput {
   readonly context: readonly string[];
   /** 'folder': only the shared folders. 'full': the whole computer (secrets still blocked). */
   readonly scope: AccessScope;
+  /**
+   * The runtime can't gate each tool call (agent/runtime/types.ts, safety rule): run sandboxed, so
+   * nothing outside the run's folders, secrets included, is reachable. Never set for Claude.
+   */
+  readonly sandbox?: boolean;
   /** The request's first answer, as soon as it's there (the run may stay open for background agents). */
   readonly onAnswered?: (text: string) => void;
   /** Asked by a guest invited into one project: the room tools (other people, their files, the room chat) are off. */
@@ -53,6 +61,11 @@ export interface AgentRunInput {
   readonly vetTool?: (toolName: string, input: Record<string, unknown>) => string | undefined;
   /** Ask the owner whether a non-preapproved tool may run. */
   readonly canUseTool: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
+  /**
+   * Your own run, with "My agent asks before commands" on (Settings' selfApproval 'ask'): a runtime
+   * that runs commands without asking Beluga first (Codex) asks for each one instead.
+   */
+  readonly askBeforeCommands?: boolean;
   /**
    * Your own Claude wants a .env file (policy.ts 'secret'): ask you, even when nothing else would.
    * Without it (a friend's request, a task from outside) .env files are refused like every secret.
@@ -107,6 +120,8 @@ export interface AgentRunInput {
   readonly sentinelBrief?: string;
   /** Your own runs: dashboards and the numbers sentinels keep (server `beluga_dashboard`; sentinel_measure inside a run). */
   readonly dashboardTools?: DashboardTools;
+  /** A turn of a chaired dialogue (core/dialogues): its brief and end_dialogue tool. */
+  readonly dialogue?: import('./dialogue-tools.js').DialogueTurnTools;
 }
 
 /** What Claude writes down about a piece of work: the task in its own words, never the request pasted in. */
@@ -390,13 +405,17 @@ export interface AgentPlace {
   readonly cwd: string;
   readonly additionalDirectories: readonly string[];
   readonly autoEdit: boolean;
-  /** Claude conversation to continue. */
+  /** The agent that runs here (unset: your default). Each run from this place goes to its runtime. */
+  readonly agent?: AgentRef;
+  /** The conversation to continue: always one `agent`'s runtime made (see session-carry.ts resumeFor). */
   readonly resume?: string;
   /** Branch `resume` into a new conversation (used by forks). */
   readonly forkSession?: boolean;
   readonly onSession: (sessionId: string) => void;
   /** The model picked for this conversation. */
   readonly model?: string;
+  /** The thinking effort picked for this conversation (unset: Settings'). */
+  readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** A project's main folder: questions only, nothing may change (see policy.ts). */
   readonly askOnly?: { readonly project: string };
   /** With askOnly, for one run: Claude brings the default branch up to date (git syncing only; see sync-main.ts). */
@@ -418,8 +437,35 @@ export interface SubAgentEvent {
 }
 
 /** Something that can run an agent turn and return its final answer. */
+/** Where the terminal's `show` keeps each visual (core/agent-term.ts): its number, for the token. */
+export interface TerminalSink {
+  add(block: string): number;
+}
+
+/**
+ * The agent's own terminal app on a conversation (BLG-534): Claude Code's (a local model's too,
+ * which runs in it; Codex's conversations stay in the chat). The program to run in a pty, and the
+ * conversation it goes on with. Beluga's tools are served for it until close().
+ */
+export interface TerminalLaunch {
+  readonly file: string;
+  readonly args: readonly string[];
+  /** Over the terminal's own (your variables, the worktree's tag, a local model's endpoint). */
+  readonly env: Readonly<Record<string, string>>;
+  /** Where its transcripts are kept, when not the agent's usual folder (the demo's stand-in). */
+  readonly transcriptHome?: string;
+  /** The conversation it writes to (Claude Code's session: resumed, or a new id it was given up front). */
+  readonly session: string;
+  /** It starts a conversation (not one the workspace already had). */
+  readonly fresh: boolean;
+  /** Stop serving its tools. */
+  close(): void;
+}
+
 export interface AgentBackend {
   run(input: AgentRunInput): Promise<string>;
+  /** The agent's own terminal app on `input.place`'s conversation, with Beluga's tools and rules (BLG-534). */
+  terminal?(input: AgentRunInput, sink: TerminalSink): Promise<TerminalLaunch>;
   /** Fetch current plan usage without running a turn, when supported. */
   refreshUsage?(): Promise<Usage | undefined>;
   /** A short worktree name for a task (a small model names it). */
@@ -444,12 +490,17 @@ export interface AgentBackend {
   reviewPr?(input: import('./pr-reviewer.js').PrReviewInput): Promise<import('./pr-reviewer.js').PrReview | undefined>;
   /** Models this Claude Code offers, for the model picker. */
   listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
-  /** Your MCP servers for these project folders, with how each is now (agent/mcp-connect.ts). */
-  mcpServers?(projects: readonly string[]): Promise<readonly import('../shared/mcp.js').McpServerRow[]>;
+  /**
+   * Your MCP servers for these project folders, with how each is now (Claude: claude/mcp-connect.ts,
+   * Codex: codex/mcp.ts). `runtime`: whose (a routed backend asks that runtime's; unset: the default's).
+   */
+  mcpServers?(projects: readonly string[], runtime?: string): Promise<readonly import('../shared/mcp.js').McpServerRow[]>;
   /** Start signing in to one of them: the page to open in your browser. */
-  mcpSignIn?(projects: readonly string[], name: string): Promise<import('../shared/mcp.js').McpSignIn>;
+  mcpSignIn?(projects: readonly string[], name: string, runtime?: string): Promise<import('../shared/mcp.js').McpSignIn>;
   /** Waits for that sign-in: true once connected, false when it gave up, undefined when none is waiting. */
-  mcpSignedIn?(name: string): Promise<boolean | undefined>;
+  mcpSignedIn?(name: string, runtime?: string): Promise<boolean | undefined>;
+  /** Turn one on or off where its agent keeps it (Codex: config.toml). Only rows with canTurnOff. */
+  mcpSetEnabled?(projects: readonly string[], name: string, enabled: boolean, runtime?: string): Promise<import('../shared/mcp.js').McpTurned>;
 }
 
 /** One person as the agent sees them in list_peers. */
@@ -480,8 +531,8 @@ export interface RoomBridge {
   listPeerFiles(peerName: string, share: string, path: string): Promise<readonly FsEntry[]>;
   readPeerFile(peerName: string, share: string, path: string): Promise<string>;
   writeReport(title: string, markdown: string): Promise<string>;
-  /** Plan usage observed while running (rate-limit events). */
-  reportUsage(usage: Partial<Usage>): void;
+  /** Usage observed while running (rate-limit events, tokens), for that provider (Claude's unless named). */
+  reportUsage(usage: UsageUpdate, agent?: AgentRef): void;
   /** Get a file from anywhere on a peer's computer (they approve); returns where it was saved here. */
   getPeerFile(peerName: string, path: string, saveTo?: string, why?: string): Promise<string>;
   /** Send a file from this computer to a peer; it's saved on their side. */

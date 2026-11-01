@@ -20,6 +20,7 @@ import {
   type SentinelState,
   type Recipe,
   type Step,
+  type ClaudeStep,
   type StepDraft,
   type StepKind,
   type TriggerKind,
@@ -38,6 +39,7 @@ import {
   stepRefusal,
   triggerAvailable,
 } from '../../../../src/core/sentinel/model.js';
+import { agentForChoice } from '../../../../src/ui/agent-choice.js';
 import type { IconName } from '../components/Icon.js';
 import { ago } from '../tasks/tasks-model.js';
 import { ASSISTANT_TITLE } from '../../../../src/shared/assistant.js';
@@ -273,7 +275,7 @@ export function byWords(run: Pick<RunSummary, 'by' | 'trigger'>, state: Pick<Sen
     case 'phone':
       return 'your phone';
     case 'claude':
-      return 'your Claude';
+      return 'your agent';
     case 'event':
       return run.trigger.summary || 'an event';
     default: {
@@ -363,7 +365,7 @@ const TRIGGER_HINT: Readonly<Record<TriggerKind, string>> = {
   schedule: 'Every day, week, month or few hours',
   manual: 'Run Now, here or from your phone',
   after: 'When another sentinel’s run ends',
-  beluga: 'A task is done, a pull request opens, Claude finishes…',
+  beluga: 'A task is done, a pull request opens, an agent finishes…',
   github: 'An issue, a pull request, a failed workflow or deployment',
   stripe: 'A failed payment, a subscription, a dispute, a refund',
   uptime: 'A site stops answering, and when it’s back',
@@ -409,7 +411,7 @@ export const BELUGA_CARDS: ReadonlyArray<EventCard<BelugaTrigger['what']>> = [
   { value: 'pr-opened', label: 'A pull request opens', line: 'From one of your worktrees', icon: 'pr' },
   { value: 'pr-merged', label: 'A pull request merges', line: 'One of your worktrees’ pull requests', icon: 'merge' },
   { value: 'milestone-passed', label: 'A milestone passes', line: 'In one of your plans', icon: 'flag' },
-  { value: 'claude-finished', label: 'Claude finishes', line: 'A worktree’s Claude ends its turn', icon: 'claude' },
+  { value: 'claude-finished', label: 'Agent finishes', line: 'A worktree’s agent ends its turn', icon: 'claude' },
   { value: 'friend-asks', label: 'A friend asks', line: 'A request from a friend comes in', icon: 'people' },
 ];
 
@@ -621,7 +623,7 @@ export function stepChoices(access: Access): StepChoice[] {
 export function newStep(kind: StepKind): StepDraft {
   switch (kind) {
     case 'claude':
-      return { kind: 'claude', name: 'Ask Claude', prompt: '', where: 'project' };
+      return { kind: 'claude', name: 'Ask your agent', prompt: '', where: 'project' };
     case 'script':
       return { kind: 'script', name: 'Run a script', command: '', cwd: 'project', timeoutSec: 120 };
     case 'notify':
@@ -635,7 +637,7 @@ export function newStep(kind: StepKind): StepDraft {
     case 'message':
       return { kind: 'message', name: 'Message a chat', to: '', text: '{{sentinel}}: {{previous}}' };
     case 'friend':
-      return { kind: 'friend', name: 'Ask a friend’s Claude', peerId: '', prompt: '' };
+      return { kind: 'friend', name: 'Ask a friend’s agent', peerId: '', prompt: '' };
     case 'trigger':
       return { kind: 'trigger', name: 'Run another sentinel', sentinelId: '' };
     case 'measure':
@@ -674,11 +676,11 @@ export function chatChoices(network: { readonly friends: ReadonlyArray<{ readonl
 
 /** The merge step in words: who decides. */
 export const mergeWords = (step: Pick<MergeStep, 'require'>): string =>
-  step.require.approval ? 'It merges once the checks pass, Claude’s review says ship, and you tap Merge (here or on your phone).' : 'It merges by itself once the checks pass and Claude’s review says ship. A hold still asks you.';
+  step.require.approval ? 'It merges once the checks pass, the agent’s review says ship, and you tap Merge (here or on your phone).' : 'It merges by itself once the checks pass and the agent’s review says ship. A hold still asks you.';
 
 /** The access sentence, as the picker shows it (Ship says when a merge goes by itself). */
 export function accessSentence(access: Access, steps: readonly Step[]): string {
-  if (access === 'ship' && steps.some((st) => st.kind === 'merge' && !st.require.approval)) return 'Claude can change code in a worktree, open pull requests, and merge by itself when the checks pass';
+  if (access === 'ship' && steps.some((st) => st.kind === 'merge' && !st.require.approval)) return 'Your agent can change code in a worktree, open pull requests, and merge by itself when the checks pass';
   return ACCESS_INFO[access].sentence;
 }
 
@@ -715,9 +717,9 @@ export function askLine(ask: SentinelAsk | undefined, live: { readonly running: 
   if (!ask) return undefined;
   if (ask.state === 'writing') {
     const last = live?.running && live.last && live.last !== ask.text ? live.last : undefined;
-    return { who: 'claude', text: last ? `Claude is writing… ${toolWords(last)}` : 'Claude is writing…' };
+    return { who: 'claude', text: last ? `Your agent is writing… ${toolWords(last)}` : 'Your agent is writing…' };
   }
-  if (ask.state === 'failed') return { who: 'failed', text: ask.answer ? `Claude stopped: ${ask.answer}` : 'Claude stopped' };
+  if (ask.state === 'failed') return { who: 'failed', text: ask.answer ? `Your agent stopped: ${ask.answer}` : 'Your agent stopped' };
   return { who: 'done', text: ask.answer || 'Done' };
 }
 
@@ -782,6 +784,34 @@ export const withModel = (steps: readonly Step[], model: string): Step[] =>
     return model ? { ...rest, model } : rest;
   });
 
+/**
+ * An agent step's agent as a pop-up value (BLG-497): '' for your default agent, else agentChoices'
+ * `runtime:model` (a model with no runtime, from an older step, is Claude's).
+ */
+export const stepAgentChoice = (step: Pick<ClaudeStep, 'runtime' | 'model'>): string => (!step.runtime && !step.model ? '' : `${step.runtime ?? 'claude'}:${step.model ?? ''}`);
+
+/** The runtime and model a pop-up value stands for, as a step's fields ('' : neither, your default agent). */
+export function agentFields(value: string): Pick<ClaudeStep, 'runtime' | 'model'> {
+  if (!value) return { runtime: undefined, model: undefined };
+  const ref = agentForChoice(value);
+  return { runtime: ref.runtime, model: ref.model };
+}
+
+/** The agent every agent step shares, as a pop-up value ('' : your default; undefined when they differ). */
+export function sharedAgent(steps: readonly Step[]): string | undefined {
+  const picks = new Set(steps.flatMap((s) => (s.kind === 'claude' ? [stepAgentChoice(s)] : [])));
+  return picks.size === 1 ? [...picks][0] : picks.size === 0 ? '' : undefined;
+}
+
+/** Every agent step on one agent and model ('' : your default). */
+export const withAgent = (steps: readonly Step[], value: string): Step[] =>
+  steps.map((s) => {
+    if (s.kind !== 'claude') return s;
+    const { runtime: _r, model: _m, ...rest } = s;
+    const { runtime, model } = agentFields(value);
+    return { ...rest, ...(runtime ? { runtime } : {}), ...(model ? { model } : {}) };
+  });
+
 /** Whether a run's chat (a Claude step's) is there to open. */
 export const hasChat = (run: Pick<RunSummary, 'channel' | 'steps'>): boolean => Boolean(run.channel ?? run.steps.some((s) => s.channel));
 
@@ -839,7 +869,7 @@ export function needsOf(state: SentinelState, scope?: string): Need[] {
     out.push({ kind: 'merge', key: `run:${run.id}`, sentinel: s, run, title: run.pr ? `${s.name} wants to merge #${run.pr.number}` : `${s.name} waits for you`, detail: headlineOf(run) });
   }
   for (const s of items) {
-    if (s.paused && s.pausedWhy === CLAUDE_CHANGED) out.push({ kind: 'changed', key: `s:${s.id}`, sentinel: s, title: `Claude changed what “${s.name}” can do`, detail: 'Look it over, then turn it on again' });
+    if (s.paused && s.pausedWhy === CLAUDE_CHANGED) out.push({ kind: 'changed', key: `s:${s.id}`, sentinel: s, title: `Your agent changed what “${s.name}” can do`, detail: 'Look it over, then turn it on again' });
     else if (s.paused && s.pausedWhy) out.push({ kind: 'failing', key: `s:${s.id}`, sentinel: s, title: `${s.name}: ${pausedWords(s) ?? 'paused'}`, detail: headlineOf(lastRunOf(state, s.id) ?? { headline: '', state: 'failed' }) });
     else if (!s.paused && troubleOf(state, s)) out.push({ kind: 'trouble', key: `s:${s.id}`, sentinel: s, title: `${s.name} can’t watch`, detail: troubleOf(state, s)! });
   }

@@ -94,6 +94,7 @@ export function launchGateway(host: GatewayHost): () => void {
     selfId: () => session.selfId,
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'me',
     agent: () => session.backend,
+    runs: (agent) => session.runsAgent(agent),
     approve: approvals(session),
     rulesFile: path.join(host.demo ? dir : belugaHome(), 'rules.json'),
     loadCaps: () => (host.demo ? caps : loadSettings().capabilities),
@@ -110,7 +111,7 @@ export function launchGateway(host: GatewayHost): () => void {
       const chat = /^(dm|group):/.test(channel) ? chatIn(session) : undefined;
       if (chat?.claude.acts()) return chat.claude.continueWith(channel, prompt);
       const name = /^\[(?:beluga|klaud)\] (.+?) \(task/.exec(prompt)?.[1] ?? 'A reply came';
-      store.dispatch({ type: 'system', text: `${name}. Claude continues with it.`, channel });
+      store.dispatch({ type: 'system', text: `${name}. Your agent continues with it.`, channel });
       session.runFor(session.selfId, channel, prompt);
     },
     projectRoot: (name) => projects().find((p) => p.name === name)?.root,
