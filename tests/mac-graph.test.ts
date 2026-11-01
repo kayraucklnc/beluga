@@ -5,6 +5,7 @@ import {
   INLINE_MAX_HEIGHT,
   bestLayout,
   connections,
+  backEdges,
   elkGraph,
   fitZoom,
   fittedHeight,
@@ -73,10 +74,28 @@ describe('graph layout request', () => {
     expect(elkGraph(small, new Map(), 'down', 2).layoutOptions).toMatchObject({ 'elk.direction': 'DOWN', 'elk.layered.wrapping.strategy': 'MULTI_EDGE', 'elk.aspectRatio': '2.00' });
   });
 
-  it('makes room for labels between layers only across (down, a label sits on its line)', () => {
-    expect(elkGraph(small, new Map(), 'right').edges?.[0]?.labels).toHaveLength(1);
-    expect(elkGraph(small, new Map(), 'down').edges?.[0]?.labels).toBeUndefined();
-    expect(elkGraph(small, new Map(), 'up').edges?.[0]?.labels).toBeUndefined();
+  it('makes room for labels whichever way the graph goes', () => {
+    for (const d of ['right', 'down', 'up'] as const) expect(elkGraph(small, new Map(), d).edges?.[0]?.labels).toHaveLength(1);
+  });
+
+  it('turns back the line that closes a loop, in the order lines were written', () => {
+    const loop = graphOf({
+      nodes: [{ id: 'ui', label: 'UI' }, { id: 'api', label: 'API' }, { id: 'db', label: 'DB' }, { id: 'retry', label: 'Retry' }],
+      edges: [
+        { id: 'call', from: 'ui', to: 'api' },
+        { id: 'save', from: 'api', to: 'db' },
+        { id: 'events', from: 'api', to: 'ui' },
+        { id: 'again', from: 'db', to: 'api' },
+        { id: 'self', from: 'retry', to: 'retry' },
+      ],
+    });
+    expect([...backEdges(loop)].sort()).toEqual(['again', 'events']);
+    const elk = elkGraph(loop, new Map());
+    expect(elk.edges?.find((e) => e.id === 'events')).toMatchObject({ sources: ['ui'], targets: ['api'] });
+    expect(elk.edges?.find((e) => e.id === 'call')).toMatchObject({ sources: ['ui'], targets: ['api'] });
+    // Nodes listed out of order don't turn anything back (only a loop does).
+    const listed = graphOf({ nodes: [{ id: 'b', label: 'B' }, { id: 'a', label: 'A' }], edges: [{ from: 'a', to: 'b' }] });
+    expect(backEdges(listed).size).toBe(0);
   });
 
   it('draws an empty group as a box, and uses the quicker placement for busy graphs', () => {
@@ -106,7 +125,7 @@ describe('ELK answer', () => {
       id: 'root',
       children: [{ id: 'a', x: 10, y: 20, width: 100, height: 40 }, { id: 'G', x: 200, y: 10, width: 300, height: 120, children: [{ id: 'b', x: 20, y: 40, width: 100, height: 40 }] }],
       edges: [
-        { id: 'ab', container: 'root', sections: [{ startPoint: { x: 110, y: 40 }, endPoint: { x: 220, y: 70 }, bendPoints: [{ x: 160, y: 40 }, { x: 160, y: 70 }] }], labels: [{ x: 0, y: 0, width: 10, height: 10 }] },
+        { id: 'ab', container: 'root', sections: [{ startPoint: { x: 110, y: 40 }, endPoint: { x: 220, y: 70 }, bendPoints: [{ x: 160, y: 40 }, { x: 160, y: 70 }] }], labels: [{ x: 180, y: 60, width: 20, height: 6 }] },
         { id: 'bb', container: 'G', sections: [{ startPoint: { x: 120, y: 60 }, endPoint: { x: 140, y: 60 } }] },
       ],
     };
@@ -115,6 +134,8 @@ describe('ELK answer', () => {
     expect(routes.get('ab')?.points).toHaveLength(4);
     expect(routes.get('ab')?.label).toEqual({ x: 190, y: 70 });
     expect(routes.get('bb')).toEqual({ points: [{ x: 320, y: 70 }, { x: 340, y: 70 }] });
+    // A line ELK was handed the other way round points where it goes again.
+    expect(routesOf(out, new Set(['bb'])).get('bb')?.points).toEqual([{ x: 340, y: 70 }, { x: 320, y: 70 }]);
   });
 
   it('rounds corners without overshooting short stretches', () => {
@@ -136,6 +157,8 @@ describe('ELK answer', () => {
     // Side by side with the first: it moves along its line.
     expect(out.get('b')?.label).toEqual({ x: 130, y: 70 });
     expect(out.get('c')?.label).toEqual({ x: 300, y: 50 });
+    // Where ELK put it, unless that covers a node.
+    expect(placeLabels(routes, labels, [{ x: 280, y: 40, width: 40, height: 20 }]).get('c')?.label).toEqual({ x: 300, y: 100 });
     // A node across the middle: the label moves off it.
     expect(placeLabels(routes, labels, [{ x: 0, y: 90, width: 60, height: 20 }]).get('a')?.label).toEqual({ x: 100, y: 70 });
     const nested = { id: 'root', children: [{ id: 'g', x: 10, y: 10, children: [{ id: 'n', x: 5, y: 5, width: 20, height: 10 }] }] };
@@ -201,7 +224,8 @@ describe('which layout reads best', () => {
     }));
     const pick = bestLayout(laid, { width: 700, height: INLINE_MAX_HEIGHT }, 'right');
     expect(pick).toMatchObject({ direction: 'down', wrapped: false });
-    expect(fitZoom(pick!.size, { width: 700, height: INLINE_MAX_HEIGHT })).toBeGreaterThan(0.6);
+    // (Every label has a row of its own: a little smaller, nothing covered.)
+    expect(fitZoom(pick!.size, { width: 700, height: INLINE_MAX_HEIGHT })).toBeGreaterThan(0.5);
   });
 });
 

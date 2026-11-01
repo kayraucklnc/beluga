@@ -139,8 +139,35 @@ export const SIMPLEX_MAX_EDGES = 60;
 export const GROUP_HEAD = 34;
 
 /**
+ * The lines that turn back, so the rest reads one way: each line in the order Claude wrote it
+ * joins the flow unless it would close a loop (an answer to a call, a retry going back). ELK is
+ * handed those the other way round, so it never has to guess which way a loop should read
+ * (routesOf turns them back again).
+ */
+export function backEdges(graph: Graph): Set<string> {
+  const next = new Map<string, string[]>();
+  const reaches = (from: string, to: string): boolean => {
+    const seen = new Set([from]);
+    const todo = [from];
+    for (let at = todo.pop(); at !== undefined; at = todo.pop()) {
+      if (at === to) return true;
+      for (const n of next.get(at) ?? []) if (!seen.has(n)) (seen.add(n), todo.push(n));
+    }
+    return false;
+  };
+  const back = new Set<string>();
+  for (const e of graph.edges) {
+    if (e.from === e.to) continue;
+    if (reaches(e.to, e.from)) back.add(e.id);
+    else next.set(e.from, [...(next.get(e.from) ?? []), e.to]);
+  }
+  return back;
+}
+
+/**
  * The layout request: ELK's layered algorithm with groups as compound nodes, keeping the order
- * Claude wrote things in (so a pipeline reads in the order it was described).
+ * Claude wrote things in (so a pipeline reads in the order it was described). Every label gets
+ * room of its own on its line, so none covers an arrow, a node or another label.
  */
 export function elkGraph(graph: Graph, sizes: ReadonlyMap<string, Size>, direction: GraphDirection = graph.direction, aspect?: number): ElkInput {
   const kids = new Map<string | undefined, GraphNode[]>();
@@ -152,41 +179,47 @@ export function elkGraph(graph: Graph, sizes: ReadonlyMap<string, Size>, directi
     if (n.type === 'group') {
       return {
         id: n.id,
-        layoutOptions: { 'elk.padding': `[top=${GROUP_HEAD + 8},left=18,bottom=18,right=18]` },
+        layoutOptions: { 'elk.padding': `[top=${GROUP_HEAD + 14},left=22,bottom=22,right=22]` },
         children: (inner ?? []).map(toElk),
       };
     }
     const size = sizes.get(n.id) ?? { width: 180, height: 56 };
     return { id: n.id, width: size.width, height: size.height };
   };
-  // Across, a label needs its width between two layers: ELK makes room for it. Down, a label is
-  // a short pill on a line, and the gap between layers is room enough (ELK would give each one a
-  // layer of its own, and the graph gets twice as tall).
   const vertical = direction === 'down' || direction === 'up';
+  // A labelled line takes a layer of its own for its label: the gaps on either side of it can be smaller.
+  const labelled = graph.edges.some((e) => e.label);
+  const between = vertical ? (labelled ? 30 : 64) : labelled ? 44 : 84;
+  const back = backEdges(graph);
   return {
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': ELK_DIRECTION[direction],
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      'elk.layered.spacing.nodeNodeBetweenLayers': vertical ? '48' : '64',
-      'elk.spacing.nodeNode': '28',
-      'elk.layered.spacing.edgeNodeBetweenLayers': vertical ? '16' : '22',
-      'elk.spacing.edgeLabel': '6',
+      'elk.layered.spacing.nodeNodeBetweenLayers': String(between),
+      'elk.spacing.nodeNode': vertical ? '40' : '32',
+      'elk.layered.spacing.edgeNodeBetweenLayers': vertical ? '18' : '22',
+      'elk.spacing.edgeLabel': '4',
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.edgeLabels.placement': 'CENTER',
-      'elk.spacing.edgeEdge': '14',
+      'elk.edgeLabels.inline': 'true',
+      'elk.spacing.edgeEdge': '16',
       'elk.layered.spacing.edgeEdgeBetweenLayers': '14',
       // Network simplex places nodes best but slows down sharply with many lines (seconds past ~60).
       'elk.layered.nodePlacement.strategy': graph.edges.length <= SIMPLEX_MAX_EDGES ? 'NETWORK_SIMPLEX' : 'BRANDES_KOEPF',
+      'elk.layered.nodePlacement.favorStraightEdges': 'true',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
       'elk.layered.crossingMinimization.forceNodeModelOrder': 'false',
-      'elk.padding': '[top=16,left=16,bottom=16,right=16]',
+      'elk.padding': '[top=20,left=20,bottom=20,right=20]',
       // A long chain wraps onto more rows (or columns) to suit the frame it's shown in.
       ...(aspect ? { 'elk.layered.wrapping.strategy': 'MULTI_EDGE', 'elk.aspectRatio': aspect.toFixed(2), 'elk.layered.wrapping.additionalEdgeSpacing': '16' } : {}),
     },
     children: (kids.get(undefined) ?? []).map(toElk),
-    edges: graph.edges.map((e) => ({ id: e.id, sources: [e.from], targets: [e.to], ...(e.label && !vertical ? { labels: [{ text: e.label, ...labelSize(e.label) }] } : {}) })),
+    edges: graph.edges.map((e) => {
+      const [from, to] = back.has(e.id) ? [e.to, e.from] : [e.from, e.to];
+      return { id: e.id, sources: [from], targets: [to], ...(e.label ? { labels: [{ text: e.label, ...labelSize(e.label) }] } : {}) };
+    }),
   };
 }
 
@@ -216,8 +249,11 @@ export interface Route {
   readonly label?: Point;
 }
 
-/** ELK's lines → routes in the graph's coordinates (ELK gives them relative to their group). */
-export function routesOf(out: ElkOutput): Map<string, Route> {
+/**
+ * ELK's lines → routes in the graph's coordinates (ELK gives them relative to their group), the
+ * lines it was handed the other way round (`back`, see backEdges) turned back to point where they go.
+ */
+export function routesOf(out: ElkOutput, back: ReadonlySet<string> = new Set()): Map<string, Route> {
   const origin = new Map<string, Point>([[out.id, { x: 0, y: 0 }]]);
   const walk = (n: ElkOutput, at: Point): void => {
     for (const c of n.children ?? []) {
@@ -233,9 +269,12 @@ export function routesOf(out: ElkOutput): Map<string, Route> {
     if (!section) continue;
     const o = origin.get(e.container ?? out.id) ?? { x: 0, y: 0 };
     const shift = (p: Point): Point => ({ x: p.x + o.x, y: p.y + o.y });
-    const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map(shift);
-    // ELK makes room for a label beside its line; it sits on the line, on its longest stretch.
-    routes.set(e.id, e.labels?.length ? { points, label: longestMiddle(points) } : { points });
+    const drawn = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map(shift);
+    const points = back.has(e.id) ? drawn.reverse() : drawn;
+    // ELK made room for the label beside its line: it sits on the line, at the nearest point to that room.
+    const box = e.labels?.[0];
+    const room = box?.x !== undefined && box.y !== undefined ? shift({ x: box.x + (box.width ?? 0) / 2, y: box.y + (box.height ?? 0) / 2 }) : undefined;
+    routes.set(e.id, box ? { points, label: room ? nearestOn(points, room) : longestMiddle(points) } : { points });
   }
   return routes;
 }
@@ -294,39 +333,48 @@ const overlaps = (a: Box, b: Box, gap: number): boolean => a.x < b.x + b.width +
 const ALONG = [0.5, 0.35, 0.65, 0.22, 0.78, 0.12, 0.88];
 
 /**
- * A place on its line for each label ELK didn't make room for (a graph laid out down): on its
- * longest stretch if it's free, else further along it or on another stretch, clear of the
- * nodes and of the labels placed before it.
+ * A place on its line for each label, clear of the nodes and of the labels placed before it:
+ * where ELK put it if that's free, else on its longest stretch, further along it, or on another
+ * stretch.
  */
 export function placeLabels(routes: ReadonlyMap<string, Route>, labels: ReadonlyMap<string, string>, nodes: readonly Box[]): Map<string, Route> {
   const placed: Box[] = [];
   const out = new Map(routes);
   for (const [id, route] of routes) {
     const text = labels.get(id);
-    if (!text || route.label || route.points.length < 2) continue;
+    if (!text || route.points.length < 2) continue;
     const size = labelSize(text);
     const boxAt = (p: Point): Box => ({ x: p.x - size.width / 2, y: p.y - size.height / 2, ...size });
+    const free = (p: Point): boolean => {
+      const box = boxAt(p);
+      return !placed.some((o) => overlaps(box, o, 4)) && !nodes.some((o) => overlaps(box, o, 2));
+    };
     const stretches = route.points
       .slice(1)
       .map((b, i) => ({ a: route.points[i]!, b, len: Math.hypot(b.x - route.points[i]!.x, b.y - route.points[i]!.y) }))
       .filter((s) => s.len > 0)
       .sort((x, y) => y.len - x.len);
-    let best: Point | undefined;
-    search: for (const s of stretches) {
-      for (const t of ALONG) {
-        const p = { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t };
-        const box = boxAt(p);
-        if (!placed.some((o) => overlaps(box, o, 4)) && !nodes.some((o) => overlaps(box, o, 2))) {
-          best = p;
-          break search;
-        }
-      }
-    }
-    const at = best ?? longestMiddle(route.points);
+    const along = stretches.flatMap((s) => ALONG.map((t) => ({ x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t })));
+    const at = [...(route.label ? [route.label] : []), ...along].find(free) ?? route.label ?? longestMiddle(route.points);
     placed.push(boxAt(at));
     out.set(id, { ...route, label: at });
   }
   return out;
+}
+
+/** The point on a line nearest to `p`. */
+export function nearestOn(points: readonly Point[], p: Point): Point {
+  let best = { d: Infinity, at: points[0] ?? p };
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len2)) : 0;
+    const at = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    const d = Math.hypot(p.x - at.x, p.y - at.y);
+    if (d < best.d) best = { d, at };
+  }
+  return best.at;
 }
 
 /** The middle of a line's longest straight stretch. */
@@ -480,8 +528,8 @@ export interface LayoutChoice {
   readonly size: Size;
 }
 
-/** A wrapped layout's lines loop back across it: it has to read much bigger to be worth that. */
-const WRAPPED_WORTH = 0.7;
+/** A wrapped layout's lines loop back across it (the most tangled a graph looks): only when it reads far bigger. */
+const WRAPPED_WORTH = 0.5;
 /** The way Claude drew it wins unless the other way reads clearly bigger. */
 const TURNED_WORTH = 0.9;
 
