@@ -76,7 +76,8 @@ jobs:
           # Signed updates unless the run said not to (a release always signs them).
           TAURI_SIGNING_PRIVATE_KEY: ${{ (github.event_name == 'release' || inputs.updates) && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ (github.event_name == 'release' || inputs.updates) && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
-          UNSIGNED: ${{ (github.event_name == 'release' || inputs.updates) && '' || '1' }}
+          # ('0', not '': an empty string is false in an expression, so && '' || '1' always gave '1'.)
+          UNSIGNED: ${{ (github.event_name == 'release' || inputs.updates) && '0' || '1' }}
           LINUX_BUNDLES: ${{ inputs.linux || 'deb,rpm,appimage' }}
           # linuxdeploy's strip is older than the binaries it strips (Node 24's): the AppImage skips it.
           NO_STRIP: 'true'
@@ -84,7 +85,7 @@ jobs:
         run: |
           args=(--verbose)
           [ "$RUNNER_OS" = Linux ] && args+=(--bundles "$LINUX_BUNDLES")
-          [ -n "$UNSIGNED" ] && args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+          [ "$UNSIGNED" = 1 ] && args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
           npx tauri build "${args[@]}"
       - name: Why the AppImage failed (ldd on every binary in it)
         if: failure() && runner.os == 'Linux'
