@@ -121,7 +121,7 @@ export function TasksView() {
         <div className={cx(t.barGroup, t.barFilters)}>
         <PickMenu<string>
           label="Board"
-          choices={boards.map((b) => ({ value: b.id, label: b.name, mark: <BoardMark repos={b.repos} names={repoName} size={16} />, ...(boards.some((x) => x.own) ? { section: b.own ? 'Boards' : 'Projects' } : {}), hint: boardHint(board, b.id, b.repos.length) }))}
+          choices={boards.map((b) => ({ value: b.id, label: b.name, mark: <BoardMark repos={b.repos} names={repoName} size={16} fit />, ...(boards.some((x) => x.own) ? { section: b.own ? 'Boards' : 'Projects' } : {}), hint: boardHint(board, b.id, b.repos.length) }))}
           chosen={[here.id]}
           onPick={(id) => openList(id)}
           actions={[

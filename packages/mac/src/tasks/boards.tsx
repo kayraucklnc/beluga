@@ -30,10 +30,27 @@ export function RepoStack({ repos, names, size = 16 }: { repos: readonly string[
   );
 }
 
-/** A board in the switcher: its repo's icon, or its repos' stacked when it covers several. */
-export function BoardMark({ repos, names, size = 16 }: { repos: readonly string[]; names: (id: string) => string | undefined; size?: number }) {
+/** Two repos' icons, one tucked behind the other, inside one icon's square (a menu's mark slot). */
+function RepoPair({ repos, names, size }: { repos: readonly string[]; names: (id: string) => string | undefined; size: number }) {
+  const inner = Math.round(size * 0.72);
+  return (
+    <span className={t.repoPair} style={{ width: size, height: size }}>
+      {repos.slice(0, 2).map((r, i) => (
+        <span key={r} className={cx(t.repoPairItem, i === 1 && t.repoPairFront)}>
+          <ProjectIcon id={r} name={names(r) ?? r} size={inner} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * A board: its repo's icon, or its repos' stacked when it covers several. `fit` keeps a board of
+ * several in one icon's square (two icons tucked together), so a menu's names stay lined up.
+ */
+export function BoardMark({ repos, names, size = 16, fit }: { repos: readonly string[]; names: (id: string) => string | undefined; size?: number; fit?: boolean }) {
   if (repos.length < 2) return repos[0] ? <ProjectIcon id={repos[0]} name={names(repos[0]) ?? repos[0]} size={size} /> : <Icon name="columns" size={size - 2} />;
-  return <RepoStack repos={repos} names={names} size={size - 2} />;
+  return fit ? <RepoPair repos={repos} names={names} size={size} /> : <RepoStack repos={repos} names={names} size={size - 2} />;
 }
 
 /** Whether a task's board covers several repos (then its cards say which one it runs in). */
