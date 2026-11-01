@@ -86,6 +86,15 @@ jobs:
           [ "$RUNNER_OS" = Linux ] && args+=(--bundles "$LINUX_BUNDLES")
           [ -n "$UNSIGNED" ] && args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
           npx tauri build "${args[@]}"
+      - name: Why the AppImage failed (ldd on every binary in it)
+        if: failure() && runner.os == 'Linux'
+        working-directory: packages/mac/src-tauri/target/release/bundle/appimage
+        run: |
+          ls
+          find . -type f -print0 | while IFS= read -r -d '' f; do
+            head -c 4 "$f" 2>/dev/null | grep -q $'\x7fELF' || continue
+            out=$(ldd "$f" 2>&1) || echo "LDD FAILS: $f :: $(file -b "$f") :: $out"
+          done
       - run: node scripts/release-desktop.mjs collect --tag "$TAG" --out release-out
       - uses: actions/upload-artifact@v4
         with:
