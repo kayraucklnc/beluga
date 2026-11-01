@@ -73,7 +73,8 @@ const prune = (dir) => {
     if (!e.isDirectory()) continue;
     const p = path.join(dir, e.name);
     if (e.name === 'prebuilds') {
-      for (const plat of readdirSync(p)) if (!plat.startsWith(`${platform}-${arch}`) && plat !== platform) rmSync(path.join(p, plat), { recursive: true, force: true });
+      // Musl builds (Alpine) aren't for this app, which runs on glibc: linuxdeploy can't even read them.
+      for (const plat of readdirSync(p)) if ((!plat.startsWith(`${platform}-${arch}`) && plat !== platform) || plat.includes('musl')) rmSync(path.join(p, plat), { recursive: true, force: true });
     } else prune(p);
   }
 };
