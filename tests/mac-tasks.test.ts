@@ -113,7 +113,7 @@ describe('the Tasks view', () => {
     expect(scoped(store.getState().board, { scope: 'all', project: 'land', who: '' }, 'p-me').map((i) => i.title)).toEqual(['Landing task']);
   });
 
-  it('offers each repo’s board and boards of several; one whose work moved to a board covering it steps aside', () => {
+  it('offers every repo’s board and boards of several; a repo’s board shows what runs in it from other boards', () => {
     const { store, b } = board();
     const projects = [{ id: 'api', name: 'api' }, { id: 'land', name: 'landing' }];
     store.dispatch({ type: 'projects', projects: [...store.getState().projects, { id: 'land', name: 'landing', root: '/tmp/l', base: 'main', workspaces: [] }] });
@@ -122,11 +122,14 @@ describe('the Tasks view', () => {
     const hero = b.create({ projectId: 'land', board: id, title: 'Hero' }, me);
     const s = store.getState().board;
     const choices = boardChoices(s, projects);
-    expect(choices.map((c) => [c.name, c.repos, c.own])).toEqual([['api', ['api'], false], ['Launch', ['api', 'land'], true]]);
-    // Showing it anyway (asked for): it's offered.
-    expect(boardChoices(s, projects, 'land').map((c) => c.id)).toContain('land');
-    // A repo asked for opens the board its work goes on; the last board stays while it covers your last repo.
-    expect(boardToShow(s, choices, 'land', '', '')).toBe(id);
+    // A repo's board stays offered even when all its work is on a board of several (BLG-559).
+    expect(choices.map((c) => [c.name, c.repos, c.own])).toEqual([['api', ['api'], false], ['landing', ['land'], false], ['Launch', ['api', 'land'], true]]);
+    // landing's board shows Hero, a visitor from Launch; Launch shows it as its own.
+    expect(scoped(s, { scope: 'all', project: 'land', who: '' }, 'p-me').map((i) => i.id)).toEqual([hero.id]);
+    expect(scopeCounts(s, 'land', '', 'p-me').all).toBe(1);
+    expect(scoped(s, { scope: 'all', project: 'api', who: '' }, 'p-me').map((i) => i.title)).toEqual(['Api task']);
+    // A repo asked for opens its own board; the last board stays while it covers your last repo.
+    expect(boardToShow(s, choices, 'land', '', '')).toBe('land');
     expect(boardToShow(s, choices, undefined, 'api', id)).toBe(id);
     expect(boardToShow(s, choices, undefined, 'api', '')).toBe('api');
     expect(boardRepos(s, id, projects)).toEqual(['api', 'land']);

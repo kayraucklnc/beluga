@@ -2428,6 +2428,24 @@
 .repoChipCompact {
   max-width: 110px;
 }
+/* A task a repo's board shows from another board: the board it lives on, a click away. */
+.onBoardChip {
+  padding: 1px 6px 1px 4px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.onBoardChip:hover {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+  color: var(--text-2);
+}
+/* Its card a shade back: it's here because it runs in this repo, not because it's on this board. */
+.cardVisiting {
+  background: color-mix(in srgb, var(--bg-sunken) 40%, var(--bg-raised));
+}
 
 /* New Board / a board's settings: the repos it covers, each a row to tick. */
 .repoList {

@@ -6,7 +6,7 @@ import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
 import { OFFER_DETAIL, offerWords, waitingOn, waitingWords, workingOn, workingWords } from '../core/team/model.js';
-import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, boardName, boardOf, byStatus, isArchived, isEpic, isOwnBoard, isStartable, issueById, progressOf as boardProgress, reposOf } from '../core/board/model.js';
+import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, boardName, boardOf, byStatus, isArchived, isEpic, isOwnBoard, isStartable, isVisiting, issueById, progressOf as boardProgress, reposOf, showsOn } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
 import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
@@ -903,7 +903,8 @@ function taskConv(state: DomainState, i: Issue): Topic | undefined {
   return open ? convTopic(`ws:${ws}`) : undefined;
 }
 
-function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
+/** `listedOn`: the board it's listed under, when it's one (a repo's own) that shows it from another board. */
+function taskSummary(state: DomainState, i: Issue, listedOn?: string): TaskSummary | undefined {
   const topic = taskTopic(i.id);
   if (!topic) return undefined;
   const t = tally(i.brief.acceptance);
@@ -914,6 +915,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
   const epicKey = i.parent ? issueById(state.board, i.parent)?.key : undefined;
   // On a board of several repos: which one it runs in.
   const repo = reposOf(state.board, boardOf(i)).length > 1 ? state.projects.find((p) => p.id === i.projectId)?.name : undefined;
+  const onBoard = listedOn && isVisiting(i, listedOn) ? boardName(state.board, boardOf(i), (id) => state.projects.find((p) => p.id === id)?.name) : undefined;
   return {
     id: clip(i.id, 200),
     topic,
@@ -929,7 +931,8 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
     ...(waiting ? { waiting: clip(waiting, 240) } : {}),
     ...(isEpic(state.board, i) ? { epic: boardProgress(state.board, i) } : {}),
     ...(epicKey ? { epicKey: clip(epicKey, 40) } : {}),
-    ...(repo ? { repo: clip(repo, 200) } : {}),
+    ...(repo && !onBoard ? { repo: clip(repo, 200) } : {}),
+    ...(onBoard ? { onBoard: clip(onBoard, 200) } : {}),
     ...(i.private ? { private: true as const } : {}),
     updatedAt: Math.round(i.updatedAt),
   };
@@ -943,10 +946,11 @@ const PER_GROUP = 100;
 export function tasksView(state: DomainState, ctx?: ViewContext): TasksView {
   const issues = boardIssues(state);
   // By board (a repo's own, then boards covering several): boards and repos are many to many (1.31).
+  // A repo's own board lists what runs in its repo from other boards too, saying where it lives (1.37).
   const repoName = (id: string): string | undefined => state.projects.find((p) => p.id === id)?.name;
   const boards = [...state.projects.map((p) => p.id), ...Object.keys(state.board.projects).filter(isOwnBoard)];
   const projects = boards.flatMap((id) => {
-    const mine = issues.filter((i) => boardOf(i) === id);
+    const mine = issues.filter((i) => showsOn(i, id));
     if (!mine.length) return [];
     const groups = byStatus(mine)
       .filter((g) => (LISTED as readonly string[]).includes(g.status) && g.issues.length)
@@ -955,14 +959,14 @@ export function tasksView(state: DomainState, ctx?: ViewContext): TasksView {
         // Done: the latest few, newest first; the rest in the board's order.
         const list = g.status === 'done' ? [...g.issues].sort((a, b) => (b.closedAt ?? b.updatedAt) - (a.closedAt ?? a.updatedAt)) : g.issues;
         const max = g.status === 'done' ? DONE_SHOWN : PER_GROUP;
-        const tasks = list.slice(0, max).flatMap((i) => taskSummary(state, i) ?? []);
+        const tasks = list.slice(0, max).flatMap((i) => taskSummary(state, i, id) ?? []);
         return { status: g.status, label: STATUS_INFO[g.status].label, tasks, ...(list.length > max ? { more: list.length - max } : {}) };
       });
     const icon = reposOf(state.board, id)[0] ?? id;
     return [{ id: clip(id, 200), name: clip(boardName(state.board, id, repoName), 200), ...iconOf(ctx, icon), groups }];
   });
   // The board with the latest change first.
-  const latest = (id: string): number => Math.max(0, ...issues.filter((i) => boardOf(i) === id).map((i) => i.updatedAt));
+  const latest = (id: string): number => Math.max(0, ...issues.filter((i) => showsOn(i, id)).map((i) => i.updatedAt));
   const sorted = projects.sort((a, b) => latest(b.id) - latest(a.id)).slice(0, 100);
   // Every other task by key, title and status (BLG-109): a key in Claude's words is a chip even when the list leaves it out.
   const listed = new Set(sorted.flatMap((p) => p.groups.flatMap((g) => g.tasks.map((t) => t.id))));

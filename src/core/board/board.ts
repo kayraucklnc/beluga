@@ -38,12 +38,12 @@ import {
   type Proof,
   SECTION_INFO,
   STATUS_INFO,
-  boardForRepo,
   boardOf,
   byRank,
   findIssue,
   isOwnBoard,
   reposOf,
+  showsOn,
   isArchived,
   isOpen,
   prefixFor,
@@ -73,7 +73,7 @@ export interface BoardDeps {
 export interface NewIssue {
   /** The repo it runs in. */
   readonly projectId: string;
-  /** The board it goes on (a board id); left out: its parent's, else the one the repo's work goes on (boardForRepo). */
+  /** The board it goes on (a board id); left out: its parent's, else its repo's own. */
   readonly board?: string;
   readonly title: string;
   readonly status?: IssueStatus;
@@ -310,7 +310,7 @@ export class Board {
     if (!title) throw new Error('A task needs a title');
     this.needRepo(input.projectId);
     const parent = input.parent ? this.need(input.parent) : undefined;
-    const boardId = input.board ?? (parent ? boardOf(parent) : boardForRepo(this.state(), input.projectId));
+    const boardId = input.board ?? (parent ? boardOf(parent) : input.projectId);
     if (parent && boardOf(parent) !== boardId) throw new Error('A sub-task is on its parent’s board');
     const project = this.covering(this.projectFor(boardId), boardId, input.projectId);
     const status = input.status ?? 'todo';
@@ -707,9 +707,9 @@ export class Board {
     return archived;
   }
 
-  /** Every Done task to the Archive (on one board, or all of them). → how many went. */
+  /** Every Done task to the Archive (the ones a board shows, `showsOn`, or all of them). → how many went. */
   archiveDone(by: Actor, boardId?: string): number {
-    const done = this.issues.filter((i) => i.status === 'done' && !isArchived(i) && (!boardId || boardOf(i) === boardId));
+    const done = this.issues.filter((i) => i.status === 'done' && !isArchived(i) && (!boardId || showsOn(i, boardId)));
     for (const issue of done) this.archive(issue.id, by);
     return done.length;
   }
@@ -721,9 +721,9 @@ export class Board {
     return this.change(issue, { archivedAt: undefined }, [this.entry(by, 'status', 'brought this back from the Archive')]);
   }
 
-  /** Delete every archived task for good (on one board, or all of them). → how many went. */
+  /** Delete every archived task for good (the ones a board shows, `showsOn`, or all of them). → how many went. */
   emptyArchive(boardId?: string): number {
-    const gone = this.issues.filter((i) => isArchived(i) && (!boardId || boardOf(i) === boardId));
+    const gone = this.issues.filter((i) => isArchived(i) && (!boardId || showsOn(i, boardId)));
     for (const issue of gone) this.remove(issue.id);
     return gone.length;
   }
@@ -923,12 +923,12 @@ export class Board {
    */
   adoptTeam(input: Omit<Issue, 'key' | 'number' | 'rank' | 'revisions' | 'worktrees' | 'proof' | 'updatedAt'>): Issue {
     if (this.issues.some((i) => i.id === input.id)) return this.need(input.id);
-    // On the board this repo's work goes on here (a teammate's boards are theirs).
+    // On this repo's own board here (a teammate's boards are theirs).
     const { board: _theirs, ...task } = input as typeof input & { board?: string };
-    const boardId = boardForRepo(this.state(), input.projectId);
+    const boardId = input.projectId;
     const project = this.projectFor(boardId);
     const number = project.next;
-    const issue: Issue = { ...task, ...(boardId !== input.projectId ? { board: boardId } : {}), key: `${project.prefix}-${number}`, number, rank: this.lastRank(input.status), revisions: [], worktrees: [], proof: [], updatedAt: this.now(), ...(isOpen(input.status) ? {} : { closedAt: input.closedAt ?? this.now() }) };
+    const issue: Issue = { ...task, key: `${project.prefix}-${number}`, number, rank: this.lastRank(input.status), revisions: [], worktrees: [], proof: [], updatedAt: this.now(), ...(isOpen(input.status) ? {} : { closedAt: input.closedAt ?? this.now() }) };
     this.projects = { ...this.projects, [boardId]: { ...project, next: number + 1 } };
     this.issues = [...this.issues, issue];
     this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });

@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
-import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, asksPrivate, boardForRepo, boardOf, issueById, reposOf } from '@beluga/core/board/model.js';
+import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, asksPrivate, boardOf, issueById, reposOf } from '@beluga/core/board/model.js';
 import { agentForChoice } from '@beluga/ui/agent-choice.js';
 import { YOUR_AGENT, useAgentEntries } from '../components/agent-options.js';
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
@@ -39,10 +39,10 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
   const { client } = useBeluga();
   const { api, act, open } = useTaskActions();
   const parentIssue = parent ? issueById(board, parent) : undefined;
-  const boards = useMemo(() => boardChoices(board, projects, prefs.board), [board, projects, prefs.board]);
+  const boards = useMemo(() => boardChoices(board, projects), [board, projects]);
   const known = (id: string | undefined): id is string => Boolean(id && boards.some((b) => b.id === id));
-  // The board you're on (a sub-task: its parent's), else the one your last project's work goes on.
-  const firstBoard = parentIssue ? boardOf(parentIssue) : known(boardId) ? boardId : projectId && known(boardForRepo(board, projectId)) ? boardForRepo(board, projectId) : known(prefs.board) ? prefs.board : prefs.project && known(boardForRepo(board, prefs.project)) ? boardForRepo(board, prefs.project) : (boards[0]?.id ?? '');
+  // The board you're on (a sub-task: its parent's), else the repo's own, else the one you last looked at.
+  const firstBoard = parentIssue ? boardOf(parentIssue) : [boardId, projectId, prefs.board, prefs.project].find(known) ?? boards[0]?.id ?? '';
   const [onBoard, setOnBoard] = useState(firstBoard);
   const repos = useMemo(() => {
     const covered = reposOf(board, onBoard).filter((r) => projects.some((p) => p.id === r));

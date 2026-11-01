@@ -1,5 +1,5 @@
 import type { Assignee, BoardState, Issue, IssueStatus } from '../../../../src/core/board/model.js';
-import { ISSUE_STATUSES, STATUS_INFO, boardForRepo, boardName, boardOf, childrenOf, filterIssues, isArchived, isOpen, isOwnBoard, openBlockers, reposOf } from '../../../../src/core/board/model.js';
+import { ISSUE_STATUSES, STATUS_INFO, boardName, boardOf, childrenOf, filterIssues, isOpen, isOwnBoard, openBlockers, reposOf, showsOn } from '../../../../src/core/board/model.js';
 import { type Tally, parseCriterion, tally } from '../../../../src/core/board/criteria.js';
 import type { Graph, GraphNode, GraphEdge } from '../../../../src/shared/graph-spec.js';
 
@@ -120,10 +120,11 @@ export const isFor = (issue: Issue, who: string): boolean => (!who ? true : who 
 
 /**
  * One board's tasks in a scope, for someone, matching words, in list order (`project` is the board;
- * `repos`: only those running in these, none or empty: all).
+ * `repos`: only those running in these, none or empty: all). A repo's own board also shows the tasks
+ * running in its repo from other boards (`showsOn`).
  */
 export function scoped(board: BoardState, prefs: Pick<TasksPrefs, 'scope' | 'project' | 'who'> & { readonly repos?: readonly string[] }, selfId: string, query = '', now = Date.now()): Issue[] {
-  return filterIssues(board, { scope: prefs.scope, selfId, now, boardId: prefs.project, ...(prefs.repos?.length ? { repos: prefs.repos } : {}), ...(query.trim() ? { query } : {}) }).filter((i) => isFor(i, prefs.who));
+  return filterIssues(board, { scope: prefs.scope, selfId, now, boardId: prefs.project, visiting: true, ...(prefs.repos?.length ? { repos: prefs.repos } : {}), ...(query.trim() ? { query } : {}) }).filter((i) => isFor(i, prefs.who));
 }
 
 /** How many unfinished tasks each scope has on a board (for someone, in some repos), and how many are archived: the tabs' counts. */
@@ -132,8 +133,8 @@ export function scopeCounts(board: BoardState, project: string, who: string, sel
   return { active: count('active'), backlog: count('backlog'), all: count('all'), archived: scoped(board, { scope: 'archived', project, who, repos }, selfId, '', now).length };
 }
 
-/** Done tasks on a board (not archived yet): what Archive Done takes. */
-export const doneCount = (board: BoardState, boardId: string | undefined): number => board.issues.filter((i) => i.status === 'done' && boardOf(i) === boardId && i.archivedAt === undefined).length;
+/** Done tasks a board shows (not archived yet): what Archive Done takes. */
+export const doneCount = (board: BoardState, boardId: string | undefined): number => board.issues.filter((i) => i.status === 'done' && boardId !== undefined && showsOn(i, boardId) && i.archivedAt === undefined).length;
 
 // ---- boards (many to many with repos)
 
@@ -147,45 +148,36 @@ export interface BoardChoice {
 }
 
 /**
- * The boards Tasks offers: every repo's own board, then boards of their own, by name. A repo's
- * board with nothing on it whose repo another board covers is left out (its work is on that one),
- * unless it's the one you're on.
+ * The boards Tasks offers: every repo's own board (it shows everything that runs in its repo), then
+ * boards of their own, by name.
  */
-export function boardChoices(board: BoardState, projects: ReadonlyArray<{ readonly id: string; readonly name: string }>, showing?: string): BoardChoice[] {
+export function boardChoices(board: BoardState, projects: ReadonlyArray<{ readonly id: string; readonly name: string }>): BoardChoice[] {
   const name = (id: string): string | undefined => projects.find((p) => p.id === id)?.name;
   const here = (repos: readonly string[]): string[] => repos.filter((r) => projects.some((p) => p.id === r));
-  const used = new Set(board.issues.filter((i) => !isArchived(i)).map(boardOf));
   const own = Object.keys(board.projects).filter(isOwnBoard);
-  const covered = new Set(own.flatMap((id) => reposOf(board, id)).concat(Object.keys(board.projects).filter((id) => !isOwnBoard(id)).flatMap((id) => reposOf(board, id).slice(1))));
-  const repoBoards = projects.filter((p) => p.id === showing || used.has(p.id) || !covered.has(p.id)).map((p) => ({ id: p.id, name: boardName(board, p.id, name), repos: here(reposOf(board, p.id)), own: false }));
+  const repoBoards = projects.map((p) => ({ id: p.id, name: boardName(board, p.id, name), repos: here(reposOf(board, p.id)), own: false }));
   const made = own.map((id) => ({ id, name: boardName(board, id, name), repos: here(reposOf(board, id)), own: true })).sort((a, b) => a.name.localeCompare(b.name));
   return [...repoBoards, ...made];
 }
 
 /**
- * The board Tasks shows: the one asked for (a repo asked for: the board its work goes on), else the
- * one you last looked at while it covers the repo you were last in, else that repo's, else the one
- * with the most unfinished tasks, else the first.
+ * The board Tasks shows: the one asked for, else the one you last looked at while it covers the repo
+ * you were last in, else that repo's, else the one with the most unfinished tasks, else the first.
  */
 export function boardToShow(board: BoardState, boards: readonly BoardChoice[], asked: string | undefined, lastRepo: string, lastBoard = ''): string | undefined {
   const known = (id: string | undefined): id is string => Boolean(id && boards.some((b) => b.id === id));
-  const forRepo = (id: string): string | undefined => {
-    const to = boardForRepo(board, id);
-    return known(to) ? to : known(id) ? id : undefined;
-  };
   if (known(asked)) return asked;
-  if (asked && !isOwnBoard(asked) && forRepo(asked)) return forRepo(asked);
   if (known(lastBoard) && (!lastRepo || boards.find((b) => b.id === lastBoard)!.repos.includes(lastRepo))) return lastBoard;
-  if (lastRepo && forRepo(lastRepo)) return forRepo(lastRepo);
+  if (known(lastRepo)) return lastRepo;
   if (known(lastBoard)) return lastBoard;
-  const open = (id: string): number => board.issues.filter((i) => boardOf(i) === id && isOpen(i.status)).length;
+  const open = (id: string): number => board.issues.filter((i) => showsOn(i, id) && isOpen(i.status)).length;
   return [...boards].sort((a, b) => open(b.id) - open(a.id))[0]?.id;
 }
 
 /** The repos a board shows tasks from: the ones it covers, and any its tasks still run in (a repo taken off it). */
 export function boardRepos(board: BoardState, boardId: string | undefined, projects: ReadonlyArray<{ readonly id: string }>): string[] {
   if (!boardId) return [];
-  const running = board.issues.filter((i) => boardOf(i) === boardId).map((i) => i.projectId);
+  const running = board.issues.filter((i) => showsOn(i, boardId)).map((i) => i.projectId);
   return [...new Set([...reposOf(board, boardId), ...running])].filter((r) => projects.some((p) => p.id === r));
 }
 
@@ -221,7 +213,7 @@ export function isSolo(board: BoardState, projectId: string | undefined, selfId:
 /** The people a board's tasks are for, for the filter: you first, then the rest by name. */
 export function assigneesIn(board: BoardState, boardId: string | undefined, selfId: string): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
   const seen = new Map<string, Assignee>();
-  for (const i of board.issues) if (boardOf(i) === boardId && i.assignee) seen.set(assigneeKey(i.assignee), i.assignee);
+  for (const i of board.issues) if (boardId !== undefined && showsOn(i, boardId) && i.assignee) seen.set(assigneeKey(i.assignee), i.assignee);
   const label = (a: Assignee): string => (a.id === selfId ? 'You' : a.name);
   const mine = (a: Assignee): number => (a.id === selfId ? 0 : 1);
   return [...seen.entries()].map(([key, assignee]) => ({ key, label: label(assignee), assignee })).sort((x, y) => mine(x.assignee) - mine(y.assignee) || x.label.localeCompare(y.label));

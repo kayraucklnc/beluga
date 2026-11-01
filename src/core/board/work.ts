@@ -15,7 +15,7 @@ import { chosenAgent } from '../settings.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
 import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine, reposPrompt } from './prompt.js';
-import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, boardForRepo, boardName, boardOf, filterIssues, isArchived, isFinished, isOpen, isOwnBoard, issueForWorkspace, reposOf, titleFromName, worktreeDoing } from './model.js';
+import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, boardName, boardOf, filterIssues, isArchived, isFinished, isOpen, isOwnBoard, issueForWorkspace, reposOf, titleFromName, worktreeDoing } from './model.js';
 
 /** How a name is written after "@" (as the message box completes it: src/ui/suggest.ts friendMention). */
 const handleOf = (name: string): string => `@${name.replace(/[^\p{L}\p{N}_.-]+/gu, '')}`;
@@ -212,11 +212,11 @@ export class BoardWork {
   }
 
   /**
-   * Where a task goes from a board's or a repo's id (the phone lists boards): a repo runs it on the
-   * board its work goes on; a board of its own runs it in its first repo.
+   * Where a task goes from a board's or a repo's id (the phone lists boards): a repo's on its own
+   * board; a board of its own runs it in its first repo.
    */
   private placeOf(id: string): { readonly projectId: string; readonly board: string } {
-    if (!isOwnBoard(id)) return { projectId: id, board: boardForRepo(this.board.state(), id) };
+    if (!isOwnBoard(id)) return { projectId: id, board: id };
     const repo = reposOf(this.board.state(), id)[0];
     if (!repo) throw new Error('That board covers no repo');
     return { projectId: repo, board: id };
@@ -227,7 +227,7 @@ export class BoardWork {
    * its labels; with `several` (BLG-319), who on its team a task can be for (you first); and who
    * the words' "@mia"s are, teammates and friends (BLG-342).
    */
-  private draftContext(projectId: string, text: string, look?: string, several = false, boardId = boardForRepo(this.board.state(), projectId)): DraftContext {
+  private draftContext(projectId: string, text: string, look?: string, several = false, boardId = projectId): DraftContext {
     const labels = labelsFor(this.board.state(), boardId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
     const about = this.board.state().projects[boardId]?.context?.text ?? this.board.state().projects[projectId]?.context?.text;
@@ -442,7 +442,7 @@ export class BoardWork {
     const tools = this.toolsFor(channel, issue, Boolean(opts.plan));
     const parallel = this.parallelNote(channel, issue);
     const projectId = this.runProject(channel, issue);
-    const boardId = issue ? boardOf(issue) : projectId ? boardForRepo(this.board.state(), projectId) : undefined;
+    const boardId = issue ? boardOf(issue) : projectId;
     const about = projectId ? aboutPrompt(this.board.state(), projectId, boardId) : '';
     // A board of several repos: where its tasks go, so a task made here lands in the right one.
     const repos = projectId && boardId ? reposPrompt(this.board.state(), boardId, projectId, this.repoName) : '';
@@ -714,7 +714,7 @@ export class BoardWork {
         // task's board and this repo's tasks (a board may cover several repos, a repo be on several boards).
         const asBoard = f.project ? boardByName(f.project) : undefined;
         const repo = f.project ? (asBoard ? undefined : projectByName(f.project)) : (current?.projectId ?? wsProject());
-        const onBoard = asBoard ?? (f.project ? repo : current ? boardOf(current) : repo ? boardForRepo(state(), repo) : undefined);
+        const onBoard = asBoard ?? (f.project ? repo : current ? boardOf(current) : repo);
         const found = filterIssues(state(), {
           scope: f.scope === 'mine' ? 'mine' : 'all',
           selfId: this.deps.selfId(),
@@ -728,7 +728,7 @@ export class BoardWork {
         if (input.board && !boardId) throw new Error(`There's no board called ${input.board}`);
         const projectId = input.project ? projectByName(input.project) : (parent?.projectId ?? current?.projectId ?? wsProject() ?? (boardId ? reposOf(state(), boardId)[0] : undefined));
         if (!projectId) throw new Error('Say which repo it runs in (project: its name)');
-        // On this task's board when it covers the repo (a sub-task goes on its parent's), else the board the repo's work goes on.
+        // On this task's board when it covers the repo (a sub-task goes on its parent's), else the repo's own.
         const onBoard = boardId ?? (parent ? boardOf(parent) : current && reposOf(state(), boardOf(current)).includes(projectId) ? boardOf(current) : undefined);
         const covered = onBoard ? reposOf(state(), onBoard).includes(projectId) : true;
         const brief: Partial<Record<BriefSection, string>> = {

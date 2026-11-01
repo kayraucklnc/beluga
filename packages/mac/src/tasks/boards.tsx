@@ -1,5 +1,5 @@
-import { type ReactNode, useMemo, useState } from 'react';
-import { boardOf, isOwnBoard, reposOf } from '@beluga/core/board/model.js';
+import { type ReactNode, createContext, useContext, useMemo, useState } from 'react';
+import { boardName, boardOf, isOwnBoard, isVisiting, reposOf } from '@beluga/core/board/model.js';
 import { Field, FormSheet, TextInput } from '../components/FormSheet.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
@@ -69,6 +69,42 @@ export function RepoChip({ projectId, compact }: { projectId: string; compact?: 
       <ProjectIcon id={projectId} name={name} size={12} />
       <span className={t.repoChipName}>{name}</span>
     </span>
+  );
+}
+
+/** The board Tasks is showing, for the cards and rows on it (none: a task shown anywhere else). */
+const ShowingBoard = createContext<string | undefined>(undefined);
+export const ShowingBoardProvider = ShowingBoard.Provider;
+
+/**
+ * The board a task is on, when the board shown isn't it: a repo's own board shows what runs in its
+ * repo from other boards (BLG-559), a shade back and saying where it lives.
+ */
+export function useVisitingFrom(issue: { readonly board?: string; readonly projectId: string }): string | undefined {
+  const showing = useContext(ShowingBoard);
+  return showing && isVisiting(issue, showing) ? boardOf(issue) : undefined;
+}
+
+/** On a card or row a repo's board shows from another board: that board's mark and name; a click opens it. */
+export function OnBoardChip({ boardId, compact }: { boardId: string; compact?: boolean }) {
+  const board = useBoard();
+  const projects = useApp((s) => s.projects);
+  const { openList } = useTaskActions();
+  const names = (id: string): string | undefined => projects.find((p) => p.id === id)?.name;
+  const name = boardName(board, boardId, names);
+  const stop = (e: { stopPropagation: () => void }): void => e.stopPropagation();
+  return (
+    <button
+      type="button"
+      className={cx(t.repoChip, t.onBoardChip, compact && t.repoChipCompact)}
+      title={`On the ${name} board: open it`}
+      aria-label={`On the ${name} board`}
+      onPointerDown={stop}
+      onClick={(e) => (stop(e), openList(boardId))}
+    >
+      <BoardMark repos={reposOf(board, boardId)} names={names} size={12} fit />
+      <span className={t.repoChipName}>{name}</span>
+    </button>
   );
 }
 

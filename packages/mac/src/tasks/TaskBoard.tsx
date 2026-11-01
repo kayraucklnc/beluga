@@ -14,6 +14,7 @@ import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, PrivateMark, useIssueMenu } from './parts.js';
 import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
+import { useVisitingFrom } from './boards.js';
 import { taskDropProps } from './use-task-drop.js';
 import { revealing, tuckOrder, useBoard, useSelf, useSelfId, useTaskActions, useTucking } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -497,10 +498,11 @@ const Card = memo(function Card({
 }) {
   const { open } = useTaskActions();
   const epic = useApp((s) => isEpic(s.board, issue));
+  const visiting = Boolean(useVisitingFrom(issue));
   return (
     <ActionsContext items={() => menu(issue)}>
       <article
-        className={cx(t.card, epic && t.cardEpic, issue.private && t.cardPrivate, out !== undefined ? t.tuckOut : pop !== undefined && t.pop)}
+        className={cx(t.card, epic && t.cardEpic, issue.private && t.cardPrivate, visiting && t.cardVisiting, out !== undefined ? t.tuckOut : pop !== undefined && t.pop)}
         style={(out ?? pop) !== undefined ? ({ '--pop': out ?? pop } as CSSProperties) : undefined}
         role="button"
         tabIndex={0}

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { PROVIDER_INFO, type ProjectSync, boardOf, isOpen, worksOn, worktreeOf } from '@beluga/core/board/model.js';
+import { PROVIDER_INFO, type ProjectSync, isOpen, showsOn, worksOn, worktreeOf } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
@@ -11,7 +11,7 @@ import { TaskList } from './TaskList.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { PickMenu } from './PickMenu.js';
 import { type Display, SCOPES, ago, type Scope, assigneesIn, boardChoices, boardRepos, boardToShow, connected, doneCount, pickedRepos, reposLabel, scopeCounts, scoped, statusesFor, taskGraph, untucked } from './tasks-model.js';
-import { BoardMark, RepoStack, useDeleteBoard } from './boards.js';
+import { BoardMark, RepoStack, ShowingBoardProvider, useDeleteBoard } from './boards.js';
 import { useTaskFileDrop } from './use-task-drop.js';
 import { revealSubTasks, setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -24,7 +24,8 @@ const FlowGraph = lazy(() => import('../components/graph/FlowGraph.js'));
 /**
  * Tasks: one board at a time (the one covering the project you're in; the switcher at the top
  * changes it, and makes new boards). A board covers one repo or several: with several, a filter
- * picks which repos' tasks show, and each card says which repo it runs in.
+ * picks which repos' tasks show, and each card says which repo it runs in. A repo's own board also
+ * shows what runs in its repo from other boards, a shade back with that board's name (BLG-559).
  * Active, Backlog or All, for everyone or one person when you work with others, as a list grouped
  * by status, a board to drag cards across, or a graph of what waits on what. A task opens into
  * its page. ⌘N (or C) makes a new one, ⌘F finds. The Archive (finished tasks put away) is a list,
@@ -44,7 +45,7 @@ export function TasksView() {
   const { api, act, open, openList, openWorktreeTasks } = useTaskActions();
   const deleteBoard = useDeleteBoard();
   const asked0 = view.kind === 'tasks' ? view.projectId : undefined;
-  const boards = useMemo(() => boardChoices(board, projects, asked0 ?? prefs.board), [board, projects, asked0, prefs.board]);
+  const boards = useMemo(() => boardChoices(board, projects), [board, projects]);
   // `project` is the board shown: a repo's own board has the repo's id, so most of what follows reads the same.
   const project = boardToShow(board, boards, asked0, prefs.project, prefs.board);
   const here = boards.find((b) => b.id === project);
@@ -59,11 +60,11 @@ export function TasksView() {
   const solo = useSolo(project);
   const people = useMemo(() => (solo ? [] : assigneesIn(board, project, selfId)), [solo, board, project, selfId]);
   // A filter for someone who has no tasks here any more shows everyone's.
-  const hasPrivate = useMemo(() => board.issues.some((i) => boardOf(i) === project && i.private && !i.archivedAt), [board, project]);
+  const hasPrivate = useMemo(() => board.issues.some((i) => project !== undefined && showsOn(i, project) && i.private && !i.archivedAt), [board, project]);
   const who = !solo && (prefs.who === 'nobody' || (prefs.who === 'private' && hasPrivate) || people.some((p) => p.key === prefs.who)) ? prefs.who : '';
   // The worktrees doing or carrying this board's tasks, in any of its repos, to filter by (one asked for that's gone: every task).
   const worktrees = useMemo(() => {
-    const ids = new Set(board.issues.filter((i) => boardOf(i) === project && !i.archivedAt).flatMap((i) => [worktreeOf(i), i.worktrees.at(-1)]).filter((w): w is string => Boolean(w)));
+    const ids = new Set(board.issues.filter((i) => project !== undefined && showsOn(i, project) && !i.archivedAt).flatMap((i) => [worktreeOf(i), i.worktrees.at(-1)]).filter((w): w is string => Boolean(w)));
     return allProjects.filter((p) => repos.includes(p.id)).flatMap((p) => p.workspaces).filter((w) => ids.has(w.id) && !w.archived).map((w) => ({ id: w.id, name: w.name }));
   }, [board, project, allProjects, repos]);
   const asked = view.kind === 'tasks' ? view.worktree : undefined;
@@ -114,7 +115,7 @@ export function TasksView() {
   if (!board.enabled) return <Empty icon="task" title="Tasks need the Beluga app" detail="Open Beluga for Mac to plan and track work here." />;
   if (!projects.length || !here) return <Empty icon="task" title="No projects yet" detail="Tasks belong to a project. Add one from the sidebar, then plan its work here." />;
 
-  const none = !board.issues.some((i) => boardOf(i) === project);
+  const none = !board.issues.some((i) => showsOn(i, here.id));
   return (
     <div className={t.view}>
       {dropping}
@@ -245,6 +246,7 @@ export function TasksView() {
         </Button>
         </div>
       </div>
+      <ShowingBoardProvider value={here.id}>
       <div className={cx(t.body, display === 'board' && t.bodyBoard, display === 'graph' && t.bodyGraph)}>
         {project && !here.own ? <TeamOffers projectId={project} /> : null}
         {none ? (
@@ -280,6 +282,7 @@ export function TasksView() {
           <TaskList issues={issues} statuses={statuses} emptyGroups={prefs.scope === 'active' || prefs.scope === 'backlog'} projectId={project} {...(newTask.projectId ? { repo: newTask.projectId } : {})} archived={archive} />
         )}
       </div>
+      </ShowingBoardProvider>
       {issues.length && display !== 'graph' ? (
         <div className={t.foot}>
           {archive ? `${issues.length} archived` : `${issues.filter((i) => isOpen(i.status)).length} open · ${issues.length} shown`}
@@ -309,8 +312,8 @@ function SyncPill({ sync, onClick }: { sync: ProjectSync; onClick: () => void })
   );
 }
 
-/** "3 repos · 4 open" (or less), beside each board in the switcher. */
+/** "3 repos · 4 open" (or less), beside each board in the switcher: what it shows, visitors too. */
 function boardHint(board: ReturnType<typeof useBoard>, boardId: string, repos: number): string | undefined {
-  const n = board.issues.filter((i) => boardOf(i) === boardId && isOpen(i.status) && !i.archivedAt).length;
+  const n = board.issues.filter((i) => showsOn(i, boardId) && isOpen(i.status) && !i.archivedAt).length;
   return [repos > 1 ? `${repos} repos` : '', n ? `${n} open` : ''].filter(Boolean).join(' · ') || undefined;
 }

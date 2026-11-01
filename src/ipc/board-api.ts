@@ -31,7 +31,7 @@ export const BOARD_API = {
   'board.create': {
     args: z.tuple([
       z.object({
-        // The repo it runs in; board: the board it goes on (left out: the one the repo's work goes on).
+        // The repo it runs in; board: the board it goes on (left out: the repo's own).
         projectId,
         board: boardId.optional(),
         title: z.string().min(1).max(200).optional(),
