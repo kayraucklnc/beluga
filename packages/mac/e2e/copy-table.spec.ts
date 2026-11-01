@@ -32,4 +32,18 @@ test('Copy Table puts the whole table on the clipboard', async ({ page, context 
   expect(html).toContain('<th>Provider</th>');
   expect(html).toContain('<td>Adyen</td>');
   await page.screenshot({ path: '../../.beluga/scratch/01-copy-table.png', clip: (await table.boundingBox())! });
+
+  // ••• › Copy as › JSON: the rows themselves, raw values under their keys (BLG-591).
+  await table.hover();
+  await table.getByRole('button', { name: 'Copy or Save As' }).click();
+  await page.getByRole('menuitem', { name: 'Copy as' }).hover();
+  await expect(page.getByRole('menuitem', { name: 'SQL Inserts' })).toBeVisible();
+  const box = await page.locator('[role="menu"]').last().boundingBox();
+  const tableBox = (await table.boundingBox())!;
+  await page.screenshot({ path: '../../.beluga/scratch/02-copy-as-menu.png', clip: { x: tableBox.x, y: tableBox.y, width: Math.max(tableBox.width, box!.x + box!.width - tableBox.x + 8), height: Math.max(tableBox.height, box!.y + box!.height - tableBox.y + 8) } });
+  await page.getByRole('menuitem', { name: 'JSON', exact: true }).click();
+  await expect(page.getByText('Copied 4 rows as JSON').last()).toBeVisible();
+  const json = JSON.parse(await page.evaluate(() => navigator.clipboard.readText())) as Record<string, unknown>[];
+  expect(json).toHaveLength(4);
+  expect(json[0]).toMatchObject({ provider: 'Stripe' });
 });
