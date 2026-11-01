@@ -123,6 +123,9 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
       ...(autoEdit ? ['--permission-mode', 'acceptEdits'] : []),
       ...(model ? ['--model', model] : []),
       ...extraDirs.flatMap((d) => ['--add-dir', d]),
+      // The message you sent from the chat, as the terminal's first prompt (BLG-553); after `--`, so
+      // a list option before it (--add-dir) doesn't take it, and a leading "-" stays words.
+      ...(input.prompt ? ['--', input.prompt] : []),
     ];
     return {
       file: opts.claudePath ?? claudeCodeCommand(),

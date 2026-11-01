@@ -101,7 +101,8 @@ const TermSize = z.object({ cols: z.number().int().min(1).max(1000), rows: z.num
 
 export const API = {
   // ---- the room, chat and your preferences
-  'session.submit': args(str, opt(z.object({ channel: opt(channel), urgent: opt(bool), id: opt(id) }))),
+  // `terminal`: the conversation is seen as its agent's terminal and hasn't had a turn yet: that opens on the message (BLG-553).
+  'session.submit': args(str, opt(z.object({ channel: opt(channel), urgent: opt(bool), id: opt(id), terminal: opt(bool) }))),
   'session.copyInvite': args(),
   'session.copyLastAnswer': args(),
   'session.copyText': args(str, z.string().max(500)),
@@ -224,9 +225,10 @@ export const API = {
   'workspaces.refresh': args(),
   'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)), agent: opt(AgentRef) }))),
   'workspaces.newChat': args(id, z.string().max(200), opt(path)),
-  'workspaces.startChat': args(id, str, opt(path)),
+  // `terminal`: you see it as its agent's terminal, so that opens on the message (BLG-553).
+  'workspaces.startChat': args(id, str, opt(path.nullable()), opt(z.object({ terminal: opt(bool) }))),
   // → the new worktree's id. `plan`: its Claude plans first. `quiet`: started from the phone, the Mac's window stays put.
-  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), quiet: opt(bool), agent: opt(AgentRef) }))),
+  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), quiet: opt(bool), agent: opt(AgentRef), terminal: opt(bool) }))),
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),

@@ -25,7 +25,7 @@ export interface AgentTermDeps {
   /** Load the conversation's saved chat first, so what comes back joins it. */
   readonly ensureLoaded: (wsId: string) => void;
   /** The launch, as AgentHost.terminalLaunch makes it. */
-  readonly launch: (channel: string, sink: TerminalSink) => Promise<TerminalLaunch>;
+  readonly launch: (channel: string, sink: TerminalSink, prompt?: string) => Promise<TerminalLaunch>;
   readonly openProgram: (key: string, ws: Workspace, program: { readonly file: string; readonly args: readonly string[]; readonly env: Readonly<Record<string, string>>; readonly title: string }, size?: { cols: number; rows: number }) => PtyProcess | undefined;
   readonly closeTerminal: (key: string) => void;
   /** The pty under a key now (gone when it was closed some other way: archiving). */
@@ -54,8 +54,17 @@ interface Live {
   readonly startedAt: number;
   pty: PtyProcess;
   remembered: boolean;
+  /** The message from the chat it opened with (BLG-553): in the chat already, so its copy in the transcript isn't. */
+  readonly handed?: string;
   tail?: TranscriptTail;
   timer?: NodeJS.Timeout;
+}
+
+/** The terminal's turns less the first prompt it was handed from the chat (said there already, BLG-553). */
+export function withoutHanded<T extends { readonly type: string; readonly text?: string }>(items: readonly T[], handed: string | undefined): readonly T[] {
+  if (!handed) return items;
+  const at = items.findIndex((it) => it.type === 'chat' && it.text?.trim() === handed.trim());
+  return at < 0 ? items : [...items.slice(0, at), ...items.slice(at + 1)];
 }
 
 interface KeptVisuals {
@@ -79,25 +88,34 @@ export class AgentTerminals {
     return channel.startsWith('ws:') && this.live.has(channel.slice(3));
   }
 
+  /** Whether a conversation can have its agent's terminal: a chat or a worktree of yours, not on Codex. */
+  canOpen(wsId: string): boolean {
+    const ws = this.deps.find(wsId);
+    return Boolean(ws && !ws.archived && ws.kind !== 'main' && this.deps.agentOf(wsId).runtime !== 'codex');
+  }
+
   /**
    * Open the agent's terminal on a workspace's conversation, or the one already open. The pty's
    * key, for the screen to attach to. Throws why it can't (a turn running in the chat, no agent).
    */
-  open(wsId: string, size?: { cols: number; rows: number }): Promise<string> {
+  open(wsId: string, size?: { cols: number; rows: number }, prompt?: string): Promise<string> {
     const live = this.live.get(wsId);
-    if (live && this.deps.pty(live.key) === live.pty && live.pty.running) {
+    const running = Boolean(live && this.deps.pty(live.key) === live.pty && live.pty.running);
+    // A first prompt only goes to a terminal starting now: one open already has its own conversation going.
+    if (prompt && (running || this.opening.has(wsId))) return Promise.reject(new Error('The terminal is open here already: type there.'));
+    if (live && running) {
       if (size) live.pty.resize(size.cols, size.rows);
       return Promise.resolve(live.key);
     }
     if (live) this.finish(wsId);
     const pending = this.opening.get(wsId);
     if (pending) return pending;
-    const opening = this.start(wsId, size).finally(() => this.opening.delete(wsId));
+    const opening = this.start(wsId, size, prompt).finally(() => this.opening.delete(wsId));
     this.opening.set(wsId, opening);
     return opening;
   }
 
-  private async start(wsId: string, size?: { cols: number; rows: number }): Promise<string> {
+  private async start(wsId: string, size?: { cols: number; rows: number }, prompt?: string): Promise<string> {
     const ws = this.deps.find(wsId);
     if (!ws || ws.archived) throw new Error('That workspace is archived or gone.');
     if (ws.kind === 'main') throw new Error('A project’s main folder has no conversation of its own: open a chat or a worktree.');
@@ -106,7 +124,7 @@ export class AgentTerminals {
     if (agent.runtime === 'codex') throw new Error('Codex conversations stay in the chat: the terminal view is Claude Code’s (and local models’, which run in it).');
     this.deps.ensureLoaded(wsId);
     this.loadVisuals(wsId, true);
-    const launch = await this.deps.launch(channel, this.sink(wsId));
+    const launch = await this.deps.launch(channel, this.sink(wsId), prompt);
     try {
       const key = agentTermId(wsId);
       const startedAt = this.now;
@@ -115,7 +133,7 @@ export class AgentTerminals {
       const startAt = sizeOf(existing);
       const pty = this.deps.openProgram(key, ws, { file: launch.file, args: launch.args, env: launch.env, title: agent.label }, size);
       if (!pty) throw new Error('Beluga couldn’t start a terminal here.');
-      const entry: Live = { wsId, key, launch, runtime: agent.runtime, cwd: ws.path, startedAt, pty, remembered: !launch.fresh, ...(existing ? { tail: new TranscriptTail(existing, startAt) } : {}) };
+      const entry: Live = { wsId, key, launch, runtime: agent.runtime, cwd: ws.path, startedAt, pty, remembered: !launch.fresh, ...(prompt ? { handed: prompt } : {}), ...(existing ? { tail: new TranscriptTail(existing, startAt) } : {}) };
       this.live.set(wsId, entry);
       this.deps.store.dispatch({ type: 'agent_term', id: wsId, state: { runtime: agent.runtime, label: agent.label, since: startedAt } });
       pty.onExit(() => this.finish(wsId));
@@ -178,9 +196,10 @@ export class AgentTerminals {
     // A few seconds' slack: the transcript's clock is the agent's, ours is the daemon's (the same Mac).
     const opts = { selfId: self.id, selfName: self.name, cwd: live.cwd, key: `${live.startedAt.toString(36)}`, visual: (n: number) => this.visual(wsId, n), since: live.startedAt - 5_000 };
     const turns = claudeTurns(live.tail.lines, opts);
-    if (!turns.items.length) return;
+    const items = withoutHanded(turns.items, live.handed);
+    if (!items.length) return;
     this.deps.keepSteps?.(turns.steps);
-    this.deps.store.dispatch({ type: 'log_upsert', channel: `ws:${wsId}`, items: turns.items });
+    this.deps.store.dispatch({ type: 'log_upsert', channel: `ws:${wsId}`, items });
   }
 
   private finish(wsId: string): void {

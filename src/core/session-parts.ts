@@ -80,7 +80,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         defaultAgent: (project) => session.agentFor(project),
         toast: (text, level) => session.toast(text, level),
         intend: (intent) => session.intend(intent),
-        askClaude: (prompt, channel, o) => session.askOwnClaude(prompt, channel, false, o?.echo ?? true, o?.shown),
+        askClaude: (prompt, channel, o) => (o?.terminal ? session.startInTerminal(prompt, channel, o.shown) : session.askOwnClaude(prompt, channel, false, o?.echo ?? true, o?.shown)),
         showAsk: (prompt, channel) => session.showAsk(prompt, channel),
         compact: (channel, instructions) => session.compact(channel, instructions),
         stopHere: async (channel) => {
@@ -232,7 +232,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
             store: opts.store,
             find: (id) => opts.workspaces?.find(id),
             ensureLoaded: (id) => void workspaces?.ensureLoaded(id),
-            launch: (channel, sink) => host.terminalLaunch(channel, sink),
+            launch: (channel, sink, prompt) => host.terminalLaunch(channel, sink, prompt),
             openProgram: (key, ws, program, size) => workbench?.openProgram(key, ws, program, size),
             closeTerminal: (key) => workbench?.closeTerminal(key),
             pty: (key) => terminals.get(key),

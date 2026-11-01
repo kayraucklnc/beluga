@@ -436,6 +436,22 @@
   box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
   color: var(--text-2);
 }
+/* The terminal waits for a turn in the chat to end: over the chat (BLG-553) */
+.waitingChat {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.waitingChat > :last-child {
+  flex: 1;
+  min-height: 0;
+}
+.waiting {
+  composes: driving;
+  margin: 10px 16px 2px;
+}
 .driving > svg {
   color: #8f7fd0;
 }

@@ -45,7 +45,7 @@ export interface ControllerDeps {
    * as your message instead of the prompt (a handoff's prompt carries the conversation, BLG-506).
    */
   /** `shown`: the message is in the conversation already under this request id (see showAsk). */
-  readonly askClaude: (prompt: string, channel: string, opts?: { readonly echo?: boolean | string; readonly shown?: string }) => void;
+  readonly askClaude: (prompt: string, channel: string, opts?: { readonly echo?: boolean | string; readonly shown?: string; readonly terminal?: boolean }) => void;
   /** Draw your first message in a conversation that isn't there yet (a worktree being made) → its request id. */
   readonly showAsk?: (prompt: string, channel: string) => string;
   /** Stop your Claude in a conversation, resolving once nothing runs there (editing a message cuts it there). */
@@ -775,10 +775,10 @@ export class WorkspaceController {
   }
 
   /** Turn a draft into a real chat with your first message, then send it to Claude. */
-  async startChat(projectId: string, firstMessage: string, inDir?: string): Promise<void> {
+  async startChat(projectId: string, firstMessage: string, inDir?: string, opts: { terminal?: boolean } = {}): Promise<void> {
     const title = firstMessage.replace(/\s+/g, ' ').trim().slice(0, 40);
     const ws = await this.newChat(projectId, title, inDir);
-    if (ws) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
+    if (ws) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`, opts.terminal ? { terminal: true } : undefined);
   }
 
   /** The branches a new worktree can start from, the project's default base first. */
@@ -797,7 +797,7 @@ export class WorkspaceController {
    * by the name the model gave it; with `nameLater`, as soon as it's made (its id stays when the
    * name comes, so a caller that only wants the id needn't wait for the model).
    */
-  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string; plan?: boolean; quiet?: boolean; nameLater?: boolean; agent?: AgentRef } = {}): Promise<Workspace | undefined> {
+  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string; plan?: boolean; quiet?: boolean; nameLater?: boolean; agent?: AgentRef; terminal?: boolean } = {}): Promise<Workspace | undefined> {
     const text = firstMessage.trim();
     const named = opts.name?.trim();
     const proper = named || !text ? undefined : nameTask(firstMessage).catch(() => undefined);
@@ -808,7 +808,9 @@ export class WorkspaceController {
     const ws = await this.newWorktree(projectId, named || (text ? slugify(text) : 'worktree'), { id, ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}), ...(opts.agent ? { agent: opts.agent } : {}) });
     if (!ws && shown) this.deps.store.dispatch({ type: 'clear', channel });
     if (ws && opts.plan) this.deps.store.dispatch({ type: 'plan_mode', channel, on: true });
-    if (ws && text) this.deps.askClaude(firstMessage, channel, shown ? { shown } : undefined);
+    // Seen as its terminal (BLG-553): the terminal opens on the message, not a turn in the chat (a plan's stays in the chat).
+    const terminal = opts.terminal && !opts.plan;
+    if (ws && text) this.deps.askClaude(firstMessage, channel, shown || terminal ? { ...(shown ? { shown } : {}), ...(terminal ? { terminal } : {}) } : undefined);
     if (ws && proper) {
       if (opts.nameLater) void this.renameWhenNamed(ws.id, proper);
       else await this.renameWhenNamed(ws.id, proper);

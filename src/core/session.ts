@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isTermBusy } from '../shared/terminal-keys.js';
 import { agentLabel } from '../shared/agent-label.js';
 import { KNOWN_RUNTIMES } from '../shared/agent-runtimes.js';
 import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
@@ -423,7 +424,7 @@ export class Session {
    * conversation's Claude couldn't go (why is said in a toast), so the box can keep it. `id`: the
    * same for every Retry of one message, so it's said in the chat and asked of Claude once.
    */
-  submit(raw: string, { channel = 'room', urgent = false, id }: { channel?: string; urgent?: boolean; id?: string } = {}): boolean {
+  submit(raw: string, { channel = 'room', urgent = false, id, terminal = false }: { channel?: string; urgent?: boolean; id?: string; terminal?: boolean } = {}): boolean {
     const state = this.store.getState();
     // "/run @bob <command>": the command exactly as typed (spacing and quotes kept).
     const peerRun = /^\/run\s+@([\w.-]+)\s+([\s\S]+)$/.exec(raw.trim());
@@ -441,13 +442,14 @@ export class Session {
       // Claude knows to ask Ata's Claude (the room's own parse only knows people in the room).
       const onlyYours = parsed.kind === 'agent' && parsed.unknown.length === 0 && parsed.targets.every((t) => t === this.selfId);
       const prompt = parsed.kind === 'agent' && onlyYours ? parsed.prompt : parsed.text;
+      const ask = (): string | undefined => (terminal ? this.startInTerminal(prompt, channel) : this.askOwnClaude(prompt, channel, urgent));
       if (!id) {
-        const sent = this.askOwnClaude(prompt, channel, urgent) !== undefined;
+        const sent = ask() !== undefined;
         if (sent) this.tellMentioned(prompt, channel);
         return sent;
       }
       if (this.sentById.has(id)) return true;
-      const requestId = this.askOwnClaude(prompt, channel, urgent);
+      const requestId = ask();
       if (requestId === undefined) return false;
       this.tellMentioned(prompt, channel);
       this.sentById.set(id, requestId);
@@ -618,6 +620,30 @@ export class Session {
     // Steering your own Claude at work here: the message says it isn't read yet from the moment it's drawn.
     if (echo && !shown) this.sendChat(typeof echo === 'string' ? echo : prompt, false, channel, requestId, urgent && !shared && this.host.runningIn(channel));
     return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent, undefined, requestId);
+  }
+
+  /**
+   * Your message in a conversation you see as its agent's terminal, before that has had a turn
+   * (BLG-553): drawn in the chat as always, then the terminal opens with it as its first prompt,
+   * instead of a turn in the chat. When the terminal can't open (a turn already running there, a
+   * shared or Codex conversation), it goes to the chat as any message does. `shown`: see askOwnClaude.
+   */
+  startInTerminal(prompt: string, channel: string, shown?: string): string | undefined {
+    const terms = this.agentTerms;
+    const wsId = channel.slice(3);
+    if (!terms || !channel.startsWith('ws:') || !terms.canOpen(wsId) || this.sharing.sharedFor(channel) || this.host.runningIn(channel) || terms.driving(channel)) return this.askOwnClaude(prompt, channel, false, true, shown);
+    this.workspaces?.ensureLoaded(wsId);
+    const requestId = shown ?? randomUUID();
+    if (!shown) {
+      void this.workspaces?.snapshotPrompt(channel, requestId);
+      this.sendChat(prompt, false, channel, requestId);
+    }
+    terms.open(wsId, undefined, prompt).catch((err: unknown) => {
+      const why = (err instanceof Error ? err.message : String(err)).replace(/^Error: /, '');
+      if (!isTermBusy(why)) this.toast(`The terminal couldn’t open (${why}), so your message went to the chat`, 'warn');
+      this.askOwnClaude(prompt, channel, false, true, requestId);
+    });
+    return requestId;
   }
 
   /**

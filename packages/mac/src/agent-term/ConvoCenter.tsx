@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
 import { ResizeHandle } from '../layout/panel/ResizeHandle.js';
 import { useApp } from '../lib/beluga.js';
-import { BOTH_MAX, BOTH_MIN, clampBoth, shownMode, terminalCapable } from '../lib/convo-mode.js';
+import { BOTH_MAX, BOTH_MIN, centerShows, clampBoth, hasAgentTurn, isConvoMode, shownMode, terminalCapable } from '../lib/convo-mode.js';
+import { activityOf } from '@beluga/ui/workspace-models.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { ChatView } from '../views/ChatView.js';
 import { AgentTermView } from './AgentTermView.js';
+import { TurnWaitBanner } from './TurnWaitBanner.js';
 import s from './agent-term.module.css';
 
 /** Whether a workspace's conversation can show as a terminal (lib/convo-mode.ts: not Codex's). */
@@ -17,10 +19,22 @@ export const useTerminalCapable = (wsId: string | undefined): boolean => useApp(
 export function ConvoCenter({ wsId }: { readonly wsId: string }) {
   const prefs = usePrefs();
   const capable = useTerminalCapable(wsId);
-  const mode = capable ? shownMode(prefs, wsId) : 'chat';
+  const turnRunning = useApp((st) => activityOf(st.log, `ws:${wsId}`).running);
+  const driving = useApp((st) => Boolean(st.agentTerms[wsId]));
+  const started = useApp((st) => hasAgentTurn(st.log, `ws:${wsId}`));
+  const mode = centerShows(capable ? shownMode(prefs, wsId) : 'chat', { turnRunning, driving, started, picked: isConvoMode(prefs.convoModes[wsId]) });
   const box = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<number | undefined>(undefined);
-  if (mode === 'chat') return <ChatView />;
+  // Before its first turn it's the chat: your first message opens the terminal on it (lib/convo-mode.ts).
+  if (mode === 'chat' || mode === 'fresh') return <ChatView />;
+  // A turn in the chat first (BLG-553): watch it there; the terminal opens when it ends.
+  if (mode === 'waiting')
+    return (
+      <div className={s.waitingChat}>
+        <TurnWaitBanner wsId={wsId} />
+        <ChatView />
+      </div>
+    );
   if (mode === 'terminal') return <AgentTermView wsId={wsId} />;
   const share = clampBoth(drag ?? prefs.bothChat);
   return (

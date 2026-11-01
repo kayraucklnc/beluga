@@ -7,12 +7,14 @@ import type { AgentBackend, AgentRunInput, TerminalLaunch, TerminalSink } from '
 import { sessionArgs, trustFolder } from '../src/agent/runtime/claude/terminal.js';
 import { childEnv } from '../src/terminal/pty.js';
 import { readFileSync } from 'node:fs';
-import { GATE_HOOK_SCRIPT, gateHookSettings, shellQuote, terminalHookAnswer } from '../src/agent/terminal-hook.js';
+import { GATE_HOOK_SCRIPT, gateHookSettings, hasRawVisual, lastAnswer, shellQuote, terminalHookAnswer } from '../src/agent/terminal-hook.js';
+import { buildGraphAppend } from '../src/agent/graph-prompt.js';
+import { buildViewAppend } from '../src/agent/view-prompt.js';
 import { runInstructions } from '../src/agent/run-instructions.js';
 import { TerminalShelf, ViewShelf, createViewTools, showView } from '../src/agent/view-tools.js';
 import { ToolHost } from '../src/agent/tool-host.js';
 import { AgentHost, TERMINAL_DRIVING } from '../src/core/agent-host.js';
-import { AgentTerminals } from '../src/core/agent-term.js';
+import { AgentTerminals, withoutHanded } from '../src/core/agent-term.js';
 import { TranscriptTail, claudeTranscriptFile, claudeTurns } from '../src/core/agent-term-sync.js';
 import { encodeProjectDir } from '../src/agent/runtime/claude/claude-sessions.js';
 import { Store, initialState } from '../src/core/store.js';
@@ -169,7 +171,81 @@ describe('launching the agent’s terminal', () => {
     expect(wrong.hookSpecificOutput.permissionDecision).toBe('deny');
     mounted.close();
     await host.close();
-    expect(gateHookSettings("/n o'de", '/f.mjs')).toEqual({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: `${shellQuote("/n o'de")} '/f.mjs'`, timeout: 600 }] }] } });
+    const command = `${shellQuote("/n o'de")} '/f.mjs'`;
+    expect(gateHookSettings("/n o'de", '/f.mjs')).toEqual({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command, timeout: 600 }] }], Stop: [{ hooks: [{ type: 'command', command, timeout: 30 }] }] } });
+  });
+
+  it('the hook script lets a turn end when Beluga can’t be asked (only tool calls are refused)', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-hook-stop-'));
+    const file = path.join(dir, 'gate.mjs');
+    writeFileSync(file, GATE_HOOK_SCRIPT);
+    const out = await new Promise<string>((resolve) => {
+      const p = spawn(process.execPath, [file], { env: { PATH: process.env.PATH ?? '' } });
+      let text = '';
+      p.stdout.on('data', (d: Buffer) => (text += d.toString()));
+      p.on('close', () => resolve(text));
+      p.stdin.end(JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false }));
+    });
+    expect(out).toBe('');
+  });
+});
+
+describe('graphs in the terminal (BLG-555)', () => {
+  const graph = '```' + GRAPH_FENCE + '\n{"title":"x","nodes":[],"edges":[]}\n```';
+
+  it('the terminal’s instructions show graphs and views through the tool, with no fence to copy', () => {
+    const term = buildGraphAppend(true) + buildViewAppend(true);
+    expect(term).not.toContain('```' + GRAPH_FENCE);
+    expect(term).not.toContain('```' + VIEW_FENCE);
+    expect(term).toContain('mcp__beluga_view__show as {"type": "graph"');
+    expect(term).toContain('beluga-code block passed to mcp__beluga_view__show_block');
+    // The chat keeps its fences.
+    expect(buildGraphAppend()).toContain('```' + GRAPH_FENCE);
+    expect(buildViewAppend()).toContain('fenced ' + VIEW_FENCE + ' block works without the tool');
+    const input = { prompt: '', requesterName: 'K', viaAgent: false, context: [], scope: 'full', signal: new AbortController().signal, onEvent: () => undefined } as unknown as AgentRunInput;
+    expect(runInstructions({ ...input, terminal: true }, 'Kayra')).not.toContain('```' + GRAPH_FENCE);
+    expect(runInstructions(input, 'Kayra')).toContain('```' + GRAPH_FENCE);
+  });
+
+  it('finds a graph or view written as a fence in the last answer', () => {
+    expect(hasRawVisual(`Here:\n\n${graph}`)).toBe(true);
+    expect(hasRawVisual('  ```' + VIEW_FENCE + '\n{}\n```')).toBe(true);
+    expect(hasRawVisual('Shown: [[visual:3]] and `beluga-graph` named inline')).toBe(false);
+    expect(hasRawVisual('```ts\nconst a = 1;\n```')).toBe(false);
+    const jsonl = [
+      line({ type: 'user', message: { content: 'old ask' } }),
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: graph }] } }),
+      line({ type: 'user', message: { content: 'draw it' } }),
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Looking.' }, { type: 'tool_use', name: 'Read' }] } }),
+      line({ type: 'user', message: { content: [{ type: 'tool_result', content: 'file' }] } }),
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Done.' }] } }),
+      'not json',
+    ].join('\n');
+    expect(lastAnswer(jsonl)).toBe('Looking.\n\nDone.');
+  });
+
+  it('sends a turn that ended with a raw graph back once to show it', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-stop-'));
+    const file = path.join(dir, 's.jsonl');
+    writeFileSync(file, [line({ type: 'user', message: { content: 'draw it' } }), line({ type: 'assistant', message: { content: [{ type: 'text', text: `Here:\n${graph}` }] } })].join('\n'));
+    const policy = { cwd: dir, roots: [dir], autoEdit: true, scope: 'full' as const, dotenv: true, askOnly: false };
+    const stop = (extra: Record<string, unknown>) => terminalHookAnswer({ hook_event_name: 'Stop', transcript_path: file, ...extra }, {}, policy);
+    expect(stop({ stop_hook_active: false })).toMatchObject({ decision: 'block', reason: expect.stringContaining('mcp__beluga_view__show') });
+    // Already sent back once: it ends.
+    expect(stop({ stop_hook_active: true })).toEqual({});
+    // Only Claude Code's own transcripts are read.
+    expect(terminalHookAnswer({ hook_event_name: 'Stop', transcript_path: path.join(dir, 'x.txt') }, {}, policy)).toEqual({});
+    expect(terminalHookAnswer({ hook_event_name: 'Stop', last_assistant_message: graph }, {}, policy)).toMatchObject({ decision: 'block' });
+    expect(terminalHookAnswer({ hook_event_name: 'Stop', last_assistant_message: 'All done.' }, {}, policy)).toEqual({});
+  });
+
+  it('the chat keeps one copy of a graph shown again through the tool', () => {
+    const block = viewBlock(GRAPH, GRAPH_FENCE);
+    const text = expandVisuals(`Here:\n\n${graph}\n\n${visualToken(1)}`, (n) => (n === 1 ? block : undefined));
+    expect(text.split('```' + GRAPH_FENCE).length).toBe(2);
+    expect(text).toContain(block);
+    // Without a token, a fence stays as it was written.
+    expect(expandVisuals(graph, () => undefined)).toBe(graph);
   });
 });
 
@@ -251,14 +327,16 @@ function terminals() {
   const ptys = new Map<string, ReturnType<typeof fakePty>>();
   const remembered: string[] = [];
   let launches = 0;
+  const prompts: Array<string | undefined> = [];
   let sink: TerminalSink | undefined;
   let closed = 0;
   const terms = new AgentTerminals({
     store,
     find: (id) => (id === 'w1' ? ws : undefined),
     ensureLoaded: () => undefined,
-    launch: async (_channel, s) => {
+    launch: async (_channel, s, prompt) => {
       launches++;
+      prompts.push(prompt);
       sink = s;
       return { file: 'claude', args: [], env: {}, session: 'sess1', fresh: true, close: () => void closed++ } satisfies TerminalLaunch;
     },
@@ -282,7 +360,7 @@ function terminals() {
     mkdirSync(dir, { recursive: true });
     return path.join(dir, 'sess1.jsonl');
   };
-  return { store, terms, ptys, remembered, launches: () => launches, sink: () => sink!, closed: () => closed, transcript, home };
+  return { store, terms, ptys, remembered, prompts, launches: () => launches, sink: () => sink!, closed: () => closed, transcript, home };
 }
 
 describe('the agent’s terminal on a conversation', () => {
@@ -320,6 +398,29 @@ describe('the agent’s terminal on a conversation', () => {
     t.terms.sync('w1');
     expect(t.store.getState().log.filter((l) => l.channel === 'ws:w1')).toHaveLength(2);
     expect(t.terms.visual('w1', n)).toContain('How login works');
+  });
+
+  it('opens on a message sent from the chat, which stays the chat’s own (BLG-553)', async () => {
+    const t = terminals();
+    expect(t.terms.canOpen('w1')).toBe(true);
+    expect(t.terms.canOpen('nope')).toBe(false);
+    await t.terms.open('w1', undefined, 'fix the login');
+    expect(t.prompts).toEqual(['fix the login']);
+    // One open already has its conversation going: a first prompt can't go to it.
+    await expect(t.terms.open('w1', undefined, 'another')).rejects.toThrow(/open here already/);
+    expect(t.launches()).toBe(1);
+    const now = new Date().toISOString();
+    appendFileSync(t.transcript(), `${line({ type: 'user', timestamp: now, message: { role: 'user', content: 'fix the login' } })}\n${line({ type: 'assistant', timestamp: now, message: { role: 'assistant', content: [{ type: 'text', text: 'On it.' }] } })}\n${line({ type: 'user', timestamp: now, message: { role: 'user', content: 'thanks' } })}\n`);
+    t.terms.sync('w1');
+    const log = t.store.getState().log.filter((l) => l.channel === 'ws:w1');
+    expect(log.map((l) => [l.type, (l as { text?: string }).text])).toEqual([['agent', 'On it.'], ['chat', 'thanks']]);
+  });
+
+  it('leaves out only the first copy of the message it was handed', () => {
+    const items = [{ type: 'chat', text: 'hi' }, { type: 'agent', text: 'hi' }, { type: 'chat', text: ' hi ' }];
+    expect(withoutHanded(items, 'hi')).toEqual(items.slice(1));
+    expect(withoutHanded(items, undefined)).toBe(items);
+    expect(withoutHanded(items, 'other')).toBe(items);
   });
 
   it('keeps its visuals for its links after a restart', async () => {
@@ -395,6 +496,10 @@ describe('while the terminal drives', () => {
     release?.();
     await host.idle('ws:w1');
     await expect(host.terminalLaunch('ws:w1', { add: () => 1 })).resolves.toMatchObject({ file: 'x' });
+    let given = '';
+    agent.terminal = async (input) => ((given = input.prompt), { file: 'x', args: [], env: {}, session: 's', fresh: false, close: () => undefined });
+    await host.terminalLaunch('ws:w1', { add: () => 1 }, 'first words');
+    expect(given).toBe('first words');
   });
 });
 

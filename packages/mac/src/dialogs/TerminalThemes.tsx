@@ -77,7 +77,7 @@ export function ViewGroup() {
         <Segmented
           label="Open conversations as"
           value={prefs.convoDefault}
-          onChange={(v) => setPrefs({ convoDefault: v })}
+          onChange={(v) => setPrefs({ convoDefault: v, convoDefaultPicked: true })}
           options={[
             { value: 'chat', label: 'Chat', icon: 'chat' },
             { value: 'terminal', label: 'Terminal', icon: 'terminal' },

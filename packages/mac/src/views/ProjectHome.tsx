@@ -23,7 +23,8 @@ import { useStartWith } from "../components/agent-options.js";
 import { SplitButton } from "../components/SplitButton.js";
 import type { AgentRef } from "@beluga/protocol.js";
 import { sameDeep } from "../lib/stable.js";
-import { usePrefs } from "../lib/prefs.js";
+import { getPrefs, usePrefs } from "../lib/prefs.js";
+import { sendsToTerminal } from "../lib/convo-mode.js";
 import { mod } from "../lib/system.js";
 import {
   type OverviewFilter,
@@ -347,6 +348,8 @@ function HomeComposer({ project }: { project: Project }) {
           ...(base ? { base } : {}),
           ...(named ? { name: named } : {}),
           ...(agent ? { agent } : {}),
+          // Seen as its terminal (Settings › Terminal): the terminal opens on this message (BLG-553).
+          ...(message.trim() && sendsToTerminal(client.store.getState(), getPrefs(), "draft", agent?.runtime) ? { terminal: true } : {}),
         })
         .catch((err: unknown) =>
           toast(

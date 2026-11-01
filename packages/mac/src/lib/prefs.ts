@@ -77,8 +77,10 @@ export interface UiPrefs {
   readonly termView: boolean;
   /** How each conversation shows (BLG-534): the chat, the agent's own terminal, or both side by side (workspace id → mode). */
   readonly convoModes: Readonly<Record<string, ConvoMode>>;
-  /** How a conversation you haven't switched opens. */
+  /** How a conversation you haven't switched opens: the terminal, until you pick otherwise (you turned the terminal view on for it). */
   readonly convoDefault: ConvoMode;
+  /** You picked convoDefault in Settings (before, it was saved as the chat without you choosing it: BLG-553). */
+  readonly convoDefaultPicked: boolean;
   /** In Both, the chat's share of the width beside the terminal (0.25–0.6). */
   readonly bothChat: number;
   /** The panel of visuals beside the terminal, in pixels. */
@@ -168,7 +170,8 @@ export const DEFAULT_PREFS: UiPrefs = {
   termKeysFirst: true,
   termView: false,
   convoModes: {},
-  convoDefault: 'chat',
+  convoDefault: 'terminal',
+  convoDefaultPicked: false,
   bothChat: 0.38,
   visualsWidth: 520,
   readerWrap: false,
@@ -196,7 +199,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, convoDefault: isConvoMode(saved.convoDefault) ? saved.convoDefault : 'chat', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, convoDefault: saved.convoDefaultPicked === true && isConvoMode(saved.convoDefault) ? saved.convoDefault : 'terminal', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true };
   } catch {
     return DEFAULT_PREFS;
   }

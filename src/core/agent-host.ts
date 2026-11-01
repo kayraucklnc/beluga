@@ -21,6 +21,7 @@ import { PHONE_LOOK_TOOLS } from '../agent/phone-tools.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
 import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR } from '../shared/claude-notices.js';
 import { span } from '../shared/clock.js';
+import { TERM_BUSY } from '../shared/terminal-keys.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, keepsRunning, mayLeaveProcesses } from '../workspaces/test-procs.js';
 import { belugaEnvBoth } from './beluga-env.js';
@@ -1305,10 +1306,10 @@ export class AgentHost {
    * would get (its folder and session, the task and its tools, your phone, your variables, the
    * worktree's tag), less what's only for a turn. Launched on the conversation's runtime.
    */
-  async terminalLaunch(channel: string, sink: TerminalSink): Promise<TerminalLaunch> {
+  async terminalLaunch(channel: string, sink: TerminalSink, prompt = ''): Promise<TerminalLaunch> {
     const agent = this.agent as AgentBackend;
     if (!agent.terminal) throw new Error('This agent has no terminal of its own in Beluga.');
-    if (this.runningIn(channel)) throw new Error('Your agent is still on a turn in the chat here: let it finish (or stop it), then open the terminal.');
+    if (this.runningIn(channel)) throw new Error(TERM_BUSY);
     const place = this.deps.workspaces?.place(channel);
     if (!place) throw new Error('That conversation is archived or its folder is gone.');
     const requesterName = peerName(this.store.getState(), this.selfId);
@@ -1323,7 +1324,7 @@ export class AgentHost {
     return agent.terminal(
       {
         terminal: true,
-        prompt: '',
+        prompt,
         requesterName,
         viaAgent: false,
         context: [],
