@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CLAUDE_CAPABILITIES } from '../src/agent/runtime/claude/index.js';
@@ -52,7 +52,8 @@ const runtimeTable = (): { header: string[]; rows: string[][]; text: string } =>
 
 /** Where screens and the core say a fallback: every `fallbackFor(…, 'id')` outside the table itself. */
 const shownFallbacks = (): Set<string> => {
-  const files = execSync("git ls-files 'src/*.ts' 'packages/mac/src/*.ts' 'packages/mac/src/*.tsx' 'packages/companion/app/*.tsx'", { encoding: 'utf8' }).split('\n').filter((f) => f && f !== 'src/shared/runtime-fallbacks.ts');
+  // No shell: Windows' cmd.exe would hand git the quotes, and it would match nothing.
+  const files = execFileSync('git', ['ls-files', 'src/*.ts', 'packages/mac/src/*.ts', 'packages/mac/src/*.tsx', 'packages/companion/app/*.tsx'], { encoding: 'utf8' }).split('\n').filter((f) => f && f !== 'src/shared/runtime-fallbacks.ts');
   return new Set(files.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/fallbackFor\([^;]*?'([a-z_]+)'\)/g)].map((m) => m[1]!)));
 };
 

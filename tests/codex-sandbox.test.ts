@@ -46,7 +46,9 @@ describe('the Codex trust table', () => {
     const c = codexConfinement('own', 'full', { cwd: '/p/main', folders: ['/p/fix'], writable: ['/p/fix'], home: '/h', belugaHome: '/h/.beluga' });
     const profile = c.config[`permissions.${PROFILE}`] as { extends: string; filesystem: Record<string, string> };
     expect(profile.extends).toBe(':read-only');
-    expect(profile.filesystem).toMatchObject({ '/p/main': 'read', '/p/fix': 'write', '/h/.beluga': 'deny', '/h/.ssh': 'deny', '/p/main/**/.env*': 'deny' });
+    // Keyed by the platform's own paths (D:\p\main on Windows), as Codex there reads them.
+    const main = path.resolve('/p/main');
+    expect(profile.filesystem).toMatchObject({ [main]: 'read', [path.resolve('/p/fix')]: 'write', '/h/.beluga': 'deny', [path.join('/h', '.ssh')]: 'deny', [`${main}/**/.env*`]: 'deny' });
   });
 });
 
@@ -92,7 +94,7 @@ describe.skipIf(!codex || process.platform !== 'darwin')("Codex's own sandbox, a
 
 describe('a side call on Codex', () => {
   const home = '/Users/someone';
-  const cwd = '/Users/someone/project';
+  const cwd = path.resolve('/Users/someone/project');
   const profileOf = (c: ReturnType<typeof sideCallConfinement>) => c.config[`permissions.${PROFILE}`] as { extends: string; filesystem: Record<string, string>; network: { enabled: boolean } };
 
   it('is read only, never asks, keeps your home and secret files out, and offline', () => {

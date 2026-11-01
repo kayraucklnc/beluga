@@ -60,12 +60,15 @@ describe('the plan pilot hears runs', () => {
     const t = setup();
     await wait(30);
     t.ticks.length = 0;
+    const began = Date.now();
     for (let i = 0; i < 30; i++) {
       t.event(i % 2 ? 'ws:homeA' : 'ws:homeB');
       await wait(5);
     }
+    // Windows' timers tick every ~15 ms, so the same stream lasts three times longer there.
+    const streamed = Date.now() - began;
     await wait(250);
-    expect(t.ticks.length).toBeLessThanOrEqual(2);
+    expect(t.ticks.length).toBeLessThanOrEqual(Math.floor(streamed / 150) + 1);
     expect(t.ticks.flat().filter((x) => x !== 'all').sort()).toEqual(expect.arrayContaining(['A', 'B']));
     t.ticks.length = 0;
     t.store.dispatch({ type: 'question_add', question: { id: 'q', channel: 'ws:x', from: 'me', name: 'me', text: '?', ts: 0, options: [] } } as never);

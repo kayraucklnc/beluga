@@ -5,7 +5,7 @@ import { remoteScratch } from '../../src/core/friend-share/scratch.js';
 import { conversations, convView, workView } from '../../src/companion/views.js';
 import { peopleHere, waitingNote } from '../../src/core/friend-share-people.js';
 import { createDemoWorkspaces } from '../../src/demo.js';
-import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
+import { type Crowd, SLOW, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Mac, mac } from './helpers.js';
 
 /**
@@ -72,7 +72,7 @@ describe('a worktree shared over the network', () => {
     const conv = conversations(kay.store.getState()).find((c) => c.channel === channel);
     expect(conv).toMatchObject({ project: 'ata · bob-api', mine: true });
     expect(workView(kay.store.getState(), ctx).projects.some((p) => p.name === 'ata · bob-api')).toBe(true);
-  }, 60_000);
+  }, 60_000 * SLOW);
 
   it("waits while the owner's Mac is offline, says so, and goes when it's back", async () => {
     const { ata, kay, channel, wsId } = await sharedWorktree();
@@ -94,7 +94,7 @@ describe('a worktree shared over the network', () => {
     expect(waitingNote(kay.store.getState(), wsId)).toBeUndefined();
     await new Promise((r) => setTimeout(r, 500));
     expect(ata.runs.filter((r) => r.prompt.includes('while you were away'))).toHaveLength(1);
-  }, 60_000);
+  }, 60_000 * SLOW);
 
   it('someone not in the worktree, or only following it, never reaches its Claude', async () => {
     const { ata, kay, channel, wsId } = await sharedWorktree();
@@ -107,7 +107,7 @@ describe('a worktree shared over the network', () => {
     kay.session.send({ kind: 'agent_request', requestId: 'r-by-hand-1', prompt: 'by hand', viaAgent: false, channel, urgent: false, plan: false }, { to: ata.id });
     await settle(() => kay.store.getState().log.find((l) => l.type === 'agent' && l.requestId === 'r-by-hand-1' && l.status === 'denied'));
     expect(ata.runs).toHaveLength(0);
-  }, 60_000);
+  }, 60_000 * SLOW);
 
   it('its scratch folder shows on the friend’s Mac too, newest first, read over the link (BLG-259)', async () => {
     const { ata, kay, wsId } = await sharedWorktree();
@@ -121,7 +121,7 @@ describe('a worktree shared over the network', () => {
     expect(list.files.map((f) => f.path)).toEqual(['.beluga/scratch/notes.md', '.beluga/scratch/shots/old.txt']);
     expect(list.files.every((f) => f.mtime > 0)).toBe(true);
     expect(await kay.session.readFile({ owner: ata.id, share: `ws-${wsId}`, path: '.beluga/scratch/notes.md' })).toMatchObject({ content: '# notes' });
-  }, 60_000);
+  }, 60_000 * SLOW);
 
   it('its whole conversation reaches the friend a page at a time as they scroll back, oldest on top (BLG-259)', async () => {
     net = await crowd();
@@ -153,5 +153,5 @@ describe('a worktree shared over the network', () => {
     expect(lines()[0]).toBe('line 0');
     await settle(() => !kay.store.getState().shared.find((w) => w.id === ws.id)?.earlier);
     expect(kay.shares.earlier(ata.id, ws.id)).toBe(false);
-  }, 60_000);
+  }, 60_000 * SLOW);
 });

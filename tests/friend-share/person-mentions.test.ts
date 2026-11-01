@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { type NetworkService, attachNetwork } from '../../src/core/network.js';
 import { createDemoWorkspaces } from '../../src/demo.js';
-import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
+import { type Crowd, SLOW, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Mac, mac } from './helpers.js';
 
 /** "@ata" in what you say to your Claude tells Ata; "@claude:ata" stays for your Claude to ask Ata's Claude. */
@@ -40,5 +40,5 @@ describe('mentioning a friend in a conversation with your Claude', () => {
     expect(note.text).toContain(`${ws.name} (bob-api)`);
     expect(note.text).toContain('@ata can you look at the retry change?');
     expect(kay.store.getState().log.some((l) => l.type === 'system' && l.channel === channel && l.text.startsWith('Told ata you mentioned them'))).toBe(true);
-  }, 60_000);
+  }, 60_000 * SLOW);
 });

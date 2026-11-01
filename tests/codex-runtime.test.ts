@@ -1,4 +1,5 @@
 import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { CodexEvents, toolCallOf, unwrapShell, usageEvent } from '../src/agent/runtime/codex/events.js';
 import { createCodexBackend, codexEffort, codexModel, toCodexModelChoices } from '../src/agent/runtime/codex/runner.js';
@@ -21,7 +22,7 @@ const backend = (codex: FakeCodex) => createCodexBackend({ cwd, autoEdit: true, 
 describe("Codex's items as Beluga's steps", () => {
   it('names each item as the tool Beluga already draws', () => {
     expect(toolCallOf({ type: 'commandExecution', id: 'c', command: "/bin/zsh -lc 'npm test'", cwd, status: 'inProgress', aggregatedOutput: null, exitCode: null, durationMs: null }, cwd)).toEqual({ name: 'Bash', input: { command: 'npm test' } });
-    expect(toolCallOf({ type: 'fileChange', id: 'f', status: 'inProgress', changes: [{ path: 'src/a.ts', kind: { type: 'add' }, diff: '+x' }] }, cwd)).toEqual({ name: 'Write', input: { file_path: `${cwd}/src/a.ts` } });
+    expect(toolCallOf({ type: 'fileChange', id: 'f', status: 'inProgress', changes: [{ path: 'src/a.ts', kind: { type: 'add' }, diff: '+x' }] }, cwd)).toEqual({ name: 'Write', input: { file_path: path.join(cwd, 'src/a.ts') } });
     expect(toolCallOf({ type: 'fileChange', id: 'f', status: 'inProgress', changes: [{ path: 'a.ts', kind: { type: 'update' }, diff: '' }] }, cwd)?.name).toBe('Edit');
     expect(toolCallOf({ type: 'mcpToolCall', id: 'm', server: 'beluga', tool: 'send_chat', status: 'inProgress', arguments: { text: 'hi' }, result: null, error: null }, cwd)).toEqual({ name: 'mcp__beluga__send_chat', input: { text: 'hi' } });
     expect(toolCallOf({ type: 'webSearch', id: 'w', query: 'codex' }, cwd)).toEqual({ name: 'WebSearch', input: { query: 'codex' } });
@@ -46,7 +47,7 @@ describe("Codex's items as Beluga's steps", () => {
     ev.handle('item/completed', { item: { type: 'mcpToolCall', id: 'm1', server: 'beluga', tool: 'list_peers', status: 'completed', arguments: {}, result: { content: [{ type: 'text', text: 'nobody' }] }, error: null } });
     ev.handle('item/completed', { item: { type: 'reasoning', id: 'r1', summary: ['Looking at the readme.'], content: [] } });
     ev.handle('item/completed', { item: { type: 'agentMessage', id: 'a1', text: 'Done.' } });
-    expect(touched).toEqual([`${cwd}/README.md`]);
+    expect(touched).toEqual([path.join(cwd, 'README.md')]);
     expect(steps.find((s) => s.id === 'f1' && s.status === 'done')).toMatchObject({ tool: 'Edit', output: '-a\n+b' });
     expect(steps.find((s) => s.id === 'm1' && s.status === 'done')).toMatchObject({ tool: 'mcp__beluga__list_peers', output: 'nobody' });
     expect(steps.find((s) => s.kind === 'thinking')).toMatchObject({ text: 'Looking at the readme.' });
@@ -76,7 +77,7 @@ describe('a Codex run', () => {
     expect(start!.sandbox).toBeUndefined();
     const profile = (start!.config as Record<string, { extends: string; filesystem: Record<string, string>; network: { enabled: boolean } }>)['permissions.beluga']!;
     expect(profile).toMatchObject({ extends: ':workspace', network: { enabled: true } });
-    expect(profile.filesystem).toMatchObject({ [cwd]: 'write', '/tmp/extra': 'write', [`${cwd}/**/.env*`]: 'deny' });
+    expect(profile.filesystem).toMatchObject({ [cwd]: 'write', [path.resolve('/tmp/extra')]: 'write', [`${cwd}/**/.env*`]: 'deny' });
     // A turn's own sandbox would replace the profile: none is sent.
     expect(codex.sent('turn/start')[0]!.sandboxPolicy).toBeUndefined();
     expect(run.events.some(([k]) => k === 'usage')).toBe(true);
@@ -169,7 +170,7 @@ describe('a Codex run', () => {
     const codex = new FakeCodex();
     const canUseTool = vi.fn(async () => true);
     await backend(codex).run(input('edit the hosts file', { canUseTool, scope: 'full' }));
-    expect(canUseTool).toHaveBeenCalledWith('Edit', { file_path: '/etc/hosts' });
+    expect(canUseTool).toHaveBeenCalledWith('Edit', { file_path: path.resolve('/etc/hosts') });
     expect(codex.approvals).toEqual([{ decision: 'accept' }]);
   });
 

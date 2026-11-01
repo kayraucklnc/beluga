@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cannotTake } from '../../src/net/mesh/features.js';
 import { createDemoWorkspaces } from '../../src/demo.js';
-import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
+import { type Crowd, SLOW, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Mac, mac } from './helpers.js';
 
 /** BLG-204: a project shared with a friend over the network (nobody hosts): two simulated Macs on a local testnet. */
@@ -59,7 +59,7 @@ describe('sharing a project with a friend over the network', () => {
     ata.session.sharing.unshareFriend({ peerId: kay.id, projectId: project.id });
     await settle(() => kay.store.getState().sharedProjects.length === 0 && !kay.store.getState().shared.some((w) => w.via === 'mesh'));
     expect(ata.store.getState().members[live[0]!.id]?.[kay.id]).toBeUndefined();
-  }, 60_000);
+  }, 60_000 * SLOW);
 
   it('a friend who can only follow along can read but not ask', async () => {
     net = await crowd();
@@ -78,7 +78,7 @@ describe('sharing a project with a friend over the network', () => {
     ata.session.sendChat('watch this', false, `ws:${ws.id}`);
     await settle(() => chatSeen(kay, `ws:${ws.id}`, 'watch this'));
     expect(ata.runs).toHaveLength(0);
-  }, 40_000);
+  }, 40_000 * SLOW);
 
   it('only friends, and a friend whose Beluga is too old is told at once', async () => {
     net = await crowd();
@@ -88,7 +88,7 @@ describe('sharing a project with a friend over the network', () => {
     expect(() => ata.session.sharing.shareWithFriend({ peerId: 'x'.repeat(32), projectId: project.id, role: 'view' })).toThrow(/friend first/);
     expect(cannotTake('Ata', { version: '0.6.0+mac.1.1.0', can: ['chat.files', 'task.ask'] }, 'share.project')).toBe("Ata's Beluga 1.1.0 can't open shared projects yet. Ask Ata to update Beluga.");
     expect(cannotTake('Ata', { version: '0.6.3+mac.1.3.0', can: ['share.project'] }, 'share.project')).toBeUndefined();
-  }, 20_000);
+  }, 20_000 * SLOW);
 
   it('shared whole, the friend gets their own copy of it: a bundle from the owner when it can’t be cloned (BLG-258)', async () => {
     net = await crowd();
@@ -125,5 +125,5 @@ describe('sharing a project with a friend over the network', () => {
     ata.session.sharing.shareWithFriend({ peerId: kay.id, workspaceId: ws.id, role: 'view' });
     const single = await settle(() => kay.store.getState().sharedProjects.find((p) => p.worktrees.some((w) => w.id === ws.id)));
     expect(single!.copy).toBeUndefined();
-  }, 60_000);
+  }, 60_000 * SLOW);
 });

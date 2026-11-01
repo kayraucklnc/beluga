@@ -99,6 +99,15 @@ describe('a dialogue across owners', () => {
     const id = Object.keys(kay.n.store.getState().dialogues)[0]!;
     kay.d.confirm(id);
     await settle(() => dialogueOf(bob, id)?.status === 'running' && bob.n.claude.runs.length === 1);
+    // Bob's frames reach kay in order but one read at a time, as they often do on Windows: the
+    // halted turn's result must not end it on kay's side as a failure before the stop is read.
+    const mesh = bob.n.person.mesh;
+    const send = mesh.sendGateway.bind(mesh);
+    let line = Promise.resolve();
+    mesh.sendGateway = (peer, frame) => {
+      line = line.then(() => new Promise((r) => setTimeout(() => (send(peer, frame), r()), 30)));
+      return true;
+    };
     bob.d.stop(id);
     await settle(() => dialogueOf(kay, id)?.status === 'stopped');
     expect(dialogueOf(kay, id)?.note).toBe('Stopped by dlgB2');
