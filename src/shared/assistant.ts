@@ -56,7 +56,12 @@ export interface AssistantChat {
   readonly id: string;
   readonly channel: string;
   readonly createdAt: number;
+  /** A sentinel run's chat (BLG-566): found from its run, not a tab of yours, and not counted in Open chats. */
+  readonly run?: true;
 }
+
+/** Your own chats, the tabs: a sentinel run's are shown only while open (Open Chat on its run). */
+export const tabChats = (a: AssistantChats): readonly AssistantChat[] => a.chats.filter((c) => !c.run || c.id === a.active);
 
 /** Your Mac's chats, in tab order, and the one open (persisted in ~/.beluga/assistant/chats.json). */
 export interface AssistantChats {

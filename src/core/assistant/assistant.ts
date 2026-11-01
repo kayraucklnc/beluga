@@ -13,7 +13,7 @@ import { boardName, reposOf } from '../board/model.js';
 import { busyChannels } from '../board/work.js';
 import { type LogItem, type Store, settleRun } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
-import { type AgentRef, CLAUDE_AGENT } from '../../protocol.js';
+import { AgentRef, CLAUDE_AGENT } from '../../protocol.js';
 import { chosenAgent } from '../settings.js';
 import { chatFits, chatLimitMessage } from '../../shared/chat-limit.js';
 
@@ -61,8 +61,26 @@ interface Saved {
 
 /** What chats.json holds: the chats in tab order, and the one open. */
 interface ChatsFile {
-  readonly chats: ReadonlyArray<{ readonly id: string; readonly createdAt: number }>;
+  readonly chats: readonly ChatEntry[];
   readonly active: string;
+}
+
+/**
+ * One chat in chats.json. `run`: a sentinel run made it (BLG-566): it never takes the open tab, isn't
+ * counted in Open chats, and Sentinel puts it away as the sentinel keeps its chats. `agent`: the
+ * agent its step chose (else your default).
+ */
+interface ChatEntry {
+  readonly id: string;
+  readonly createdAt: number;
+  readonly run?: true;
+  readonly agent?: AgentRef;
+}
+
+/** A chat as chats.json had it, checked (it's our file, but an older Beluga may have written it). */
+function entryOf(raw: { id: string; createdAt?: unknown; run?: unknown; agent?: unknown }): ChatEntry {
+  const agent = raw.agent === undefined ? undefined : AgentRef.safeParse(raw.agent);
+  return { id: raw.id, createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : 0, ...(raw.run === true ? { run: true as const } : {}), ...(agent?.success ? { agent: agent.data } : {}) };
 }
 
 /** The most items kept of its history (as a worktree's). */
@@ -158,7 +176,7 @@ export class MacAssistant {
   private migrate(): ChatsFile {
     const listed = readJson<Partial<ChatsFile> | undefined>(this.file('chats.json'), undefined);
     const raw = Array.isArray(listed?.chats) ? listed.chats : [];
-    const chats = raw.filter((c, i) => typeof c?.id === 'string' && CHAT_ID.test(c.id) && raw.findIndex((x) => x?.id === c.id) === i).map((c) => ({ id: c.id, createdAt: typeof c.createdAt === 'number' ? c.createdAt : 0 }));
+    const chats = raw.filter((c, i) => typeof c?.id === 'string' && CHAT_ID.test(c.id) && raw.findIndex((x) => x?.id === c.id) === i).map(entryOf);
     if (chats.length) return { chats, active: chats.some((c) => c.id === listed?.active) ? listed!.active! : chats[0]!.id };
     mkdirSync(this.chatDir(FIRST_CHAT), { recursive: true, mode: 0o700 });
     for (const name of ['state.json', 'history.json']) {
@@ -182,7 +200,7 @@ export class MacAssistant {
 
   /** The chats, as the screens see them (the shared state's `assistant`). */
   chats(): AssistantChats {
-    return { chats: this.list.chats.map((c) => ({ id: c.id, channel: assistantChannel(c.id), createdAt: c.createdAt })), active: this.list.active };
+    return { chats: this.list.chats.map((c) => ({ id: c.id, channel: assistantChannel(c.id), createdAt: c.createdAt, ...(c.run ? { run: true as const } : {}) })), active: this.list.active };
   }
 
   private save(list: ChatsFile): void {
@@ -201,16 +219,24 @@ export class MacAssistant {
     this.saved.set(id, {});
   }
 
-  /** A new chat, after the others, open now → its id. */
-  newChat(): string {
-    // How many chats at once is yours to choose (Settings › Agent › Open chats; 0: no limit).
-    const limit = this.deps.store.getState().prefs.chatLimit;
-    if (!chatFits(this.list.chats.length, limit)) throw new Error(chatLimitMessage(this.list.chats.length, limit, 'Your Mac chats'));
+  /**
+   * A new chat, after the others, open now → its id. A sentinel run's (`run`) stays out of the way:
+   * the chat you have open stays open, and it doesn't count toward Open chats (an hourly sentinel
+   * would otherwise fill them and be refused on its 30th run).
+   */
+  newChat(opts: { readonly run?: boolean; readonly agent?: AgentRef } = {}): string {
+    if (!opts.run) {
+      // How many chats at once is yours to choose (Settings › Agent › Open chats; 0: no limit).
+      const limit = this.deps.store.getState().prefs.chatLimit;
+      const open = this.list.chats.filter((c) => !c.run).length;
+      if (!chatFits(open, limit)) throw new Error(chatLimitMessage(open, limit, 'Your Mac chats'));
+    }
     let id = '';
     do id = randomBytes(5).toString('hex');
     while (this.has(id) || id === FIRST_CHAT);
     this.fresh(id);
-    this.save({ chats: [...this.list.chats, { id, createdAt: this.now }], active: id });
+    const entry: ChatEntry = { id, createdAt: this.now, ...(opts.run ? { run: true as const } : {}), ...(opts.agent ? { agent: opts.agent } : {}) };
+    this.save({ chats: [...this.list.chats, entry], active: opts.run ? this.list.active : id });
     this.saver.loaded(assistantChannel(id));
     return id;
   }
@@ -251,9 +277,9 @@ export class MacAssistant {
     await dropSession(this.workDir, sessionId, this.deps.claudeDir ?? claudeConfigDir());
   }
 
-  /** Your default agent now (BLG-503): Your Mac's chats and "On Your Mac" steps run on it. */
-  private agent(): AgentRef {
-    return chosenAgent(this.deps.store.getState().prefs);
+  /** Your default agent now (BLG-503): Your Mac's chats run on it; an "On Your Mac" step's chat on the agent the step chose. */
+  private agent(id?: string): AgentRef {
+    return this.list.chats.find((c) => c.id === id)?.agent ?? chosenAgent(this.deps.store.getState().prefs);
   }
 
   /**
@@ -262,7 +288,7 @@ export class MacAssistant {
    */
   place(channel: string = ASSISTANT_CHANNEL): AgentPlace {
     const id = assistantChatOf(channel) ?? FIRST_CHAT;
-    const agent = this.agent();
+    const agent = this.agent(id);
     const was = this.saved.get(id);
     const sessionId = (was?.runtime ?? CLAUDE_AGENT.runtime) === agent.runtime ? was?.sessionId : undefined;
     return {

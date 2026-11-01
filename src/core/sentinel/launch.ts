@@ -2,7 +2,7 @@ import { belugaHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import { assistantOf } from '../assistant/registry.js';
-import { assistantChannel } from '../../shared/assistant.js';
+import { assistantChannel, assistantChatOf } from '../../shared/assistant.js';
 import { commandEnv, fetchSource } from '../views/sources.js';
 import type { Source } from '../../shared/view-spec.js';
 import { gatewayOf } from '../gateway/registry.js';
@@ -174,10 +174,22 @@ function places(session: Session): SentinelPlaces | undefined {
       const ws = await ctl.startWorktree(projectId, '', (p) => session.nameTask(p), { quiet: true, name });
       return ws ? { channel: `ws:${ws.id}`, workspaceId: ws.id } : undefined;
     },
-    macChat: () => {
+    macChat: (run) => {
       const mac = assistantOf(session);
       if (!mac) return undefined;
-      return { channel: assistantChannel(mac.newChat()) };
+      return { channel: assistantChannel(mac.newChat(run ? { run: true, ...(run.agent ? { agent: run.agent } : {}) } : {})) };
+    },
+    putAway: async (channel) => {
+      if (channel.startsWith('ws:')) {
+        const ws = ctl.manager.find(channel.slice(3));
+        if (ws && !ws.archived && ws.kind === 'chat') await ctl.archive(ws.id, false, { quiet: true });
+        return;
+      }
+      const mac = assistantOf(session);
+      const id = assistantChatOf(channel);
+      const chats = mac?.chats();
+      // Only a run's own, and never the one you have open.
+      if (mac && id && chats && chats.active !== id && chats.chats.some((c) => c.id === id && c.run)) await mac.deleteChat(id);
     },
     madeChanges: async (workspaceId) => {
       const ws = ctl.manager.find(workspaceId);

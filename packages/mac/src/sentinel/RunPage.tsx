@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type RunDetail, type RunSummary, type Step, type StepRun, STEP_INFO } from '@beluga/core/sentinel/model.js';
+import { DEFAULT_KEEP_CHATS, KEEP_CHATS_INFO, type RunDetail, type RunSummary, type Step, type StepRun, STEP_INFO } from '@beluga/core/sentinel/model.js';
 import { Attention } from '../chat/Attention.js';
 import { ChatLog } from '../chat/ChatLog.js';
 import { Markdown } from '../chat/Markdown.js';
@@ -65,7 +65,9 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
   const name = sentinel?.name ?? detail.sentinel?.name;
   const back = (): void => (sentinel ? a.open(sentinel.id) : a.openList());
   const swipe = useSwipeBack(wrap, back);
-  const chat = run.channel ?? run.steps.find((x) => x.channel)?.channel;
+  // Put away as its sentinel keeps chats (BLG-566): the report and outputs stay, the chat doesn't.
+  const chat = run.putAway ? undefined : (run.channel ?? run.steps.find((x) => x.channel)?.channel);
+  const keptNote = run.putAway ? `Its chat was put away: ${sentinel ? `${sentinel.name} ${KEEP_CHATS_INFO[sentinel.keepChats ?? DEFAULT_KEEP_CHATS].keeps}` : 'its sentinel keeps fewer chats'}. The report and outputs stay here.` : undefined;
   const waiting = run.state === 'needs-you';
   const why = run.steps.find((x) => x.why && x.state === 'running')?.why;
   const more: ActionItem[] = [
@@ -138,7 +140,7 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
             </header>
             <div className={s.timeline} role="list">
               {run.steps.map((st, i) => (
-                <TimelineStep key={st.id} run={st} step={sentinel?.steps.find((x) => x.id === st.id)} index={i} now={now} worktree={run.worktreeId} open={(c) => a.openChannel(c)} />
+                <TimelineStep key={st.id} run={st} step={sentinel?.steps.find((x) => x.id === st.id)} index={i} now={now} worktree={run.worktreeId} gone={st.channel !== undefined && st.channel !== (run.worktreeId ? `ws:${run.worktreeId}` : undefined) ? keptNote : undefined} open={(c) => a.openChannel(c)} />
               ))}
             </div>
           </section>
@@ -178,7 +180,7 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
   );
 }
 
-function TimelineStep({ run, step, index, now, worktree, open }: { run: StepRun; step: Step | undefined; index: number; now: number; worktree?: string | undefined; open: (channel: string) => void }) {
+function TimelineStep({ run, step, index, now, worktree, gone, open }: { run: StepRun; step: Step | undefined; index: number; now: number; worktree?: string | undefined; gone?: string | undefined; open: (channel: string) => void }) {
   const [shown, setShown] = useState(false);
   // Claude's session, watched right here: open while it works (and when it needs you), folded after.
   const live = run.state === 'running';
@@ -197,13 +199,14 @@ function TimelineStep({ run, step, index, now, worktree, open }: { run: StepRun;
           {kind ? <span className={s.tTook}>{STEP_INFO[kind].label}</span> : null}
           {took ? <span className={s.tTook}>· {took}{run.state === 'running' ? ' so far' : ''}</span> : null}
           <span className={t.grow} />
-          {run.channel && chatPlaceOf(run.channel) && kind !== 'claude' ? (
+          {run.channel && chatPlaceOf(run.channel) && kind !== 'claude' && !gone ? (
             <Button size="small" variant="quiet" icon="chat" onClick={() => open(run.channel!)}>
               Open Chat
             </Button>
           ) : null}
         </div>
-        {run.channel && kind === 'claude' ? (
+        {run.channel && kind === 'claude' && gone ? <span className={s.tNote}>{gone}</span> : null}
+        {run.channel && kind === 'claude' && !gone ? (
           <>
             <button type="button" className={s.disclosure} aria-expanded={watch} onClick={() => setWatching(!watch)}>
               <Icon name={watch ? 'chevronDown' : 'chevronRight'} size={10} />

@@ -301,6 +301,30 @@ export interface Limits {
 }
 
 export const DEFAULT_LIMITS: Limits = { minutes: 30, pauseAfter: 3 };
+
+/**
+ * Which runs' conversations a sentinel keeps (BLG-566). The rest are put away once their run ends: a
+ * project chat archived (restorable), a Your Mac chat deleted; each run's report and outputs stay
+ * either way, and a worktree with work is never put away. `all` keeps every one (the 200 runs a
+ * sentinel keeps), `failed` only failed and stopped runs', `latest` only the newest run's.
+ */
+export const KEEP_CHATS = ['all', 'failed', 'latest'] as const;
+export type KeepChats = (typeof KEEP_CHATS)[number];
+export const DEFAULT_KEEP_CHATS: KeepChats = 'all';
+/** `keeps`: what it does, after its name ("Hourly check keeps only failed runs’ chats"). */
+export const KEEP_CHATS_INFO: Readonly<Record<KeepChats, { readonly label: string; readonly description: string; readonly keeps: string }>> = {
+  all: { label: 'Every run', description: 'Each run’s chat stays, to read or carry on', keeps: 'keeps every run’s chat' },
+  failed: { label: 'Failed runs only', description: 'A run that went fine puts its chat away; its report stays', keeps: 'keeps only failed runs’ chats' },
+  latest: { label: 'The latest run only', description: 'Each run puts the one before’s chat away; reports stay', keeps: 'keeps only the latest run’s chat' },
+};
+
+/** Whether a run that ended keeps its conversation; `latest`: the newest ended run with one. */
+export function keepsChat(keep: KeepChats, run: Pick<Run, 'id' | 'state'>, latest: string | undefined): boolean {
+  if (isLive(run.state)) return true;
+  if (keep === 'failed') return run.state === 'failed' || run.state === 'stopped';
+  if (keep === 'latest') return run.id === latest;
+  return true;
+}
 export const TIME_LIMITS = [10, 30, 60, 120] as const;
 
 export interface Sentinel {
@@ -314,6 +338,8 @@ export interface Sentinel {
   readonly steps: readonly Step[];
   readonly access: Access;
   readonly limits: Limits;
+  /** Which runs' conversations it keeps (none: all). */
+  readonly keepChats?: KeepChats;
   /** Where the run's end is told. */
   readonly notify: NotifyWhere;
   /** A new sentinel starts paused until you Turn It On. */
@@ -345,6 +371,7 @@ export interface SentinelDraft {
   readonly steps?: readonly StepDraft[];
   readonly access?: Access;
   readonly limits?: Partial<Limits>;
+  readonly keepChats?: KeepChats;
   readonly notify?: NotifyWhere;
   readonly recipe?: string;
 }
@@ -423,6 +450,8 @@ export interface Run {
    * done later) still can't start a loop.
    */
   readonly chain?: readonly string[];
+  /** Its conversations were put away, as its sentinel keeps them (or it was the oldest of 200). */
+  readonly putAway?: true;
 }
 
 /** A run in the index and the state: no outputs, no trigger payload. */

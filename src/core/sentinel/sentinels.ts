@@ -65,6 +65,8 @@ import {
   firstLine,
   isLive,
   keepRuns,
+  keepsChat,
+  DEFAULT_KEEP_CHATS,
   lastRunOf,
   scheduleSentence,
   sentinelLabel,
@@ -403,6 +405,7 @@ export class Sentinels {
       steps,
       access,
       limits: limitsOf({ ...DEFAULT_LIMITS, ...draft.limits }),
+      ...(draft.keepChats && draft.keepChats !== DEFAULT_KEEP_CHATS ? { keepChats: draft.keepChats } : {}),
       notify: draft.notify ?? 'mac',
       paused: true,
       failures: 0,
@@ -433,6 +436,7 @@ export class Sentinels {
       steps,
       access,
       limits: limitsOf({ ...was.limits, ...patch.limits }),
+      ...(patch.keepChats ? { keepChats: patch.keepChats } : {}),
       ...(patch.notify ? { notify: patch.notify } : {}),
       // A new schedule starts from now: nothing it would have run before is caught up.
       ...(triggerChanged ? { lastScheduledAt: this.now() } : {}),
@@ -442,6 +446,8 @@ export class Sentinels {
     if (triggerChanged || projectId !== was.projectId) this.forgetCursor(next.id);
     this.replace(next);
     if (patch.steps) this.relabelNumbers(next);
+    // Keeping fewer chats puts the ones it no longer keeps away now, not at its next run.
+    if (patch.keepChats && patch.keepChats !== (was.keepChats ?? DEFAULT_KEEP_CHATS)) this.tidyChats(next);
     return next;
   }
 
@@ -1094,6 +1100,7 @@ export class Sentinels {
     this.tell(next, run, pausing);
     this.follow(next, run);
     this.extra.delete(sid);
+    this.tidyChats(next);
     this.prune();
     const waiting = this.active.has(sid) ? undefined : this.queued.get(sid);
     if (waiting) {
@@ -1215,6 +1222,7 @@ export class Sentinels {
       ...(p.access ? { access: p.access } : {}),
       ...(p.limits ? { limits: p.limits } : {}),
       ...(p.notify ? { notify: p.notify } : {}),
+      ...(p.keepChats ? { keepChats: p.keepChats } : {}),
     };
   }
 
@@ -1294,9 +1302,36 @@ export class Sentinels {
     }
   }
 
+  /**
+   * Put away the conversations of a sentinel's ended runs it doesn't keep (BLG-566, `keepChats`): an
+   * hourly sentinel's chats don't pile up, and a run's report and outputs stay on its page. The run
+   * says so (`putAway`), so its page doesn't offer a chat that's gone.
+   */
+  private tidyChats(s: Sentinel): void {
+    const putAway = this.deps.places?.putAway;
+    if (!putAway) return;
+    const keep = s.keepChats ?? DEFAULT_KEEP_CHATS;
+    const mine = this.runs.filter((r) => r.sentinelId === s.id && !r.putAway && chatsOf(r).length);
+    const latest = [...mine].reverse().find((r) => !isLive(r.state))?.id;
+    for (const r of mine) if (!keepsChat(keep, r, latest)) this.putAwayChats(r);
+  }
+
+  private putAwayChats(run: RunSummary): void {
+    const putAway = this.deps.places?.putAway;
+    if (!putAway) return;
+    for (const channel of chatsOf(run)) void putAway(channel).catch(() => undefined);
+    const now = this.runs.find((r) => r.id === run.id);
+    if (now) this.recordSummary({ ...now, putAway: true });
+  }
+
   private prune(): void {
     const { kept, gone } = pruneRuns(this.runs);
     if (!gone.length) return;
+    // A run that goes takes its conversations with it: else they'd show up as anyone's chats.
+    for (const id of gone) {
+      const r = this.runs.find((x) => x.id === id);
+      if (r && !r.putAway) for (const channel of chatsOf(r)) void this.deps.places?.putAway?.(channel).catch(() => undefined);
+    }
     this.runs = kept;
     for (const id of gone) this.folders.remove(id);
     this.save();
@@ -2102,6 +2137,13 @@ export class Sentinels {
   }
 }
 
+/** A run's own chats (a project chat, a Your Mac chat): never its worktree, which keeps its work. */
+function chatsOf(run: Pick<RunSummary, 'channel' | 'steps' | 'worktreeId'>): string[] {
+  const worktree = run.worktreeId ? `ws:${run.worktreeId}` : undefined;
+  const all = [run.channel, ...run.steps.map((s) => s.channel)].filter((c): c is string => Boolean(c) && c !== worktree);
+  return [...new Set(all)];
+}
+
 /** Runs per day 0 is no limit, the same as none: kept as none. */
 function limitsOf(l: Limits): Limits {
   const { perDay, ...rest } = l;
@@ -2191,6 +2233,7 @@ export function fromToolDraft(d: ToolDraft): SentinelDraft {
     steps: d.steps.map(toolStep),
     ...(d.access ? { access: d.access } : {}),
     ...(d.notify ? { notify: d.notify } : {}),
+    ...(d.keepChats ? { keepChats: d.keepChats } : {}),
   };
 }
 

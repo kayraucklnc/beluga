@@ -3,7 +3,7 @@ import { SourceSchema } from '../../shared/view-spec.js';
 import { CHART_TILE_KINDS, LEGACY_TILE_KINDS, OUTPUT_SHOWS, TILE_KINDS } from './dashboard-model.js';
 import { COLUMN_ENCODINGS, COLUMN_KINDS, FILES_KEEP_MAX } from './columns.js';
 import { COMPARE } from './metrics.js';
-import { ACCESS, BELUGA_EVENTS, BETTER, SCRIPT_CODE_MAX, SCRIPT_LANGUAGES, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
+import { ACCESS, BELUGA_EVENTS, KEEP_CHATS, BETTER, SCRIPT_CODE_MAX, SCRIPT_LANGUAGES, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 
 /**
  * Sentinels as zod checks: what the API takes (sentinel-api.ts), what sentinel.json holds, and
@@ -119,6 +119,7 @@ export const SentinelDraftSchema = z.object({
   steps: z.array(StepInputSchema).max(20).optional(),
   access: z.enum(ACCESS).optional(),
   limits: LimitsSchema.partial().optional(),
+  keepChats: z.enum(KEEP_CHATS).optional(),
   notify: z.enum(NOTIFY_WHERE).optional(),
   recipe: z.string().min(1).max(40).optional(),
 });
@@ -136,6 +137,7 @@ export const SavedSentinelSchema = z
     steps: z.array(StepInputSchema.and(z.object({ id: z.string().min(1), name: z.string() }))).default([]),
     access: z.enum(ACCESS).default('look'),
     limits: LimitsSchema.default({ minutes: 30, pauseAfter: 3 }),
+    keepChats: z.enum(KEEP_CHATS).optional().catch(undefined),
     notify: z.enum(NOTIFY_WHERE).default('mac'),
     paused: z.boolean().default(true),
     pausedWhy: z.string().optional(),

@@ -198,9 +198,9 @@ const openAssistant = (state: DomainState): Conversation => {
   return assistantConversations(state).find((c) => c.channel === channel) ?? { channel, title: ASSISTANT_TITLE, mine: true };
 };
 
-/** Your Mac's chats for the phone's list (1.14): in tab order, each titled by its tab. */
+/** Your Mac's chats for the phone's list (1.14): in tab order, each titled by its tab; a sentinel run's are on its run (BLG-566). */
 function macChatSummaries(state: DomainState, waiting: ReadonlySet<string>, ctx?: ViewContext): ConvSummary[] {
-  return state.assistant.chats.slice(0, 40).flatMap((c) => summaryOf(state, { channel: c.channel, title: assistantChatTitle(c.channel, state.log, 60), mine: true }, waiting, ctx) ?? []);
+  return state.assistant.chats.filter((c) => !c.run).slice(0, 40).flatMap((c) => summaryOf(state, { channel: c.channel, title: assistantChatTitle(c.channel, state.log, 60), mine: true }, waiting, ctx) ?? []);
 }
 
 /**
@@ -1210,7 +1210,8 @@ function sentinelRunView(s: SentinelState, sn: Sentinel, r: RunSummary, ctx?: Vi
   const step = live && isLive(r.state) ? sn.steps.find((st) => st.id === live)?.name : undefined;
   const report = r.report ? ctx?.refs.output(r.report, r.endedAt !== undefined ? { ts: r.endedAt } : {}) : undefined;
   // Its Claude's conversation (the live one first): a workspace chat or Your Mac's, the ones the phone opens.
-  const chats = r.steps.filter((x) => x.channel && /^(ws:|mac:assistant)/.test(x.channel));
+  // A chat its sentinel put away (BLG-566) isn't offered; its worktree's always is.
+  const chats = r.steps.filter((x) => x.channel && /^(ws:|mac:assistant)/.test(x.channel) && (!r.putAway || x.channel === `ws:${r.worktreeId}`));
   const chat = (chats.find((x) => x.state === 'running') ?? chats.at(-1))?.channel;
   return {
     id: clip(r.id, 200),

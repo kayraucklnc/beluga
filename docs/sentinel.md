@@ -51,7 +51,7 @@ Each step has an `id`, a `name` the window shows ("Read what changed"), and its 
 
 | Kind | Window says | Fields | Phase |
 |---|---|---|---|
-| `claude` | Ask Your Agent | `prompt`, `where: 'project' \| 'worktree' \| 'mac'`, `model?`, `effort?` | 1 |
+| `claude` | Ask Your Agent | `prompt`, `where: 'project' \| 'worktree' \| 'mac'`, `runtime?` (`claude`, `codex`, `local`; none: your default agent), `model?`, `effort?` | 1 |
 | `script` | Run a script | `command` (one shell line or a script's path), `cwd: 'project' \| 'home'`, `timeoutSec` (120 by default, up to 3600) | 1 |
 | `notify` | Notify me | `title?`, `body?` (templates), `phone: boolean`; the run's report is attached | 1 |
 | `http` | Call a service | `method`, `url`, `headers` (`$VAR` from Settings › Environment), `body?`, `timeoutSec`; a **service preset** fills these (Groqbot, Slack webhook, Discord webhook, any URL) | 2 |
@@ -66,7 +66,13 @@ Each step has an `id`, a `name` the window shows ("Read what changed"), and its 
 **Where the agent runs** (`where`):
 - `project` — a new chat in the project's main folder (`newChat`, quiet), where the agent only reads (ask-only). For briefs, triage, reviews.
 - `worktree` — a new worktree named `sentinel/<slug>-<yymmdd>` (`startWorktree`, quiet). Edits, commits, tests. A worktree whose run made no commit is archived when the run ends; one with commits stays, with its pull request if a `pr` step opened one. The run's **later steps share this worktree** (`pr`, `merge`, a second agent step).
-- `mac` — a new chat in Your Mac (`assistant.newChat`), for things about the Mac itself (screenshots, disk, apps).
+- `mac` — a run's own chat in Your Mac (`assistant.newChat({ run: true, agent })`), for things about the Mac itself (screenshots, disk, apps). It isn't one of your tabs: it doesn't take the chat you have open, isn't counted in Settings › Agent › Open chats (before BLG-566 an hourly sentinel filled them and was refused on its 30th run), and shows as a tab only while you have it open from its run. It runs on the agent the step chose, Codex too.
+
+**Which agent.** Each Ask Your Agent step can pick its agent and model (`runtime`, `model`), on every `where`: Claude, Codex or a local model; none is your default agent. The sentinel's page sets it for every step at once, and your agent can set it with `sentinel_create` / `sentinel_update`. Codex gets the same run brief and the same tools (`sentinel_measure`, the board, the dashboards), and its usage limit fails the run as "usage limit" as Claude's does.
+
+### Keep chats (`keepChats`, BLG-566)
+
+Which runs' conversations a sentinel keeps: **Every run** (`all`, the default), **Failed runs only** (`failed`: a run that went fine puts its chat away when it ends; failed and stopped runs keep theirs) or **The latest run only** (`latest`: each run puts the one before's away). Put away means a project chat is archived (it can be restored) and a Your Mac chat is deleted; a worktree is never put away by this (one without work is archived as before; one with work stays). The run's report and its steps' outputs stay on its page either way, and the run says its chat was put away (`putAway`), so neither the Mac nor the phone offers a chat that's gone. Choosing to keep fewer puts the older ones away at once. A run pruned past the 200 a sentinel keeps takes its chats with it, so they never turn up among your own.
 
 ### Access (`access`)
 
@@ -102,7 +108,7 @@ StepRun { id, state: 'waiting' | 'running' | 'done' | 'failed' | 'skipped', star
 
 - **Where runs live.** The index (the last 200 runs per sentinel, without outputs) is in `~/.beluga/sentinel.json` with the sentinels; each run's outputs and report are in `~/.beluga/sentinel/runs/<runId>/` (`trigger.json`, `step-<n>.txt`, `report.md`). Older runs are pruned with their folders. Nothing here ever reaches a friend; the phone gets the index and reads a report as a text output (`isArtifact` says yes to `.md` outside a project).
 - **The report.** The last agent step's final message is the report (Markdown, with views and graphs drawn as in chat). The agent is told: "Your last message is this run's report. Start with one line that says what happened; it's shown on the sentinel's row and the phone." That first line is the run's `headline`. Runs with no agent step get a headline from Beluga ("Script ran · 2.1 s · exit 0"; "example.com is back").
-- **The run's conversation.** An agent step's chat (`channel`) is kept like any conversation: Open Chat on the run page. Worktree runs appear under the project like any worktree, labelled with the sentinel (`ownedBy: { sentinel }` the way plans own worktrees, so Unread folds them under the sentinel's row, not the project's).
+- **The run's conversation.** An agent step's chat (`channel`) belongs to its run: the run page shows the agent's session inline, with Open Chat. It isn't in the sidebar's project chats nor Your Mac's tabs (Unread names the sentinel when one needs you); Keep chats says how many the sentinel keeps. Worktree runs appear under the project like any worktree, labelled with the sentinel (`ownedBy: { sentinel }` the way plans own worktrees, so Unread folds them under the sentinel's row, not the project's).
 - **History on the row.** Each sentinel row shows its last run's state and headline ("3 h ago · 4 tasks created") and the next run ("next 7:00"). The page shows the last 30 runs as a dot strip (done mint, skipped grey, failed rose, running copper), then the list.
 
 ---
