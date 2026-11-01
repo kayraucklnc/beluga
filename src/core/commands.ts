@@ -71,6 +71,7 @@ export const COMMANDS: readonly CommandSpec[] = [
 ];
 
 const POLICIES: readonly Policy[] = ['ask', 'auto', 'deny'];
+const COMMAND_ALIASES = new Set(['q', 'exit', 'h', '?', 'projects', 'workspaces', 'lobby', 'worktree', 'find', 'space', 'notifications', 'templates', 'e', 'download', 'peers', 'who', 'y', 'yes', 'n', 'no', 'a', 'always', 'graph', 'prefs', 'text']);
 
 /** What /visualize asks Claude (the graph format is in its instructions: agent/graph-prompt.ts). */
 export function visualizePrompt(what: string): string {
@@ -348,6 +349,11 @@ export function runCommand(session: Session, name: string, args: readonly string
       session.toast(`Unknown command /${name}. Type /help (or // to send a message starting with /)`, 'warn');
     }
   }
+}
+
+/** Whether Beluga handles this command, including its aliases. */
+export function isBelugaCommand(name: string): boolean {
+  return COMMANDS.some((command) => command.name === name) || COMMAND_ALIASES.has(name);
 }
 
 /** Workspace commands act on the workspace you're looking at (or its project). */
