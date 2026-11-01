@@ -51,6 +51,8 @@ export interface WorkspaceRecord {
   readonly sessionRuntime?: string;
   /** The agent picked for this workspace (unset: your default). */
   readonly agent?: AgentRef;
+  /** Switched quietly from this agent (its name, BLG-592): the recent conversation goes with your next message, then this clears. */
+  readonly carryFrom?: string;
   /** Set on forks until their first run, so Claude branches the parent's conversation. */
   readonly forkFromSession?: string;
   readonly forkedFrom?: string;

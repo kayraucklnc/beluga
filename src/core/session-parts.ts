@@ -117,11 +117,12 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         confirm: (title, detail) => session.ask('request', title, detail),
         open: opts.open,
         listModels: async () => (await session.backend?.listModels?.()) as readonly ModelChoice[] | undefined,
-        switchAgent: (channel, agent) =>
+        switchAgent: (channel, agent, mode) =>
           switchAgent(
             {
               find: (id) => opts.workspaces?.find(id),
               setAgent: (id, a) => opts.workspaces?.setAgent(id, a),
+              carry: (id, from) => opts.workspaces?.setCarry(id, from),
               askAndWait: (prompt, ch, ms) => session.askAndWait(prompt, ch, ms),
               start: (prompt, ch) => void session.askOwnClaude(prompt, ch, false, false),
               system: (ch, text, level) => session.store.dispatch({ type: 'system', channel: ch, text, level: level ?? 'info' }),
@@ -131,6 +132,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
             },
             channel,
             agent,
+            mode,
           ),
         // Your agent's runtime runs here; another, when this Beluga registers it (the demo's agent is Claude).
         listRuntimes,
