@@ -71,6 +71,8 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'List' }).click();
   await expect(page.getByRole('region', { name: 'Safe payments' })).toContainText('Add auth to the payment routes');
   await expect(page.getByRole('region', { name: 'Refunds and launch' })).toContainText('Launch checklist');
+  // Side by side only with room for a name and its tasks: never squeezed under 400 px, they wrap instead.
+  for (const name of ['Test-mode foundations', 'Safe payments']) expect((await page.getByRole('region', { name }).boundingBox())!.width).toBeGreaterThanOrEqual(400);
   await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'Canvas' }).click();
   // The conversation with the plan's Claude is beside it.
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
@@ -119,6 +121,9 @@ test('where the plan’s work goes, one click from the canvas: main, then each m
   await expect(steps.first()).toContainText('main');
   await expect(flow).toContainText('Test-mode foundations');
   await expect(flow).toContainText('Refunds and launch');
+  // Each step's state is one word on one line, however long the name beside it.
+  const tall = await steps.evaluateAll((items) => items.map((li) => li.querySelector('span > span > span:last-child')!).filter((s) => s.getBoundingClientRect().height >= 2 * parseFloat(getComputedStyle(s).fontSize)).map((s) => s.textContent));
+  expect(tall).toEqual([]);
   const shot = info.outputPath('branch-flow.png');
   await main(page).screenshot({ path: shot });
   await info.attach('where the work goes', { path: shot, contentType: 'image/png' });
