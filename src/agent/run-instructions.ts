@@ -19,8 +19,8 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
   const worktree = Boolean(input.env?.KLAUD_WORKTREE);
   return (
     buildSystemAppend(ownerName, agent) +
-    buildGraphAppend() +
-    buildViewAppend() +
+    buildGraphAppend(Boolean(input.terminal)) +
+    buildViewAppend(Boolean(input.terminal)) +
     (input.taskBrief ?? '') +
     (input.planBrief ?? '') +
     (input.macBrief ?? '') +

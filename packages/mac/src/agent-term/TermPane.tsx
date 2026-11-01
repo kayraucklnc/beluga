@@ -2,6 +2,7 @@ import type { SearchAddon } from '@xterm/addon-search';
 import type { Terminal } from '@xterm/xterm';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { findIssue } from '@beluga/core/board/model.js';
+import { isTermBusy } from '@beluga/shared/terminal-keys.js';
 import { Icon } from '../components/Icon.js';
 import { Button, IconButton, cx } from '../components/ui.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
@@ -57,6 +58,9 @@ export interface TermPaneProps {
 }
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err)).replace(/^Error: /, '');
+
+/** How soon the agent's terminal tries again after a turn in the chat kept it from opening (BLG-553). */
+const BUSY_RETRY_MS = 1500;
 
 /** Find in the terminal (⌘F): as you type, Return for the next, ⇧Return the one before. */
 function FindBar({ search, onClose }: { readonly search: SearchAddon; readonly onClose: () => void }) {
@@ -125,6 +129,8 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
   const [error, setError] = useState<string | undefined>(undefined);
   const [gen, setGen] = useState(0);
   const [starting, setStarting] = useState(false);
+  // A turn in the chat kept the agent's terminal from opening: it tries again in a moment (BLG-553).
+  const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState<SearchAddon | undefined>(undefined);
   const [finding, setFinding] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -153,7 +159,18 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
     lastSize.current = size;
     setError(undefined);
     const opening = kind === 'shell' ? api.terminals.global(termKey, cwd, size) : api.agentTerm.open(wsId, size);
-    return opening.catch((err: unknown) => setError(message(err)));
+    return opening.then(() => setBusy(false), fail);
+  };
+  /** Why it didn't start: shown, unless a turn in the chat is only finishing first (then it waits). */
+  const fail = (err: unknown): void => {
+    const why = message(err);
+    if (kind === 'agent' && isTermBusy(why)) {
+      setError(undefined);
+      setBusy(true);
+      return;
+    }
+    setBusy(false);
+    setError(why);
   };
   /** Start it again after it ended or couldn't start, then show it. */
   const again = async (): Promise<void> => {
@@ -163,13 +180,21 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
       const size = lastSize.current ?? (term.current ? { cols: term.current.cols, rows: term.current.rows } : undefined);
       if (kind === 'shell') await api.terminals.global(termKey, cwd, size);
       else await api.agentTerm.open(wsId, size);
+      setBusy(false);
       setGen((g) => g + 1);
     } catch (err) {
-      setError(message(err));
+      fail(err);
     } finally {
       setStarting(false);
     }
   };
+
+  useEffect(() => {
+    if (!busy || starting) return;
+    const retry = setTimeout(() => void again(), BUSY_RETRY_MS);
+    return () => clearTimeout(retry);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per wait; again reads the latest size
+  }, [busy, starting]);
 
   // The menu's Find (⌘F, ⌘G) while this terminal has the keyboard.
   useEffect(() => {
@@ -265,7 +290,13 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
         <IconButton icon="panelBottom" label="Split Down" keys={keyFor(keys, 'split_down')} onClick={() => onSplit('down')} />
         {onClose ? <IconButton icon="x" label="Close This Shell" onClick={onClose} /> : null}
       </div>
-      {error || (ended && !driving && kind === 'agent') || (ended && kind === 'shell') ? (
+      {busy && !error ? (
+        <div className={s.over} role="status" data-term-busy="">
+          <Icon name="terminal" size={18} />
+          <p className={s.overTitle}>{label} is finishing a turn in the chat</p>
+          <p className={s.overDetail}>The terminal opens here as soon as it’s done.</p>
+        </div>
+      ) : error || (ended && !driving && kind === 'agent') || (ended && kind === 'shell') ? (
         <div className={s.over} role="status">
           <Icon name={error ? 'alert' : 'terminal'} size={18} />
           <p className={s.overTitle}>{error ? (kind === 'agent' ? `${label} couldn’t start here` : 'The shell couldn’t start') : kind === 'agent' ? `${label}’s terminal ended` : 'The shell ended'}</p>

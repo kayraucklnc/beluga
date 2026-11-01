@@ -3,7 +3,9 @@ import { ghosttyAction, ghosttyChord, ghosttyKeys, itermChord, itermKeys, menuEq
 import { ghosttyLines, parseGhostty } from '../src/terminal/import/parsers.js';
 import { chipCells, imageHits, taskHits, visualHits } from '../packages/mac/src/lib/term-links.js';
 import { AGENT_TAB, addTab, closePane, closeTab, firstTabs, gotoTab, nextPaneNumber, pane, paneKeys, resizeSplit, splitPane, stepTab, tabsOf, toggleZoom, treeOf, withTree } from '../packages/mac/src/lib/term-panes.js';
-import { clampBoth, convoModeOf, toggledMode, withConvoMode } from '../packages/mac/src/lib/convo-mode.js';
+import { centerShows, clampBoth, convoModeOf, hasAgentTurn, sendsToTerminal, toggledMode, withConvoMode } from '../packages/mac/src/lib/convo-mode.js';
+import { type AppState, initialState } from '../src/core/store.js';
+import { TERM_BUSY, isTermBusy } from '../src/shared/terminal-keys.js';
 import { DEFAULT_TERM_KEYS, actionLabel, termKeyFor, termKeyRows, termKeysOf } from '../packages/mac/src/lib/term-keys.js';
 import { importPatch, importSummary, termKeysOf as savedKeys } from '../packages/mac/src/lib/terminal-import-model.js';
 import { PRESET_FROM, TERMINAL_PRESETS, presetOf } from '../packages/mac/src/lib/terminal-themes.js';
@@ -92,6 +94,46 @@ describe('how a conversation shows', () => {
     expect(toggledMode('both')).toBe('chat');
     expect(clampBoth(2)).toBe(0.6);
     expect(clampBoth(Number.NaN)).toBe(0.38);
+  });
+
+  it('starts as the chat until the first message opens the terminal, and waits on a turn in the chat (BLG-553)', () => {
+    const fresh = { turnRunning: false, driving: false, started: false, picked: false };
+    expect(centerShows('terminal', fresh)).toBe('fresh');
+    expect(centerShows('both', fresh)).toBe('fresh');
+    expect(centerShows('terminal', { ...fresh, started: true })).toBe('terminal');
+    // Picked for it yourself: it opens at once.
+    expect(centerShows('terminal', { ...fresh, picked: true })).toBe('terminal');
+    expect(centerShows('terminal', { ...fresh, turnRunning: true, started: true })).toBe('waiting');
+    expect(centerShows('both', { ...fresh, turnRunning: true })).toBe('waiting');
+    // A terminal already driving stays, and the chat is the chat.
+    expect(centerShows('terminal', { turnRunning: true, driving: true, started: false, picked: false })).toBe('terminal');
+    expect(centerShows('chat', fresh)).toBe('chat');
+  });
+
+  it('sends a fresh conversation’s first message to its terminal, only when it shows as one', () => {
+    const base = initialState('room', 'auto');
+    const ws = { id: 'w1', kind: 'worktree', path: '/w' };
+    const state = { ...base, projects: [{ id: 'p', root: '/p', workspaces: [ws] }] } as unknown as AppState;
+    const prefs = { termView: true, convoModes: {}, convoDefault: 'terminal' as const };
+    expect(sendsToTerminal(state, prefs, 'ws:w1')).toBe(true);
+    expect(sendsToTerminal(state, { ...prefs, termView: false }, 'ws:w1')).toBe(false);
+    expect(sendsToTerminal(state, { ...prefs, convoModes: { w1: 'chat' } }, 'ws:w1')).toBe(false);
+    // Switched to Terminal by hand: it's open already, so the message is typed there, not handed.
+    expect(sendsToTerminal(state, { ...prefs, convoModes: { w1: 'terminal' } }, 'ws:w1')).toBe(false);
+    expect(sendsToTerminal(state, prefs, 'room')).toBe(false);
+    // Once its agent has had a turn, a message is the terminal's own business (or the chat's).
+    const started = { ...state, log: [{ id: 'a', type: 'agent', channel: 'ws:w1', status: 'done', text: 'hi', steps: [], subagents: [], ts: 1 }] } as unknown as AppState;
+    expect(hasAgentTurn(started.log, 'ws:w1')).toBe(true);
+    expect(sendsToTerminal(started, prefs, 'ws:w1')).toBe(false);
+    // A new one, made with this message: on your default, not on Codex.
+    expect(sendsToTerminal(state, prefs, 'draft')).toBe(true);
+    expect(sendsToTerminal(state, prefs, 'draft', 'codex')).toBe(false);
+    expect(sendsToTerminal(state, { ...prefs, convoDefault: 'chat' }, 'draft')).toBe(false);
+  });
+
+  it('knows a busy terminal from one that couldn’t start', () => {
+    expect(isTermBusy(`Error: ${TERM_BUSY}`)).toBe(true);
+    expect(isTermBusy('That workspace is archived or gone.')).toBe(false);
   });
 });
 

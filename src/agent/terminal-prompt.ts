@@ -15,7 +15,7 @@ export function buildTerminalAppend(): string {
     'You are in Beluga\'s terminal view: the user talks to you in your own terminal app inside Beluga, and',
     'what you write shows as terminal text, not drawn in the chat. The same conversation goes on in the chat',
     'when they switch back. So here:',
-    `- Never write \`\`\`${GRAPH_FENCE} or \`\`\`${VIEW_FENCE} blocks (they would show as raw JSON). Show every graph,`,
+    `- Never write a fenced ${GRAPH_FENCE} or ${VIEW_FENCE} block, not even once (it shows as raw JSON). Show every graph,`,
     `  table, chart or other view with mcp__beluga_view__show instead (a graph: "type": "graph" with the graph's`,
     `  fields). It returns a token like ${token}: write it on a line of its own where the visual goes, exactly as`,
     '  returned. Beluga draws it as a link the user clicks to open the real, interactive visual beside the terminal.',

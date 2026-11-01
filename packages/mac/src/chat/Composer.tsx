@@ -18,7 +18,8 @@ import { useActions } from '../lib/actions.js';
 import { recipientLabel, recipientPrefix, toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { agentName, useAgentNameIn, useMyAgentName } from '../lib/agent-words.js';
 import { sameDeep, sameFields } from '../lib/stable.js';
-import { usePrefs } from '../lib/prefs.js';
+import { getPrefs, usePrefs } from '../lib/prefs.js';
+import { sendsToTerminal } from '../lib/convo-mode.js';
 import { mod } from '../lib/system.js';
 import { ModelPicker } from './ModelPicker.js';
 import { ContextMeter } from './ContextMeter.js';
@@ -346,7 +347,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     // Its words left the box when it was sent; its branch and name go with them.
     worktreeChoices.delete(projectId);
     setWorktreeState({ name: '' });
-    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}), ...(worktree.agent ? { agent: worktree.agent } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
+    // Seen as its terminal (Settings › Terminal): the terminal opens on this message (BLG-553).
+    const terminal = Boolean(text.trim()) && sendsToTerminal(client.store.getState(), getPrefs(), 'draft', worktree.agent?.runtime);
+    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}), ...(worktree.agent ? { agent: worktree.agent } : {}), ...(terminal ? { terminal } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
   };
   const deliver = (text: string, urgent: boolean): void => {
     if (readOnly) return;

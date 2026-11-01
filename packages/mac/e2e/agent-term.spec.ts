@@ -14,7 +14,8 @@ async function openWorkspace(page: Page, name: string): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
   if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name, exact: true }).click();
-  await expect(composer(page)).toHaveAttribute('placeholder', new RegExp(name));
+  // Open: its header names it (with the terminal view on, it may open as the terminal, with no message box).
+  await expect(page.getByRole('main').getByText(name, { exact: true }).first()).toBeVisible();
 }
 
 /** What a terminal shows, as text (its buffer, read through the dev build's hook). */
@@ -197,4 +198,24 @@ test('a preset theme (Dracula) is the agent’s terminal’s, links in its colou
   await expect.poll(() => page.evaluate(() => { const t = Object.entries((window as unknown as { __belugaTerms: Record<string, { buffer: { active: { baseY: number; viewportY: number } } }> }).__belugaTerms).find(([k]) => k.includes(':pane:'))?.[1]; return t ? t.buffer.active.baseY - t.buffer.active.viewportY : 0; })).toBeGreaterThan(20);
   await page.keyboard.press('Meta+1');
   await expect(tabs.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
+});
+
+test('a new worktree starts as the chat, and the first message opens the terminal on it (BLG-553)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await viewOn(page);
+  await page.goto('/');
+  await sidebar(page).getByText('bob-api', { exact: true }).first().click();
+  await expect(page.getByRole('heading', { level: 1, name: 'bob-api' })).toBeVisible();
+  await page.getByLabel('Task for the new worktree').fill('map how a payment flows');
+  await page.getByLabel('Task for the new worktree').press('Enter');
+  // No terminal before the message reached it, and no "couldn't start": it opens on the message.
+  await expect.poll(() => screen(page, /:agent$/), { timeout: 30_000 }).toContain('map how a payment flows');
+  await expect.poll(() => screen(page, /:agent$/), { timeout: 15_000 }).toContain('Here is how a payment moves through the system:');
+  await expect(page.locator('[data-visual]').filter({ hasText: 'How a payment goes through' }).last()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('couldn’t start here')).toHaveCount(0);
+  await page.screenshot({ path: '../../.beluga/scratch/blg553-first-message-terminal.png' });
+  // The chat has the message once, and the answer.
+  await modes(page).getByRole('tab', { name: 'Chat' }).click();
+  await expect(page.getByRole('main').getByText('map how a payment flows', { exact: true })).toHaveCount(1);
+  await expect(page.getByRole('main').getByText('Here is how a payment moves through the system:')).toBeVisible();
 });

@@ -8,7 +8,10 @@ import { PR_COMMENTS_FENCE } from '../shared/pr-comments-ref.js';
  * above all when it's worth it. Most answers are words; a plain Markdown table already shows as a
  * sortable table. The `show` tool is for when the user will want to look around in the data.
  */
-export function buildViewAppend(): string {
+export function buildViewAppend(terminal = false): string {
+  // In the agent's own terminal (BLG-555) Beluga's fenced blocks print as raw text: each goes
+  // through show_block there, and a view never as a fence.
+  const via = terminal ? ' passed to mcp__beluga_view__show_block (write the token it returns)' : '';
   return [
     '',
     'Showing data (the Beluga app draws it). Answer in words first; use a view, unasked, whenever the shape',
@@ -25,11 +28,11 @@ export function buildViewAppend(): string {
     'if the path has spaces. A GIF plays; png, jpg, gif, webp or svg, up to 10 MB. Your owner sees it, others in',
     'the room see its name (send_file gives them the file). It is not a view: no token, no show.',
     `Code in this repository: when you point at lines (what you changed, where a bug is, what a reviewer meant),`,
-    `show them with a \`\`\`${CODE_FENCE} block instead of pasting them: its first line is the path from the`,
+    `show them with a \`\`\`${CODE_FENCE} block${via} instead of pasting them: its first line is the path from the`,
     'project root and the lines ("src/auth.ts:40-62"), then optionally "highlight: 44-46, 51" and "note: one line".',
     'The app reads those lines from the worktree, marks the highlighted ones, and goes to that file at a click.',
     `A pull request's comments: when asked what reviewers said on this worktree's PR, show them with a`,
-    `\`\`\`${PR_COMMENTS_FENCE} block ("show: open", or "show: all" for resolved threads too; optionally`,
+    `\`\`\`${PR_COMMENTS_FENCE} block${via} ("show: open", or "show: all" for resolved threads too; optionally`,
     '"path: src/payments" for one part) instead of retyping them; the app draws each comment with its code.',
     'Then say in words what they ask for. Replying and resolving happen on the PR page, not in chat.',
     '',
@@ -68,11 +71,11 @@ export function buildViewAppend(): string {
     'for a point); {"type": "heatmap", "x": "hour", "y": "day", "value": "errors", "data": [{"hour": "09", "day":',
     '"Mon", "errors": 4}]} (or wide rows, one per y); {"type": "calendar", "data": [{"date": "2026-10-01",',
     '"value": 3}]} (one row per event without "value"). "colors": [low, high] picks the scale.',
-    `The same JSON in a fenced ${VIEW_FENCE} block works without the tool (absolute paths there).`,
+    ...(terminal ? [] : [`The same JSON in a fenced ${VIEW_FENCE} block works without the tool (absolute paths there).`]),
     'Inline, inside a sentence: a color written as inline code (`#3987e5`) shows its swatch; also `badge:failed`,',
     '`kbd:cmd+k`, `progress:3/8`, `delta:+12%` (`delta:-40ms good`), `spark:3,5,4,8` and `time:2026-10-23T14:00:00Z`.',
     'Use them where they say more than the text would, sparingly.',
-    `A board task: \`task:BLG-12\` is a chip with its live status that opens it; a fenced ${TASKS_FENCE} block (one key`,
+    `A board task: \`task:BLG-12\` is a chip with its live status that opens it; a fenced ${TASKS_FENCE} block${via} (one key`,
     'per line) is a list of task cards. Use them for tasks you opened, changed or mean, not for every key you say.',
   ].join('\n');
 }

@@ -12,6 +12,8 @@ export interface SubmitContext {
   readonly runUiAction: (action: UiAction) => void;
   /** Turn attachment chips into links before sending (each screen attaches its own way). */
   readonly expand?: (text: string) => string;
+  /** Whether a message sent in `channel` ('draft': a new one) opens its agent's terminal on it, as the screen shows it (BLG-553). */
+  readonly toTerminal?: (channel: string) => boolean;
 }
 
 /**
@@ -39,12 +41,13 @@ export function submitTyped(c: SubmitContext, typed: string, urgent = false): vo
     patchUi({ chatScroll: 0 });
     return;
   }
+  const terminal = c.toTerminal?.(channelOf(latest.view)) ?? false;
   if (latest.view.kind === 'draft' && !text.startsWith('/')) {
-    void api.workspaces.startChat(latest.view.projectId, text, latest.view.dir);
+    void (terminal ? api.workspaces.startChat(latest.view.projectId, text, latest.view.dir ?? null, { terminal }) : api.workspaces.startChat(latest.view.projectId, text, latest.view.dir));
     return;
   }
   if (latest.view.kind === 'draft_worktree' && !text.startsWith('/')) {
-    void api.workspaces.startWorktree(latest.view.projectId, text);
+    void api.workspaces.startWorktree(latest.view.projectId, text, terminal ? { terminal } : undefined);
     return;
   }
   const pending = ui.pending;
@@ -72,5 +75,5 @@ export function submitTyped(c: SubmitContext, typed: string, urgent = false): vo
     if (latest.search.hits.length) c.runUiAction({ type: 'search_hit', index: latest.search.cursor });
     return;
   }
-  void api.session.submit(text, { channel: channelOf(latest.view), urgent });
+  void api.session.submit(text, { channel: channelOf(latest.view), urgent, ...(terminal && !text.startsWith('/') ? { terminal } : {}) });
 }

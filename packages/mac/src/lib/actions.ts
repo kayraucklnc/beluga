@@ -6,6 +6,8 @@ import type { UiState } from '@beluga/ui/keymap.js';
 import { type MenuKind, menuSpec } from '@beluga/ui/menus.js';
 import { type MenuContext, runMenu as runSharedMenu } from '@beluga/ui/menu-actions.js';
 import { submitTyped } from '@beluga/ui/submit.js';
+import { sendsToTerminal } from './convo-mode.js';
+import { getPrefs } from './prefs.js';
 import { type UiActionContext, runUiActionWith } from '@beluga/ui/ui-actions.js';
 import type { UiAction } from '@beluga/ui/workspace-models.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
@@ -136,7 +138,7 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
       if (id && routeOption(route, menu, id)) return;
       runSharedMenu(menuCtx, menu, index);
     },
-    submit: (text, urgent) => submitTyped({ client, ui: () => ui.get(), patchUi, runUiAction: (a) => actions.run(a) }, text, urgent),
+    submit: (text, urgent) => submitTyped({ client, ui: () => ui.get(), patchUi, runUiAction: (a) => actions.run(a), toTerminal: (channel) => sendsToTerminal(client.store.getState(), getPrefs(), channel) }, text, urgent),
     typeInto,
     openLink,
   };

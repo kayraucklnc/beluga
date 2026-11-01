@@ -1,4 +1,5 @@
-import type { AppState } from '../../../../src/core/store.js';
+import type { AppState, LogItem } from '../../../../src/core/store.js';
+import { activityOf } from '../../../../src/ui/workspace-models.js';
 import { defaultAgentOf } from '../../../../src/protocol.js';
 import { runtimeOf } from '../../../../src/shared/agent-picker.js';
 
@@ -33,6 +34,63 @@ export function withConvoMode(modes: Readonly<Record<string, ConvoMode>>, wsId: 
   const { [wsId]: _was, ...rest } = modes;
   const entries = [...Object.entries(rest).filter(([, m]) => isConvoMode(m)), [wsId, mode] as const];
   return Object.fromEntries(entries.slice(-KEEP));
+}
+
+/** What the middle shows besides a mode (BLG-553): the chat while the terminal waits on a turn there, or before it has one. */
+export type CenterShows = ConvoMode | 'waiting' | 'fresh';
+
+/** Where a conversation is, for what the middle shows. */
+export interface ConvoNow {
+  /** A turn is running (or queued) in the chat. */
+  readonly turnRunning: boolean;
+  /** The agent's terminal is driving it now. */
+  readonly driving: boolean;
+  /** Its agent has had a turn here (in the chat or the terminal). */
+  readonly started: boolean;
+  /** You picked its mode yourself (the header's switch, ⇧⌘T), rather than it being your default. */
+  readonly picked: boolean;
+}
+
+/**
+ * What the middle shows for a mode (BLG-553). A conversation seen as its terminal by default
+ * starts as the chat ('fresh'): nothing is launched until you send your first message, which then
+ * opens the terminal on it (picking Terminal for it yourself opens it at once). The terminal can't open over a turn running in the chat, so until that ends the
+ * chat shows ('waiting'), with a banner. A terminal already driving stays.
+ */
+export function centerShows(mode: ConvoMode, now: ConvoNow): CenterShows {
+  if (mode === 'chat' || now.driving) return mode;
+  if (now.turnRunning) return 'waiting';
+  return now.started || now.picked ? mode : 'fresh';
+}
+
+const turnsIndex = new WeakMap<readonly LogItem[], ReadonlySet<string>>();
+
+/** Whether a conversation has had its agent's turn (cached per log, as the log only grows by copies). */
+export function hasAgentTurn(log: readonly LogItem[], channel: string): boolean {
+  let seen = turnsIndex.get(log);
+  if (!seen) {
+    seen = new Set(log.filter((l) => l.type === 'agent').map((l) => l.channel));
+    turnsIndex.set(log, seen);
+  }
+  return seen.has(channel);
+}
+
+/** What you need to know about the prefs to tell where a message goes. */
+type ModePrefs = Parameters<typeof shownMode>[0];
+
+/**
+ * Whether a message sent now opens the agent's terminal on it (BLG-553): the conversation is
+ * seen as its terminal and hasn't started ('fresh'). `draft`: a new chat or worktree, made with
+ * this message (on `runtime`, the agent picked for it).
+ */
+export function sendsToTerminal(state: AppState, prefs: ModePrefs, channel: string, runtime?: string): boolean {
+  if (!prefs.termView) return false;
+  if (channel === 'draft') return prefs.convoDefault !== 'chat' && (runtime ?? defaultAgentOf(state.self).runtime) !== 'codex';
+  if (!channel.startsWith('ws:')) return false;
+  const wsId = channel.slice(3);
+  if (!terminalCapable(state, wsId)) return false;
+  const now = { turnRunning: activityOf(state.log, channel).running, driving: Boolean(state.agentTerms[wsId]), started: hasAgentTurn(state.log, channel), picked: isConvoMode(prefs.convoModes[wsId]) };
+  return centerShows(shownMode(prefs, wsId), now) === 'fresh';
 }
 
 /** The next mode for the Chat ⇄ Terminal shortcut: Both and Terminal go to Chat; Chat goes to Terminal. */

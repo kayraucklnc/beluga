@@ -82,7 +82,12 @@ proc.stdin.on('data', (data) => {
     }
   }
 });
-prompt();
+// A message sent from the chat comes as the first prompt, as Claude Code's does (BLG-553).
+const first = process.env.DEMO_FIRST || '';
+if (first) {
+  out(copper('> ') + first + '\r\n');
+  reply(first);
+} else prompt();
 `;
 
 /** The demo's terminal on a conversation: its graph and table kept for its links, its transcript in the demo's folder. */
@@ -101,7 +106,7 @@ export function mockTerminal(input: AgentRunInput, sink: TerminalSink, home?: st
   return {
     file: process.execPath,
     args: ['-e', SCRIPT],
-    env: { ...input.env, DEMO_TRANSCRIPT: transcript, DEMO_SESSION: session, DEMO_GRAPH: String(graph), DEMO_TABLE: String(table), DEMO_CARDS: String(cards), DEMO_PICTURE: picture, DEMO_TOKEN: visualToken(graph) },
+    env: { ...input.env, DEMO_TRANSCRIPT: transcript, DEMO_SESSION: session, DEMO_GRAPH: String(graph), DEMO_TABLE: String(table), DEMO_CARDS: String(cards), DEMO_PICTURE: picture, DEMO_TOKEN: visualToken(graph), ...(input.prompt ? { DEMO_FIRST: input.prompt } : {}) },
     transcriptHome: dir,
     session,
     fresh: !resume,

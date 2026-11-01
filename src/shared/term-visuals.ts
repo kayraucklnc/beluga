@@ -1,5 +1,5 @@
 import { GRAPH_FENCE, parseGraph } from './graph-spec.js';
-import { type ViewType, parseView, viewFenceType } from './view-spec.js';
+import { VIEW_FENCE, type ViewType, parseView, viewFenceType } from './view-spec.js';
 
 /**
  * Visuals in the agent's terminal (BLG-535). A terminal can't draw a graph or a live table, so in
@@ -115,9 +115,11 @@ export function visualsIn(text: string): number[] {
  */
 export function expandVisuals(text: string, blockOf: (n: number) => string | undefined): string {
   if (!text.includes('[[visual:')) return text;
+  // A graph or view first written as a fence, then shown again through the tool (the terminal's Stop hook, BLG-555): once is enough.
+  const once = text.replace(new RegExp(`^[ \\t]*\`\`\`(?:${GRAPH_FENCE}|${VIEW_FENCE})\\b[^\\n]*\\n[\\s\\S]*?^[ \\t]*\`\`\`[ \\t]*$`, 'gm'), '');
   // A table's first rows, written under its token for the terminal, go: the live table is right there.
   const echo = /(\[\[visual:(\d{1,6})\]\]`?[ \t]*\n)(?:[ \t]*\n)*((?:[ \t]*\|[^\n]*\|[ \t]*(?:\n|$))+)/g;
-  const lean = text.replace(echo, (whole, token: string, n: string) => {
+  const lean = once.replace(echo, (whole, token: string, n: string) => {
     const block = blockOf(Number(n));
     return block && describeVisual(Number(n), block).kind === 'table' ? token : whole;
   });
