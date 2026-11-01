@@ -17,6 +17,7 @@ import { useApp, useBeluga } from '../lib/beluga.js';
 import { MentionPill } from './Mention.js';
 import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
+import { keepBlankLines } from './typed-lines.js';
 import { GraphBlock } from '../components/graph/GraphBlock.js';
 import { isGraphFence } from '@beluga/shared/graph-spec.js';
 import { MarkdownTable, ViewBlock } from '../components/views/ViewBlock.js';
@@ -230,22 +231,23 @@ function boardKeys(issues: readonly { readonly key: string }[]): string {
  * as pills when they name someone or something here. `live`: the text is still being written (a
  * graph block that isn't finished yet says it's being drawn instead of failing). `tasks`: a bare
  * key your board has ("BLG-72") is a small task chip (your own and your own Claude's words only:
- * someone else's key may be on their board).
+ * someone else's key may be on their board). `typed`: a person's own words, so the lines they broke
+ * and the blank lines they left show as typed (typed-lines.ts), not folded as Markdown would.
  */
-export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions, live = false, tasks = false }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld; live?: boolean; tasks?: boolean }) {
+export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions, live = false, tasks = false, typed = false }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld; live?: boolean; tasks?: boolean; typed?: boolean }) {
   const actions = useActions();
   const { client } = useBeluga();
   // The board's keys as one string, so a task changing doesn't draw every message again.
   const keys = useApp((st) => (tasks ? boardKeys(st.board.issues) : ''));
   const source = useMemo(() => {
     // Math first (prices stay words), then set aside so the links below leave it alone.
-    const math = guardMath(prepareMath(text));
+    const math = guardMath(prepareMath(typed ? keepBlankLines(text) : text));
     // Tasks last: the other two leave a line with a link in it alone, and this one doesn't.
     const withMentions = mentions ? linkMentions(math.text, mentions) : math.text;
     const withPaths = paths ? linkifyPaths(withMentions) : withMentions;
     const known = new Set(keys.split(' '));
     return math.restore(keys ? linkTaskKeys(withPaths, (k) => known.has(k)) : withPaths);
-  }, [text, keys, mentions, paths]);
+  }, [text, keys, mentions, paths, typed]);
   // Every local image in the message, so the lightbox steps from one to the next.
   const images = useMemo(() => (localImages ? messageImages(text) : []), [text, localImages]);
   // The same renderers from one render to the next: a new one would remount what it drew (a graph
@@ -336,7 +338,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
   return (
     <LiveText.Provider value={live}>
       <MessageImages.Provider value={images}>
-      <div className={`${s.markdown} selectable`}>
+      <div className={`${s.markdown} ${typed ? s.typed : ''} selectable`}>
         <ReactMarkdown remarkPlugins={REMARK} components={components} urlTransform={keepUrl}>
           {source}
         </ReactMarkdown>
