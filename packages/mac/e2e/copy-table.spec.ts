@@ -45,5 +45,5 @@ test('Copy Table puts the whole table on the clipboard', async ({ page, context 
   await expect(page.getByText('Copied 4 rows as JSON').last()).toBeVisible();
   const json = JSON.parse(await page.evaluate(() => navigator.clipboard.readText())) as Record<string, unknown>[];
   expect(json).toHaveLength(4);
-  expect(json[0]).toMatchObject({ provider: 'Stripe' });
+  expect(json[0]).toMatchObject({ Provider: 'Stripe', 'Success rate': 97.7 });
 });
