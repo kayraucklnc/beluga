@@ -37,7 +37,7 @@ const ALWAYS_OK = new Set([
   // The gateway's look-and-wait tools (core/gateway); ask_person and run_on ask, and the gateway checks trust itself.
   ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__beluga__${n}`),
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).
-  ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
+  ...['task_define', 'task_get', 'task_list', 'task_create', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
   // Sentinels (core/sentinel): only your own runs have them; a new one starts paused until you turn it on,
   // and a change to what one can do pauses it. sentinel_remove isn't here: deleting one asks you.
   // sentinel_test and sentinel_try_source only read: a database read-only, a file, an address without your

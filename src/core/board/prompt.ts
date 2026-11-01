@@ -108,6 +108,8 @@ const HOW_TASKS_WORK = [
   'ships with it: that worktree\'s pull request merging (or the worktree merging into main) makes the task Done, so',
   'never leave one behind. A task with sub-tasks is an epic: group related work under one (task_create with parent).',
   'An epic follows its sub-tasks (all Done: Done) and, reaching Done, takes its open ones with it: never move an epic by hand. The user archives Done tasks.',
+  'Work across a few repos goes on one board for them all: when there is none, board_create makes one (a name and',
+  'the repos; the user doesn\'t need to open it first), then task_create with board puts tasks on it, each running in one of its repos.',
   'Use tasks unasked when one message asks for two or more separate things (fixes, features, changes): before',
   'working, open one task per thing with task_create (under a parent task when they belong together), then work',
   'through them: task_update to in_progress when you start one, in_review once it\'s built and checked (tick its',
@@ -158,7 +160,7 @@ export function aboutPrompt(board: Pick<BoardState, 'projects'>, projectId: stri
 export function boardNote(): string {
   return [
     '',
-    'Tasks: Beluga has task boards (mcp__beluga_board__*: task_list, task_get, task_create, task_update,',
+    'Tasks: Beluga has task boards (mcp__beluga_board__*: task_list, task_get, task_create, board_create, task_update,',
     'task_brief_edit, task_note, task_relate, task_attach_proof). Use it when the user talks about tasks, issues,',
     'a backlog or what to do next, asks you to track or plan work, or asks for several things at once.',
     ...HOW_TASKS_WORK,

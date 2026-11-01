@@ -9,7 +9,7 @@ import type { BoardTools } from './types.js';
  * sub-tasks and mark what waits on what. Every change shows in the task's activity as Claude's.
  */
 
-export const BOARD_TOOL_NAMES = ['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`);
+export const BOARD_TOOL_NAMES = ['task_define', 'task_get', 'task_list', 'task_create', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`);
 
 const key = z.string().min(2).max(40).optional().describe('The task’s key, like BOB-12. Leave out for the task this worktree is doing');
 const STATUS = z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled']);
@@ -84,7 +84,7 @@ export function createBoardToolDefs(board: BoardTools) {
         questions: z.string().max(4000).optional(),
         estimate: ESTIMATE.optional(),
         project: z.string().max(80).optional().describe('The repo it runs in (a project’s name), when the work is in another repo than this one'),
-        board: z.string().max(80).optional().describe('The board it goes on (its name or key prefix), when not this task’s board'),
+        board: z.string().max(80).optional().describe('The board it goes on (its name or key prefix), when not this task’s board; board_create makes a new one'),
         parent: z.string().max(40).optional().describe('The parent task’s key'),
         blocked_by: z.array(z.string().max(40)).max(10).optional().describe('Keys of tasks that must be done first'),
         status: z.enum(['backlog', 'todo']).optional(),
@@ -112,6 +112,16 @@ export function createBoardToolDefs(board: BoardTools) {
             ...(a.private ? { private: true } : {}),
           }),
         ),
+    ),
+    tool(
+      'board_create',
+      'Make a board for work across a few repos (a launch, a feature that touches the API and the app): each task on it runs in one of its repos. No need for the user to make it first. Then put tasks on it with task_create (board: its name). When a board already covers those repos, use it instead.',
+      {
+        name: z.string().min(1).max(60).describe('Short, what the work is ("Launch", "Payments")'),
+        repos: z.array(z.string().min(1).max(80)).min(1).max(20).describe('The repos it covers (projects’ names)'),
+        prefix: z.string().min(2).max(6).optional().describe('What its task keys start with ("LNCH"); left out: made from the name'),
+      },
+      (a) => guarded(() => board.createBoard({ name: a.name, repos: a.repos, ...(a.prefix ? { prefix: a.prefix } : {}) })),
     ),
     tool(
       'task_update',

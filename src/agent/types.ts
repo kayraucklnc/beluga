@@ -253,6 +253,8 @@ export interface BoardTools {
     /** Only the user sees it (BLG-501). */
     readonly private?: boolean;
   }): string;
+  /** A board of its own covering a few repos (their names); its key prefix made from its name unless given. */
+  createBoard(input: { readonly name: string; readonly repos: readonly string[]; readonly prefix?: string }): string;
   update(
     key: string | undefined,
     patch: {
