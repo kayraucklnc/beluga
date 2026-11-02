@@ -45,6 +45,7 @@ import { useDictationTarget } from "../lib/dictation.js";
 import { HomeHistory } from "./history/HomeHistory.js";
 import { EarningsSection } from "./project/EarningsSection.js";
 import { GitHubRow } from "./project/GitHubRow.js";
+import { PullRow, usePullList } from "./project/PullRow.js";
 import { RunRow } from "../ci/parts.js";
 import { useArrivals, useLateArrival } from "../lib/last-seen.js";
 import { useCiActions, useNow, useRuns } from "../ci/use-ci.js";
@@ -622,6 +623,7 @@ function Lists({ model }: { model: HomeModel }) {
           ))}
         </Section>
       ) : null}
+      <HomePulls projectId={project.id} />
       <HomeIssues projectId={project.id} />
       <HomeActions projectId={project.id} />
       <HomeHistory projectId={project.id} />
@@ -647,6 +649,46 @@ function Lists({ model }: { model: HomeModel }) {
       {/* Last and folded: a glance, not the page's point. Its own per project (what's new is what arrived while it was shown). */}
       <EarningsSection key={project.id} project={project} />
     </div>
+  );
+}
+
+/** How many open pull requests Project Home lists before "Show All". */
+const HOME_PULLS = 4;
+
+/**
+ * The project's open pull requests on GitHub (anyone's, not only your worktrees'), the most
+ * recently active first. Nothing when it isn't on GitHub, gh isn't set up, or none are open.
+ */
+function HomePulls({ projectId }: { projectId: string }) {
+  const list = usePullList(projectId);
+  const actions = useActions();
+  const shown = list?.kind === "github" ? list.pulls.slice(0, HOME_PULLS) : [];
+  const late = useLateArrival(projectId, shown.length > 0);
+  const isNew = useArrivals(shown.map((p) => p.number));
+  if (list?.kind !== "github" || !shown.length) return null;
+  const repo = list.repo;
+  return (
+    <Section
+      arrive={late}
+      title="Pull Requests"
+      count={list.total}
+      hint="Open on GitHub"
+      action={
+        <Button
+          size="small"
+          variant="quiet"
+          onClick={() => actions.openLink({ kind: "url", url: `${repo.url}/pulls` })}
+        >
+          Show All on GitHub
+        </Button>
+      }
+    >
+      {shown.map((pull) => (
+        <div key={pull.number} className={isNew(pull.number) ? a.arrive : undefined}>
+          <PullRow projectId={projectId} pull={pull} />
+        </div>
+      ))}
+    </Section>
   );
 }
 

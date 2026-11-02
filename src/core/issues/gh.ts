@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { belugaEnv } from '../beluga-env.js';
 import type { GhRunner, GitHubRepo } from '../../workspaces/github.js';
-import type { GhCloseReason, GhComment, GhIssue, GhIssueFull, GhIssueState, GhLabel } from './model.js';
+import type { GhCloseReason, GhComment, GhIssue, GhIssueFull, GhIssueState, GhLabel, GhPull } from './model.js';
 
 /**
  * A repository's issues through the GitHub CLI (`gh api`), with the sign-in people already have:
@@ -30,6 +30,8 @@ export interface IssueSource {
   get(repo: GitHubRepo, number: number): Promise<GhIssueFull>;
   /** Post a comment; → its URL. */
   comment(repo: GitHubRepo, number: number, body: string): Promise<string>;
+  /** The open pull requests, newest activity first, and how many are open. */
+  pulls(repo: GitHubRepo): Promise<{ readonly pulls: readonly GhPull[]; readonly total: number }>;
 }
 
 const hostArgs = (repo: GitHubRepo): string[] => (repo.host === 'github.com' ? [] : ['--hostname', repo.host]);
@@ -126,6 +128,47 @@ export function parseGraphIssues(json: string): { readonly issues: GhIssue[]; re
   return { issues, total: typeof list.totalCount === 'number' ? list.totalCount : issues.length };
 }
 
+/** How many open pull requests one look reads. */
+export const PULLS_PAGE = 50;
+
+/** A repository's open pull requests, newest activity first, with their latest commit's checks. */
+export const PULLS_QUERY = `query($owner: String!, $repo: String!) { repository(owner: $owner, name: $repo) { pullRequests(first: ${PULLS_PAGE}, states: [OPEN], orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount nodes { number title url isDraft headRefName createdAt updatedAt reviewDecision author { login } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } } }`;
+
+const CHECKS: Record<string, GhPull['checks']> = { SUCCESS: 'passing', FAILURE: 'failing', ERROR: 'failing', PENDING: 'pending', EXPECTED: 'pending' };
+const REVIEWS = new Set(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED']);
+
+/** One pull request of the GraphQL answer, in Beluga's words; undefined for nonsense. */
+export function parseGraphPull(raw: unknown): GhPull | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.number !== 'number' || typeof r.title !== 'string' || typeof r.url !== 'string') return undefined;
+  const commits = (r.commits as { nodes?: Array<{ commit?: { statusCheckRollup?: { state?: unknown } | null } }> } | undefined)?.nodes;
+  const rollup = commits?.at(-1)?.commit?.statusCheckRollup?.state;
+  const author = login(r.author);
+  const review = typeof r.reviewDecision === 'string' && REVIEWS.has(r.reviewDecision) ? (r.reviewDecision as GhPull['review']) : undefined;
+  return {
+    number: r.number,
+    title: r.title.trim() || `Pull request #${r.number}`,
+    url: r.url,
+    ...(author ? { author } : {}),
+    branch: typeof r.headRefName === 'string' ? r.headRefName : '',
+    draft: r.isDraft === true,
+    checks: (typeof rollup === 'string' && CHECKS[rollup]) || 'none',
+    ...(review ? { review } : {}),
+    createdAt: at(r.createdAt),
+    updatedAt: at(r.updatedAt),
+  };
+}
+
+/** The GraphQL answer's open pull requests, and how many the repository has open. */
+export function parseGraphPulls(json: string): { readonly pulls: GhPull[]; readonly total: number } {
+  const raw = JSON.parse(json) as { data?: { repository?: { pullRequests?: { totalCount?: number; nodes?: unknown[] } } | null }; errors?: Array<{ message?: string }> };
+  const list = raw.data?.repository?.pullRequests;
+  if (!list || !Array.isArray(list.nodes)) throw new Error(raw.errors?.[0]?.message ?? 'GitHub gave an answer Beluga doesn’t understand');
+  const pulls = list.nodes.map(parseGraphPull).filter((p): p is GhPull => Boolean(p));
+  return { pulls, total: typeof list.totalCount === 'number' ? list.totalCount : pulls.length };
+}
+
 /** GitHub's search words for a repository's issues: `repo:o/r is:issue is:open <words>`. */
 export const searchQuery = (repo: GitHubRepo, state: GhIssueState, words: string): string => `repo:${repo.owner}/${repo.repo} is:issue is:${state} ${words.replace(/\s+/g, ' ').trim()}`;
 
@@ -171,6 +214,9 @@ export function ghIssueSource(run: GhRunner = runGhCli): IssueSource {
       const out = await run(['api', ...hostArgs(repo), '-X', 'POST', `repos/${repo.owner}/${repo.repo}/issues/${number}/comments`, '-f', `body=${text}`]);
       const url = (JSON.parse(out) as { html_url?: unknown }).html_url;
       return typeof url === 'string' ? url : `https://${repo.host}/${repo.owner}/${repo.repo}/issues/${number}`;
+    },
+    async pulls(repo) {
+      return parseGraphPulls(await run(['api', 'graphql', ...hostArgs(repo), '-f', `query=${PULLS_QUERY}`, '-f', `owner=${repo.owner}`, '-f', `repo=${repo.repo}`]));
     },
   };
 }
