@@ -1,30 +1,36 @@
 import { useEffect, useState } from 'react';
 import type { ClaudeSkill } from '@beluga/shared/skills.js';
-import { useApi } from '../lib/beluga.js';
+import { useApi, useApp } from '../lib/beluga.js';
 
 /** How long a conversation's list stays fresh (a skill you just added shows the next time you type /). */
 const FRESH_MS = 20_000;
 const cache = new Map<string, { at: number; skills: readonly ClaudeSkill[] }>();
 
 /**
- * Claude's skills and custom commands in a worktree's conversation (BLG-217), loaded once you
- * start a command (`want`), for the / list. Elsewhere, none.
+ * Load skills and custom commands for the / list when `want` is true.
+ * A new chat reads skills from its folder before a conversation exists.
  */
 export function useSkills(channel: string, want: boolean): readonly ClaudeSkill[] {
   const api = useApi();
-  const [skills, setSkills] = useState<readonly ClaudeSkill[]>(() => cache.get(channel)?.skills ?? []);
-  const inWorktree = channel.startsWith('ws:');
+  const draftDir = useApp((state) => {
+    if (state.view.kind !== 'draft') return undefined;
+    const view = state.view;
+    return (view.projectId === 'chats' ? view.dir : state.projects.find((p) => p.id === view.projectId)?.root) || null;
+  });
+  const key = channel === 'draft' ? JSON.stringify([channel, draftDir]) : channel;
+  const [skills, setSkills] = useState<readonly ClaudeSkill[]>(() => cache.get(key)?.skills ?? []);
+  const inConversation = channel.startsWith('ws:') || (channel === 'draft' && draftDir !== undefined);
   useEffect(() => {
-    setSkills(cache.get(channel)?.skills ?? []);
-  }, [channel]);
+    setSkills(cache.get(key)?.skills ?? []);
+  }, [key]);
   useEffect(() => {
-    if (!want || !inWorktree) return;
-    const kept = cache.get(channel);
+    if (!want || !inConversation) return;
+    const kept = cache.get(key);
     if (kept && Date.now() - kept.at < FRESH_MS) return;
     let live = true;
-    api.claudeCode.skills(channel).then(
+    api.claudeCode.skills(channel, draftDir ?? undefined).then(
       (list) => {
-        cache.set(channel, { at: Date.now(), skills: list });
+        cache.set(key, { at: Date.now(), skills: list });
         if (live) setSkills(list);
       },
       () => undefined,
@@ -32,6 +38,6 @@ export function useSkills(channel: string, want: boolean): readonly ClaudeSkill[
     return () => {
       live = false;
     };
-  }, [api, channel, want, inWorktree]);
-  return inWorktree ? skills : [];
+  }, [api, channel, want, inConversation, key, draftDir]);
+  return inConversation ? skills : [];
 }

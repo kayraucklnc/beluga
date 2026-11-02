@@ -19,7 +19,7 @@ export const CLAUDE_CODE_HANDLERS = {
   'claudeCode.outputs': (s, sessionId, agentId) => claudeCodeOf(s).outputs(sessionId, agentId),
   'claudeCode.output': (s, sessionId, agentId, file) => claudeCodeOf(s).output(sessionId, agentId, file),
   'claudeCode.taskOutput': (s, sessionId, agentId, taskId) => claudeCodeOf(s).taskOutput(sessionId, agentId, taskId),
-  'claudeCode.skills': (s, channel) => listSkills(s.workspaces?.inChannel(channel)?.path, claudeHome()),
+  'claudeCode.skills': (s, channel, draftDir) => listSkills(channel === 'draft' ? draftDir : s.workspaces?.inChannel(channel)?.path, claudeHome()),
   'claudeCode.mcpServers': async (s, runtime) => (await s.backend?.mcpServers?.(projectRoots(s), runtime)) ?? [],
   'claudeCode.mcpSignIn': async (s, name, runtime) => (await s.backend?.mcpSignIn?.(projectRoots(s), name, runtime)) ?? { error: 'Your agent isn’t running here.' },
   'claudeCode.mcpSignedIn': (s, name, runtime) => s.backend?.mcpSignedIn?.(name, runtime),

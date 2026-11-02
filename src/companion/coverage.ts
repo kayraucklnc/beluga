@@ -117,7 +117,7 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.refresh': 'mac',
   'workspaces.newWorktree': 'mac',
   'workspaces.newChat': 'mac',
-  'workspaces.startChat': 'phone',
+  'workspaces.startChat': 'phone', // Includes the optional first-message plan mode.
   'workspaces.startWorktree': 'phone',
   'workspaces.branches': 'mac',
   'workspaces.fork': 'mac',
@@ -305,7 +305,7 @@ export const PHONE: Record<Method, Side> = {
   'claudeCode.outputs': 'phone',
   'claudeCode.output': 'phone',
   'claudeCode.taskOutput': 'phone',
-  'claudeCode.skills': 'mac',
+  'claudeCode.skills': 'mac', // Includes skill discovery in a draft's folder.
   'claudeCode.mcpServers': 'mac',
   'claudeCode.mcpSignIn': 'mac',
   'claudeCode.mcpSignedIn': 'mac',

@@ -1,5 +1,8 @@
 import { type AppState, channelOf, peerName } from '../core/store.js';
+import { isBelugaCommand } from '../core/commands.js';
+import { parseInput } from '../core/mentions.js';
 import type { BelugaClient } from '../ipc/client.js';
+import { builtInInstead } from '../shared/skills.js';
 import { answerTyped } from './collab-actions.js';
 import type { UiState } from './keymap.js';
 import type { UiAction } from './workspace-models.js';
@@ -42,12 +45,30 @@ export function submitTyped(c: SubmitContext, typed: string, urgent = false): vo
     return;
   }
   const terminal = c.toTerminal?.(channelOf(latest.view)) ?? false;
-  if (latest.view.kind === 'draft' && !text.startsWith('/')) {
-    void (terminal ? api.workspaces.startChat(latest.view.projectId, text, latest.view.dir ?? null, { terminal }) : api.workspaces.startChat(latest.view.projectId, text, latest.view.dir));
-    return;
+  if (latest.view.kind === 'draft') {
+    const view = latest.view;
+    const plan = latest.planMode.draft === true;
+    const start = (prompt: string): void => {
+      void (terminal || plan ? api.workspaces.startChat(view.projectId, prompt, view.dir ?? null, { ...(terminal ? { terminal } : {}), ...(plan ? { plan } : {}) }) : api.workspaces.startChat(view.projectId, prompt, view.dir));
+    };
+    const command = text.startsWith('/') ? parseInput(text, latest.selfId, latest.peers) : undefined;
+    if (!command || command.kind === 'chat') return start(command?.kind === 'chat' ? command.text : text);
+    if (command.kind === 'command' && !isBelugaCommand(command.name)) {
+      if (!builtInInstead(command.name)) return start(text);
+      const dir = view.projectId === 'chats' ? view.dir : latest.projects.find((p) => p.id === view.projectId)?.root;
+      const explain = (): void => {
+        void api.session.submit(text, { channel: 'draft', urgent });
+      };
+      void api.claudeCode.skills('draft', dir || undefined).then(
+        (skills) => skills.some((skill) => skill.name.toLowerCase() === command.name) ? start(text) : explain(),
+        explain,
+      );
+      return;
+    }
   }
   if (latest.view.kind === 'draft_worktree' && !text.startsWith('/')) {
-    void api.workspaces.startWorktree(latest.view.projectId, text, terminal ? { terminal } : undefined);
+    const plan = latest.planMode.draft === true;
+    void api.workspaces.startWorktree(latest.view.projectId, text, terminal || plan ? { ...(terminal ? { terminal } : {}), ...(plan ? { plan } : {}) } : undefined);
     return;
   }
   const pending = ui.pending;

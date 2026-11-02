@@ -10,6 +10,10 @@ import { Store, initialState } from '../src/core/store.js';
 import { WorkspaceController, shareNameOf, workspaceIdOf } from '../src/core/workspace-controller.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
+import { API } from '../src/ipc/api.js';
+import { HANDLERS } from '../src/ipc/handlers.js';
+import { apiProxy, type BelugaClient } from '../src/ipc/client.js';
+import { submitTyped } from '../src/ui/submit.js';
 import { screenOver, waitFor } from './helpers.js';
 import type { ClientStore } from '../src/client/client-store.js';
 
@@ -22,6 +26,7 @@ let ctl: WorkspaceController;
 let toasts: string[];
 let trashed: string[];
 let asked: Array<{ prompt: string; channel: string }>;
+let askedInPlan: boolean[];
 let repo: string;
 let claude: string;
 
@@ -47,6 +52,7 @@ beforeEach(async () => {
   toasts = [];
   trashed = [];
   asked = [];
+  askedInPlan = [];
   const shown = screenOver(store);
   screen = shown.screen;
   ctl = new WorkspaceController({
@@ -56,7 +62,10 @@ beforeEach(async () => {
     selfId: () => 'me',
     toast: (t) => void toasts.push(t),
     intend: shown.intend,
-    askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
+    askClaude: (prompt, channel) => {
+      asked.push({ prompt, channel });
+      askedInPlan.push(store.getState().planMode[channel] === true);
+    },
     claudeHome: claude,
     moveToTrash: async (dir) => void trashed.push(dir),
   });
@@ -371,6 +380,31 @@ describe('WorkspaceController', () => {
     expect(asked.at(-1)).toEqual({ prompt: 'explain   this repo please', channel: `ws:${chat.id}` });
     await ctl.remove(chat.id);
     expect(existsSync(launch)).toBe(true); // never deletes a folder you started a chat in
+  });
+
+  it.each(['/deploy staging', '/git:sync main', '//review changes'])('starts and runs the first skill or custom command %s in Plan mode', async (text) => {
+    store.dispatch({ type: 'plan_mode', channel: 'draft', on: true });
+    screen.dispatch({ type: 'view', view: { kind: 'draft', projectId: 'chats', dir: repo, back: { kind: 'overview' } } });
+    const api = apiProxy(async (method, raw) => {
+      expect(method).toBe('workspaces.startChat');
+      const args = API['workspaces.startChat'].args.parse(raw);
+      return HANDLERS['workspaces.startChat']({ workspaces: ctl } as Session, ...args);
+    });
+    submitTyped({ client: { store: screen, api } as BelugaClient, ui: () => ({}), patchUi: () => undefined, runUiAction: () => undefined }, text);
+    await waitFor(() => asked.length > 0);
+    const chat = store.getState().projects.find((p) => p.id === 'chats')!.workspaces[0]!;
+    expect(chat).toMatchObject({ kind: 'chat', path: repo });
+    expect(asked).toEqual([{ prompt: text.replace(/^\/\//, '/'), channel: `ws:${chat.id}` }]);
+    expect(askedInPlan).toEqual([true]);
+  });
+
+  it.each([true, false, undefined])('starts the first chat message in the selected mode (%s)', async (plan) => {
+    const args = API['workspaces.startChat'].args.parse(['chats', 'Explain this repo', repo, plan === undefined ? undefined : { plan }]);
+    await HANDLERS['workspaces.startChat']({ workspaces: ctl } as Session, ...args);
+    const chat = store.getState().projects.find((p) => p.id === 'chats')!.workspaces[0]!;
+    expect(asked).toEqual([{ prompt: 'Explain this repo', channel: `ws:${chat.id}` }]);
+    expect(askedInPlan).toEqual([plan === true]);
+    expect(store.getState().planMode[`ws:${chat.id}`] === true).toBe(plan === true);
   });
 
   it('organizes projects into groups and hides them', async () => {

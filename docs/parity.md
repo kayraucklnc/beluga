@@ -271,7 +271,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.refresh` | ✓ |
 | `workspaces.newWorktree` | ✓ |
 | `workspaces.newChat` | ✓ |
-| `workspaces.startChat` | ✓ |
+| `workspaces.startChat` | ✓ New chat composer: starts on the first message with the selected Act/Plan mode |
 | `workspaces.startWorktree` | ✓ (→ the new worktree's id; `plan`: its agent plans first; `quiet`: the window stays put; `agent`: who works it, from the home composer's Create Worktree ▾ › Start with ▸ (BLG-506). The phone's Ask › a project › Worktree, with Plan first, since 1.5, and its agent chip (1.35); Your Mac's `start_worktree`) |
 | `workspaces.branches` | New worktree › Based on popup |
 | `workspaces.fork` | ✓ |
@@ -580,7 +580,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `claudeCode.outputs` | ✓ a sub-agent's Outputs tab: the screenshots, test output, logs and JSON it made or looked at (from its transcript, wherever it put them, plus its own `.beluga/scratch/agents/<name>/`), still on disk, newest first |
 | `claudeCode.output` | ✓ looking at one of them: pictures inline (GIFs animate), videos playing inline up to 64 MB, text with secrets redacted (only files that agent made or looked at) |
 | `claudeCode.taskOutput` | ✓ following a background command or watch the agent or a sub-agent started (the panel's Background tab, below the terminal; a sub-agent's Background): the end of its output, live, cleaned of terminal codes and secrets; its own log when it writes to one |
-| `claudeCode.skills` | ✓ the message box's / list: the skills and custom commands the agent can use in this conversation (the project's, yours, your plugins'), each with its description |
+| `claudeCode.skills` | ✓ the message box's / list, including a new chat before its first message: the skills and custom commands in the conversation's folder (the project's, yours, your plugins'), each with its description |
 | `claudeCode.mcpServers` | ✓ Settings › Agent › MCP servers: your agent's servers (yours, your projects', your plugins', claude.ai's), where each comes from and whether it's connected; with Claude and Codex both set up, one tab each |
 | `claudeCode.mcpSignIn` | ✓ Settings › Agent › MCP servers › Sign In…: opens the server's sign-in page in your browser |
 | `claudeCode.mcpSignedIn` | ✓ Settings › Agent › MCP servers: the row waits for the browser, then says whether you're signed in |
