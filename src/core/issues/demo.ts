@@ -1,6 +1,6 @@
 import type { GitHubRepo } from '../../workspaces/github.js';
 import type { IssueSource } from './gh.js';
-import type { GhComment, GhIssueFull, GhIssueState } from './model.js';
+import type { GhComment, GhIssueFull, GhIssueState, GhPull } from './model.js';
 
 /**
  * The demo's pretend GitHub: each demo project is acme/<its name>, with a few issues to try
@@ -100,6 +100,20 @@ const SEEDS: Readonly<Record<string, readonly Seed[]>> = {
   ],
 };
 
+type PullSeed = Omit<GhPull, 'url' | 'createdAt' | 'updatedAt'> & { readonly ago: number };
+
+/** Open pull requests: a teammate's, a bot's, and one on a demo worktree's branch (it opens that worktree). */
+const PULL_SEEDS: Readonly<Record<string, readonly PullSeed[]>> = {
+  'bob-api': [
+    { number: 52, title: 'Retry webhooks with backoff', author: 'you', branch: 'beluga/webhook-retries', draft: false, checks: 'pending', ago: 40 * 60_000 },
+    { number: 51, title: 'Decode emails safely in the user lookup', author: 'sam-r', branch: 'fix/plus-in-email', draft: false, checks: 'passing', review: 'APPROVED', ago: 2 * H },
+    { number: 49, title: 'Read-only API keys', author: 'jules', branch: 'feat/read-only-keys', draft: true, checks: 'failing', ago: 2 * D },
+    { number: 46, title: 'Bump express from 4.19.2 to 4.21.0', author: 'dependabot', branch: 'dependabot/npm_and_yarn/express-4.21.0', draft: false, checks: 'passing', review: 'REVIEW_REQUIRED', ago: 4 * D },
+    { number: 44, title: 'Explain refunds in the README', author: 'dev-ana', branch: 'docs/refunds', draft: false, checks: 'none', ago: 6 * D },
+  ],
+  landing: [{ number: 13, title: 'Keep the pricing cards still when switching to yearly', author: 'mia', branch: 'fix/pricing-jump', draft: false, checks: 'passing', ago: 3 * H }],
+};
+
 export function demoIssueSource(now: () => number = Date.now): IssueSource {
   const born = now();
   const extra = new Map<string, GhComment[]>();
@@ -134,6 +148,10 @@ export function demoIssueSource(now: () => number = Date.now): IssueSource {
       const url = `${repo.url}/issues/${number}#issuecomment-demo${list.length + 1}`;
       extra.set(key, [...list, { author: 'you', body, createdAt: now(), url }]);
       return url;
+    },
+    async pulls(repo) {
+      const pulls = (PULL_SEEDS[repo.repo] ?? []).map(({ ago, ...p }): GhPull => ({ ...p, url: `${repo.url}/pull/${p.number}`, createdAt: born - ago - H, updatedAt: born - ago }));
+      return { pulls, total: pulls.length };
     },
   };
 }

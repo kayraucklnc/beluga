@@ -55,7 +55,7 @@ describe('team issues', () => {
       work,
       repoOf: async () => ({ host: 'github.com', owner: 'acme', repo: 'api', url: 'https://github.com/acme/api' }),
       ghReady: async () => true,
-      source: { list: async () => ({ issues: [issue48], more: false }), get: async () => issue48, comment: async () => '' },
+      source: { list: async () => ({ issues: [issue48], more: false }), get: async () => issue48, comment: async () => '', pulls: async () => ({ pulls: [], total: 0 }) },
       askClaude: () => undefined,
       prPrompt: () => '',
     });

@@ -4,7 +4,7 @@ import { taskForGitHub } from '../src/core/board/model.js';
 import { describeIssue } from '../src/core/board/prompt.js';
 import { BoardWork, startPrompt } from '../src/core/board/work.js';
 import { demoIssueSource, demoRepo } from '../src/core/issues/demo.js';
-import { ghIssueSource, parseComments, parseGraphIssues, parseIssue, parseIssues, searchQuery } from '../src/core/issues/gh.js';
+import { ghIssueSource, parseComments, parseGraphIssues, parseGraphPulls, parseIssue, parseIssues, searchQuery } from '../src/core/issues/gh.js';
 import { GitHubIssues, ghWords } from '../src/core/issues/issues.js';
 import { boardLabels, issueStage, stageWords } from '../src/core/issues/model.js';
 import { investigatePrompt, quoteIssue } from '../src/core/issues/prompts.js';
@@ -114,6 +114,26 @@ describe('reading issues from gh', () => {
     expect(searchQuery(REPO, 'open', 'label:bug  crash')).toBe('repo:acme/bob-api is:issue is:open label:bug crash');
   });
 
+  it('reads open pull requests from GraphQL: author, branch, draft, review and the latest commit’s checks', async () => {
+    const pr = (n: number, extra: Record<string, unknown> = {}) => ({ number: n, title: `PR ${n}`, url: `https://github.com/acme/bob-api/pull/${n}`, isDraft: false, headRefName: `fix/${n}`, createdAt: '2026-10-20T10:00:00Z', updatedAt: '2026-10-21T10:00:00Z', reviewDecision: null, author: { login: 'sam' }, commits: { nodes: [] }, ...extra });
+    const rollup = (state: string | null) => ({ commits: { nodes: [{ commit: { statusCheckRollup: state ? { state } : null } }] } });
+    const out = parseGraphPulls(JSON.stringify({ data: { repository: { pullRequests: { totalCount: 70, nodes: [pr(1, rollup('SUCCESS')), pr(2, { ...rollup('FAILURE'), isDraft: true, reviewDecision: 'CHANGES_REQUESTED' }), pr(3, rollup('PENDING')), pr(4, { ...rollup(null), author: null, title: '  ' }), { nope: 1 }] } } } }));
+    expect(out.total).toBe(70);
+    expect(out.pulls.map((p) => [p.number, p.checks])).toEqual([[1, 'passing'], [2, 'failing'], [3, 'pending'], [4, 'none']]);
+    expect(out.pulls[0]).toEqual({ number: 1, title: 'PR 1', url: 'https://github.com/acme/bob-api/pull/1', author: 'sam', branch: 'fix/1', draft: false, checks: 'passing', createdAt: Date.parse('2026-10-20T10:00:00Z'), updatedAt: Date.parse('2026-10-21T10:00:00Z') });
+    expect(out.pulls[1]).toMatchObject({ draft: true, review: 'CHANGES_REQUESTED' });
+    expect(out.pulls[3]).toMatchObject({ title: 'Pull request #4' });
+    expect(out.pulls[3]).not.toHaveProperty('author');
+    expect(() => parseGraphPulls(JSON.stringify({ data: { repository: null }, errors: [{ message: 'Could not resolve to a Repository' }] }))).toThrow(/Could not resolve/);
+    // Asked as one GraphQL question, open ones newest activity first, the host told for Enterprise.
+    const asked: string[][] = [];
+    const run = async (args: readonly string[]): Promise<string> => (asked.push([...args]), JSON.stringify({ data: { repository: { pullRequests: { totalCount: 1, nodes: [pr(9)] } } } }));
+    expect((await ghIssueSource(run).pulls({ ...REPO, host: 'github.acme.com' })).pulls.map((p) => p.number)).toEqual([9]);
+    expect(asked[0]!.slice(0, 4)).toEqual(['api', 'graphql', '--hostname', 'github.acme.com']);
+    expect(asked[0]).toContain('owner=acme');
+    expect(asked[0]!.find((a) => a.startsWith('query='))).toMatch(/pullRequests\(first: 50, states: \[OPEN\], orderBy: \{ field: UPDATED_AT, direction: DESC \}/);
+  });
+
   it('says what went wrong in Beluga’s words', () => {
     expect(ghWords(new Error('gh: Not Found (HTTP 404)'), REPO)).toMatch(/can’t find .* acme\/bob-api/);
     expect(ghWords(new Error('API rate limit exceeded'), REPO)).toMatch(/slow down/);
@@ -194,6 +214,7 @@ function setup(opts: { readonly repo?: GitHubRepo | null; readonly ghReady?: boo
   });
   const source = demoIssueSource();
   let listed = 0;
+  let pulled = 0;
   const issues = new GitHubIssues({
     store,
     work,
@@ -207,11 +228,16 @@ function setup(opts: { readonly repo?: GitHubRepo | null; readonly ghReady?: boo
         if (opts.fail) throw new Error(opts.fail);
         return source.list(...a);
       },
+      pulls: async (...a) => {
+        pulled++;
+        if (opts.fail) throw new Error(opts.fail);
+        return source.pulls(...a);
+      },
     },
     askClaude: (prompt, channel, line) => void (asked.push([prompt, channel]), shown.push(line)),
     prPrompt: (w) => `Open a pull request for ${w.branch} (your PR instructions).`,
   });
-  return { store, board, work, issues, asked, shown, drafted, newOpts, listed: () => listed };
+  return { store, board, work, issues, asked, shown, drafted, newOpts, listed: () => listed, pulled: () => pulled };
 }
 
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -239,6 +265,30 @@ describe('listing a project’s issues', () => {
     expect(await setup({ fail: 'HTTP 404', ghReady: true }).issues.list('api')).toMatchObject({ kind: 'error', message: expect.stringMatching(/can’t find/) });
     // A host gh isn't signed in to is never asked (its token never goes to a look-alike).
     expect((await setup({ repo: { host: 'github.evil.com', owner: 'a', repo: 'b', url: 'https://github.evil.com/a/b' } }).issues.list('api')).kind).toBe('no_gh');
+  });
+});
+
+describe('listing a project’s open pull requests', () => {
+  it('lists anyone’s open pull requests, newest activity first, and keeps them a minute', async () => {
+    const { issues, pulled } = setup();
+    const list = await issues.pulls('api');
+    expect(list.kind).toBe('github');
+    if (list.kind !== 'github') return;
+    expect(list.pulls.map((p) => p.number)).toEqual([52, 51, 49, 46, 44]);
+    expect(list.total).toBe(5);
+    expect(list.pulls.find((p) => p.number === 46)).toMatchObject({ author: 'dependabot', url: 'https://github.com/acme/bob-api/pull/46' });
+    await issues.pulls('api');
+    expect(pulled()).toBe(1);
+    await issues.pulls('api', true);
+    expect(pulled()).toBe(2);
+  });
+
+  it('tells apart a project that isn’t on GitHub, gh not set up, and GitHub saying no', async () => {
+    expect(await setup({ repo: null }).issues.pulls('api')).toEqual({ kind: 'none' });
+    expect(await setup().issues.pulls('gone')).toEqual({ kind: 'none' });
+    expect((await setup({ fail: 'gh: command not found', ghReady: false }).issues.pulls('api')).kind).toBe('no_gh');
+    expect(await setup({ fail: 'HTTP 404', ghReady: true }).issues.pulls('api')).toMatchObject({ kind: 'error', message: expect.stringMatching(/can’t find/) });
+    expect((await setup({ repo: { host: 'github.evil.com', owner: 'a', repo: 'b', url: 'https://github.evil.com/a/b' } }).issues.pulls('api')).kind).toBe('no_gh');
   });
 });
 

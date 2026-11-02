@@ -16,6 +16,8 @@ const anyway = z.boolean().optional();
 export const ISSUES_API = {
   /** A project's issues: open or closed, a GitHub search, `force` to ask GitHub again. */
   'issues.list': { args: z.tuple([projectId, z.object({ state: z.enum(['open', 'closed']).optional(), search: z.string().max(200).optional(), force: z.boolean().optional() }).strict().optional()]) },
+  /** A project's open pull requests (anyone's, newest activity first), `force` to ask GitHub again. */
+  'issues.pulls': { args: z.tuple([projectId, z.object({ force: z.boolean().optional() }).strict().optional()]) },
   /** One issue in full, with its comments. */
   'issues.get': { args: z.tuple([projectId, number, z.object({ force: z.boolean().optional() }).strict().optional()]) },
   /** Claude finds out why it happens and reproduces it, in the issue's task's worktree, without fixing it. */

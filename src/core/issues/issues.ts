@@ -4,7 +4,7 @@ import type { Store } from '../store.js';
 import type { GitHubRepo } from '../../workspaces/github.js';
 import type { Workspace } from '../../workspaces/types.js';
 import type { IssueSource } from './gh.js';
-import { type GhIssueFull, type IssuesList, type IssuesQuery, boardLabels, repoSlug, taskForIssue } from './model.js';
+import { type GhIssueFull, type IssuesList, type IssuesQuery, type PullsList, boardLabels, repoSlug, taskForIssue } from './model.js';
 import { teammateOn } from '../team/model.js';
 import { fixAfterInvestigationPrompt, fixPrompt, investigatePrompt, issueAsRequest, issueBrief } from './prompts.js';
 
@@ -58,6 +58,7 @@ export interface IssueWork {
 export class GitHubIssues {
   private readonly lists = new Map<string, { readonly at: number; readonly list: IssuesList }>();
   private readonly full = new Map<string, { readonly at: number; readonly issue: GhIssueFull }>();
+  private readonly pullLists = new Map<string, { readonly at: number; readonly list: PullsList }>();
   /** Work being set up on an issue: the same ask twice is one, another waits for it (no two worktrees for a double click). */
   private readonly setting = new Map<string, { readonly action: string; readonly job: Promise<IssueWork> }>();
 
@@ -95,6 +96,26 @@ export class GitHubIssues {
       return { kind: 'error', repo, message: ghWords(err, repo) };
     }
     this.lists.set(key, { at: this.now(), list });
+    return list;
+  }
+
+  /** A project's open pull requests (anyone's), newest activity first; `force` asks GitHub again. */
+  async pulls(projectId: string, force = false): Promise<PullsList> {
+    const kept = this.pullLists.get(projectId);
+    if (kept && !force && this.now() - kept.at < LIST_TTL_MS) return kept.list;
+    if (!this.deps.store.getState().projects.some((p) => p.id === projectId && p.root)) return { kind: 'none' };
+    const repo = await this.deps.repoOf(projectId);
+    if (!repo) return { kind: 'none' };
+    if (this.deps.knownHost && !this.deps.knownHost(repo.host)) return { kind: 'no_gh', repo };
+    let list: PullsList;
+    try {
+      const { pulls, total } = await this.deps.source.pulls(repo);
+      list = { kind: 'github', repo, pulls, total, fetchedAt: this.now() };
+    } catch (err) {
+      if (!(await this.deps.ghReady(repo.host).catch(() => false))) return { kind: 'no_gh', repo };
+      return { kind: 'error', repo, message: ghWords(err, repo) };
+    }
+    this.pullLists.set(projectId, { at: this.now(), list });
     return list;
   }
 

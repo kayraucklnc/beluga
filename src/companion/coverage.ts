@@ -405,6 +405,7 @@ export const PHONE: Record<Method, Side> = {
   // phone too (BLG-170): until its screen exists, a task made from one shows on the phone's board.
   'issues.list': 'mac',
   'issues.get': 'mac',
+  'issues.pulls': 'mac',
   'issues.investigate': 'mac',
   'issues.fix': 'mac',
   'issues.toTask': 'mac',
