@@ -38,7 +38,7 @@ export function NumberTile({ w, note, selected, onClick, className, spark = true
         {children}
       </div>
       <div className={v.tileMain}>
-        <div className={v.tileValue} data-value="">
+        <div className={v.tileValue} data-value="" style={{ '--chars': w.value.length + (w.unit?.length ?? 0) } as React.CSSProperties}>
           {w.value}
           {w.unit ? <span className={v.tileUnit}>{w.unit}</span> : null}
         </div>

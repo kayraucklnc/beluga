@@ -855,22 +855,39 @@
   .numberFit {
     flex-direction: row;
   }
+  /* As wide as its value needs (a long "TRY 8,226"), never narrower than its share. */
   .numberFit > :first-child {
     flex: none;
     width: clamp(150px, 42%, 260px);
+    min-width: min-content;
   }
   .numberFit .fillIn {
     inset: 10px 12px 8px 0;
   }
 }
+/*
+ * The value grows with the tile but always shows whole: it shrinks to the room it has (the tile's
+ * width, or its column beside the chart, less the padding and the sparkline) by its length in
+ * characters (--chars, set by NumberTile; about 0.62em each at this weight).
+ */
 .numberFit [data-value] {
-  font-size: clamp(17px, 12cqi, 40px);
+  --room: 100cqi;
+  --beside: 80px;
+  --fits: calc((var(--room) - var(--beside)) / (var(--chars, 6) * 0.62));
+  font-size: max(12px, min(clamp(17px, 12cqi, 40px), var(--fits)));
   white-space: nowrap;
   transition: font-size 0.15s ease;
 }
-/* With its chart: bigger, but never wider than a narrow tile. */
+/* With its chart: bigger, but never wider than a narrow tile; no sparkline beside it. */
 .numberFit[data-look='chart'] [data-value] {
-  font-size: clamp(17px, 11cqi, 44px);
+  --beside: 30px;
+  font-size: max(12px, min(clamp(17px, 11cqi, 44px), var(--fits)));
+}
+/* Beside the chart, its column may take up to about 62% of the tile. */
+@container (min-width: 340px) {
+  .numberFit [data-value] {
+    --room: 62cqi;
+  }
 }
 .fill {
   position: relative;
@@ -922,6 +939,9 @@
 @container (max-width: 150px) {
   .numberFit [data-value] ~ * {
     display: none;
+  }
+  .numberFit [data-value] {
+    --beside: 30px;
   }
   .tileLabelText {
     -webkit-line-clamp: 3;
