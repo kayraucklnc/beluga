@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isUnder } from '../../shared/path-inside.js';
 
 /**
  * What an agent made or looked at while it worked, from its transcript: the screenshots it took,
@@ -28,7 +29,7 @@ export const MAX_RESULT_PATHS = 20;
 const TEXT_SCAN = 200_000;
 
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
-const MEDIA = /\.(png|jpe?g|gif|webp|pdf|mp4|webm|mov)$/i;
+const MEDIA = /\.(png|jpe?g|gif|webp|pdf|mp4|m4v|webm|mov)$/i;
 const TRACE = /[\\/][^\\/]*trace[^\\/]*\.zip$/i;
 const TEXT = /\.(log|txt|out|json|jsonl|ndjson|md|markdown|csv|tsv|xml|html?)$/i;
 /** Inside the project, text is source unless it's in a folder outputs go to. */
@@ -36,12 +37,12 @@ const OUTPUT_DIRS = /[\\/](\.(?:beluga|klaud)[\\/]scratch|test-results|playwrigh
 const NEVER = /[\\/](node_modules|\.git)[\\/]/;
 
 const isMedia = (p: string): boolean => MEDIA.test(p) || TRACE.test(p);
-const inside = (root: string, p: string): boolean => p === root || p.startsWith(`${root}/`);
+const inside = isUnder;
 
 export function outputKind(p: string): OutputKind {
   if (IMAGE.test(p)) return 'image';
   if (/\.pdf$/i.test(p)) return 'pdf';
-  if (/\.(mp4|webm|mov)$/i.test(p)) return 'video';
+  if (/\.(mp4|m4v|webm|mov)$/i.test(p)) return 'video';
   if (/\.(json|jsonl|ndjson)$/i.test(p)) return 'json';
   if (/\.(md|markdown)$/i.test(p)) return 'markdown';
   if (TEXT.test(p)) return 'text';

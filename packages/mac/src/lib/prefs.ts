@@ -1,4 +1,9 @@
 import { useSyncExternalStore } from 'react';
+import { DEFAULT_FIRE, type FireLook, fireLookOf } from '../chat/fire-look.js';
+import { DEFAULT_MENU_BAR, type MenuBarLook, menuBarLookOf } from '../menubar/menubar-look.js';
+import { type TermKeysPref, type TermThemePref, termKeysOf, themeOf } from './terminal-import-model.js';
+import { type ConvoMode, clampBoth, isConvoMode } from './convo-mode.js';
+import { type ShortcutOverrides, keyPlatform, overridesOf } from './shortcuts-model.js';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
 /**
@@ -41,6 +46,8 @@ export interface UiPrefs {
   /** A finished answer's steps: folded away once Claude answers (one click shows them), or left showing. */
   readonly doneSteps: 'fold' | 'show';
   readonly reduceMotion: boolean;
+  /** A solid window: no macOS blur behind the sidebar (lighter on slower Macs, BLG-409). macOS's own Reduce transparency does this too. */
+  readonly reduceTransparency: boolean;
   /** Where ⌘J (and Run) show the terminal: the drawer under the chat, or the right panel's Terminal tab. */
   readonly termIn: TerminalPlace;
   /** The terminal drawer under the chat is open. */
@@ -55,6 +62,29 @@ export interface UiPrefs {
   readonly termCursorBlink: boolean;
   /** Lines each terminal keeps to scroll back through. */
   readonly termScrollback: number;
+  /** Colours brought from another terminal (Settings › Terminal › Import from…); null: Beluga's own. */
+  readonly termTheme: TermThemePref | null;
+  /** Option sends Meta (Esc+) in the terminal, instead of typing special characters. */
+  readonly termOptionMeta: boolean;
+  /** Keys brought from another terminal (Settings › Terminal › Import from…), over Beluga's terminal keys (BLG-537). */
+  readonly termKeys: TermKeysPref | null;
+  /** In the terminal view, the terminal's keys win over Beluga's shortcuts (⌘T, ⌘W, ⌘1…). */
+  readonly termKeysFirst: boolean;
+  /**
+   * The terminal view is on (BLG-534): conversations can show as Claude Code's own terminal app, and
+   * their header has Chat · Terminal · Both. Off (as for most people): every conversation is the chat.
+   */
+  readonly termView: boolean;
+  /** How each conversation shows (BLG-534): the chat, the agent's own terminal, or both side by side (workspace id → mode). */
+  readonly convoModes: Readonly<Record<string, ConvoMode>>;
+  /** How a conversation you haven't switched opens: the terminal, until you pick otherwise (you turned the terminal view on for it). */
+  readonly convoDefault: ConvoMode;
+  /** You picked convoDefault in Settings (before, it was saved as the chat without you choosing it: BLG-553). */
+  readonly convoDefaultPicked: boolean;
+  /** In Both, the chat's share of the width beside the terminal (0.25–0.6). */
+  readonly bothChat: number;
+  /** The panel of visuals beside the terminal, in pixels. */
+  readonly visualsWidth: number;
   /** A file open full size wraps its long lines (instead of scrolling sideways). */
   readonly readerWrap: boolean;
   /** Chats open as tabs above the conversation (`dm:<peerId>` / `group:<id>`; the main channel is always first). */
@@ -63,10 +93,30 @@ export interface UiPrefs {
   readonly changeLook: 'diff' | 'file';
   /** The panel has a Scratch tab: the workspace's .beluga/scratch/ folder, live. */
   readonly scratchTab: boolean;
+  /** Your phone shows its live screen (BLG-196). Off: Claude still uses the phone, you just don't watch. */
+  readonly phoneScreen: boolean;
+  /** How Scratch lists its files: newest first, or pictures, videos, PDFs and web pages first (BLG-111). */
+  readonly scratchSort: 'newest' | 'viewable';
   /** The icon you picked for each sidebar group (by name; unset: a folder). */
   readonly groupIcons: Readonly<Record<string, string>>;
   /** Plans (by id) whose task chats you asked to see in the sidebar under them (a plan is one row otherwise). */
   readonly planTaskChats: readonly string[];
+  /** How the message box burns on Max effort (Settings › Max Fire). */
+  readonly maxFire: FireLook;
+  /** The menu-bar whale: what its number counts and when it spouts (Settings › Menu Bar). */
+  readonly menuBar: MenuBarLook;
+  /** Settings › Voice (BLG-146): the model that writes down what you say ('suggested': Beluga picks for the language). */
+  readonly voiceModel: 'suggested' | 'whisper-turbo' | 'parakeet';
+  /** The language you speak ('auto': the model tells). */
+  readonly voiceLanguage: string;
+  /** The talk shortcut, as an accelerator ('Alt+Space'; '' : none). */
+  readonly voiceShortcut: string;
+  /** Written down, it's sent at once (⌘↩ always sends; otherwise it waits in the box to read over). */
+  readonly voiceSend: boolean;
+  /** The shortcut works from any app: Beluga comes forward and listens. */
+  readonly voiceAnyApp: boolean;
+  /** Settings › Keyboard (BLG-289): the shortcuts you gave other keys (the rest keep theirs). */
+  readonly shortcuts: ShortcutOverrides;
 }
 
 export const ACCENTS = {
@@ -104,6 +154,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   timestamps: true,
   doneSteps: 'fold',
   reduceMotion: false,
+  reduceTransparency: false,
   termIn: 'panel',
   drawer: false,
   drawerSize: DRAWER_DEFAULT,
@@ -113,12 +164,32 @@ export const DEFAULT_PREFS: UiPrefs = {
   termCursor: 'block',
   termCursorBlink: true,
   termScrollback: 5000,
+  termTheme: null,
+  termOptionMeta: true,
+  termKeys: null,
+  termKeysFirst: true,
+  termView: false,
+  convoModes: {},
+  convoDefault: 'terminal',
+  convoDefaultPicked: false,
+  bothChat: 0.38,
+  visualsWidth: 520,
   readerWrap: false,
   chatTabs: [],
   changeLook: 'diff',
   scratchTab: true,
+  phoneScreen: false,
+  scratchSort: 'newest',
   groupIcons: {},
   planTaskChats: [],
+  maxFire: DEFAULT_FIRE,
+  menuBar: DEFAULT_MENU_BAR,
+  voiceModel: 'suggested',
+  voiceLanguage: 'auto',
+  voiceShortcut: 'Alt+Space',
+  voiceSend: false,
+  voiceAnyApp: false,
+  shortcuts: {},
 };
 
 const KEY = 'beluga.prefs.v1';
@@ -128,7 +199,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout) };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, convoDefault: saved.convoDefaultPicked === true && isConvoMode(saved.convoDefault) ? saved.convoDefault : 'terminal', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -149,17 +220,25 @@ export function setPrefs(patch: Partial<UiPrefs>): void {
   for (const l of [...listeners]) l();
 }
 
+/** Hear about every change to the preferences (returns the way to stop). */
+export function subscribePrefs(l: () => void): () => void {
+  listeners.add(l);
+  return () => void listeners.delete(l);
+}
+
 export function usePrefs(): UiPrefs {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => void listeners.delete(l);
-    },
-    getPrefs,
-  );
+  return useSyncExternalStore(subscribePrefs, getPrefs);
 }
 
 const dark = (): boolean => window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+/** The window's blur, on or off, told to the app once per change (nothing outside the app). */
+let vibrancyOn: boolean | undefined;
+function vibrancy(on: boolean): void {
+  if (vibrancyOn === on || !('__TAURI_INTERNALS__' in globalThis)) return;
+  vibrancyOn = on;
+  void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_vibrancy', { on })).catch(() => undefined);
+}
 
 /** Put the preferences on the document (CSS variables and data attributes do the rest). */
 export function apply(p: UiPrefs = current): void {
@@ -167,6 +246,11 @@ export function apply(p: UiPrefs = current): void {
   root.dataset.theme = p.appearance === 'system' ? (dark() ? 'dark' : 'light') : p.appearance;
   root.dataset.density = p.density;
   root.dataset.motion = p.reduceMotion ? 'reduce' : 'full';
+  // Only a Mac's window blurs what's behind it: Linux and Windows get the solid look.
+  const blur = !p.reduceTransparency && keyPlatform() === 'mac';
+  root.dataset.os = keyPlatform();
+  root.dataset.transparency = blur ? 'full' : 'reduce';
+  vibrancy(blur);
   root.style.setProperty('--accent', ACCENTS[p.accent]);
   root.style.setProperty('--text-size', `${p.textSize}px`);
   root.style.setProperty('--sidebar-w', `${p.sidebarWidth}px`);
@@ -174,7 +258,8 @@ export function apply(p: UiPrefs = current): void {
   root.style.setProperty('--chat-max', p.chatWidth === 'narrow' ? '42rem' : p.chatWidth === 'wide' ? '60rem' : '100%');
 }
 
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => apply());
+// (Not in tests, which load the pure parts of what imports this without a window.)
+if (typeof window !== 'undefined') window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => apply());
 
 /** ⌘+ / ⌘- / ⌘0: the window's text size. */
 export function zoom(dir: 'in' | 'out' | 'reset'): { ok: boolean; message: string } {

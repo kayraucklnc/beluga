@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import type { TaskBook } from './book.js';
+import type { BelugaInfo } from '../../net/mesh/features.js';
+import type { ChatExtras } from '../../net/mesh/views.js';
+import { OUTBOX_TTL_MS, type TaskBook } from './book.js';
 import { type Frame, type GatewayMsg, type GatewayMsgInput, parseFrame } from './protocol.js';
 
 /**
@@ -7,7 +9,8 @@ import { type Frame, type GatewayMsg, type GatewayMsgInput, parseFrame } from '.
  * who's online, else through today's room when they're in it. Requests, results and cancels
  * wait in the outbox until the other side acknowledges them (resent now and then while there's
  * no ack, delivered when they come back online); progress updates and cards are only sent when
- * someone is reachable right now.
+ * someone is reachable right now. A friend you're never online with at the same time gets what
+ * waited in their mailbox after a while (BLG-272, net/mesh/mailbox.ts), and acknowledges it the same way.
  */
 
 /** What the gateway needs from the mesh node (net/mesh/mesh.ts). */
@@ -18,6 +21,16 @@ export interface MeshPort {
   /** Hand a frame to the friend's link; false when there's no link now. */
   sendGateway(peerId: string, payload: unknown): boolean;
   nameFor(peerId: string): string;
+  /** What their Beluga said about itself (its version and features); undefined for older Macs. */
+  belugaOf?(peerId: string): BelugaInfo | undefined;
+  /** Write in a conversation you share (`dm:<peerId>`, `group:<id>`): a task's card there (BLG-208). */
+  post?(conversation: string, text: string, extras: ChatExtras): void;
+  /** `peerId` is in this conversation with you now. */
+  shares?(conversation: string, peerId: string): boolean;
+  /** Leave a frame in a friend's mailbox (none: no mailbox). */
+  mail?(peerId: string, t: 'gw', payload: unknown): Promise<boolean>;
+  /** How long a frame waits for their link before it's mailed (undefined: no mailbox). */
+  readonly mailAfterMs?: number | undefined;
 }
 
 /** What the gateway needs from today's room. */
@@ -39,6 +52,7 @@ const SEEN_FRAMES = 1000;
 
 export class Courier {
   private readonly seen = new Map<string, Set<string>>();
+  private readonly mailing = new Set<string>();
 
   constructor(
     private readonly book: TaskBook,
@@ -77,8 +91,8 @@ export class Courier {
       this.book.acked(from, frame.ack);
       return undefined;
     }
-    // Always acknowledged (the ack may be what got lost), handed on only once.
-    this.deliverVia(from, via, { ack: frame.f });
+    // Always acknowledged (the ack may be what got lost), handed on only once; by mail when it came by mail.
+    if (!this.deliverVia(from, via, { ack: frame.f }) && via === 'mesh') void this.ports.mesh()?.mail?.(from, 'gw', { ack: frame.f });
     const seen = this.seen.get(from) ?? new Set<string>();
     this.seen.set(from, seen);
     if (seen.has(frame.f)) return undefined;
@@ -90,10 +104,34 @@ export class Courier {
   /** Send what waits for this person (or everyone reachable); `force` resends even recent ones. */
   flush(to?: string, force = false): void {
     const now = Date.now();
+    const mesh = this.ports.mesh();
+    const mailAfter = mesh?.mail ? mesh.mailAfterMs : undefined;
     for (const o of this.book.waiting(to, now)) {
-      if (!force && o.sentAt && now - o.sentAt < RESEND_MS) continue;
-      if (this.deliver(o.to, o.frame)) this.book.handed(o.frame.f, now);
+      if (this.reach(o.to)) {
+        if (!force && o.sentAt && now - o.sentAt < RESEND_MS) continue;
+        if (this.deliver(o.to, o.frame)) this.book.handed(o.frame.f, now);
+      } else if (mailAfter !== undefined && !o.mailedAt && mesh?.isFriend(o.to) && now - (o.expiresAt - OUTBOX_TTL_MS) >= mailAfter) void this.mailOne(mesh, o.to, o.frame);
     }
+  }
+
+  /** Leaving the network: what waits for friends and isn't in their mailbox yet goes there now. */
+  async mailAll(): Promise<void> {
+    const mesh = this.ports.mesh();
+    if (!mesh?.mail) return;
+    await Promise.all(this.book.waiting().filter((o) => !o.mailedAt && mesh.isFriend(o.to)).map((o) => this.mailOne(mesh, o.to, o.frame)));
+  }
+
+  /** Post a waiting frame to a friend's mailbox (once; a later flush tries again if it didn't take). */
+  private mailOne(mesh: MeshPort, to: string, frame: Frame & { f: string }): Promise<void> {
+    if (this.mailing.has(frame.f) || !mesh.mail) return Promise.resolve();
+    this.mailing.add(frame.f);
+    return mesh
+      .mail(to, 'gw', frame)
+      .then((ok) => {
+        if (ok) this.book.mailed(frame.f);
+      })
+      .catch(() => undefined)
+      .finally(() => this.mailing.delete(frame.f));
   }
 
   private deliver(to: string, frame: Frame): boolean {

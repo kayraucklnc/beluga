@@ -9,6 +9,9 @@ import { Archive } from './scenes/Archive.js';
 import { Earnings } from './scenes/Earnings.js';
 import { Friends } from './scenes/Friends.js';
 import { Parallel } from './scenes/Parallel.js';
+import { Sentinel } from './scenes/Sentinel.js';
+import { SentinelUses } from './scenes/SentinelUses.js';
+import { Tables } from './scenes/Tables.js';
 import { TOUR_COPY } from './tour-copy.js';
 import s from './onboarding.module.css';
 
@@ -30,7 +33,7 @@ export function Hello({ onStart }: { readonly onStart: () => void }) {
         </motion.span>
       </h1>
       <Rise delay={2.45} className={s.heroBody}>
-        Claude working across all your repositories in parallel. Everything it does, in view. Your friends’ Claudes, one message away.
+        Claude Code, Codex or a model of your own, working across all your repositories in parallel. Everything they do, in view. Your friends’ agents, one message away.
       </Rise>
       <Rise delay={2.75}>
         <GlowButton onClick={onStart} autoFocus>
@@ -54,7 +57,10 @@ export function GlowButton({ children, onClick, autoFocus, quiet }: { readonly c
 const SCENES: Partial<Record<Step, () => ReactNode>> = {
   parallel: () => <Parallel />,
   agents: () => <Agents />,
+  tables: () => <Tables />,
   friends: () => <Friends />,
+  sentinel: () => <Sentinel />,
+  uses: () => <SentinelUses />,
   earnings: () => <Earnings />,
   archive: () => <Archive />,
 };
@@ -131,7 +137,7 @@ export function Ready({ projects, onAddProject, onOpen }: { readonly projects: n
       </h1>
       <Rise delay={0.8} className={s.heroBody}>
         {has
-          ? `Your ${projects === 1 ? 'project is' : `${projects} projects are`} here. Start a worktree from any of them, and Claude gets to work on its own branch.`
+          ? `Your ${projects === 1 ? 'project is' : `${projects} projects are`} here. Start a worktree from any of them, and your agent gets to work on its own branch.`
           : 'Add a project to begin. Beluga finds its branches and worktrees, and every new task gets its own.'}
       </Rise>
       <Rise delay={1.05} className={s.readyButtons}>

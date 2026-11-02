@@ -1,4 +1,5 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
+import { isShortcut } from '../lib/shortcuts.js';
 
 /**
  * Going back the Mac way (BLG-5): a two-finger swipe to the right on the trackpad (as in Safari
@@ -90,10 +91,10 @@ export function useSwipeBack(area: RefObject<HTMLElement | null>, back: () => vo
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || e.isComposing) return;
-      const cmdBracket = e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key === '[' || e.code === 'BracketLeft');
+      const cmdBracket = isShortcut('page-back', e);
       const esc = e.key === 'Escape' && !e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey;
       if (!cmdBracket && !esc) return;
-      // ⌘[ goes back even from a field (as in Safari); Esc leaves fields and menus to themselves.
+      // ⌘[ (your Back, Settings › Keyboard) goes back even from a field, as in Safari; Esc leaves fields and menus to themselves.
       if (esc && busyElsewhere(e)) return;
       if (cmdBracket && document.querySelector('[role="dialog"]')) return;
       e.preventDefault();

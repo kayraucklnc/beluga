@@ -1,6 +1,6 @@
 import type { BoardState } from '../../../../src/core/board/model.js';
 import type { Actor } from '../../../../src/core/board/model.js';
-import { AUTONOMY_INFO, type Autonomy, type Plan, type PlanBody, type PlanEvent, type PlansState, diffBodies, milestoneDeps, planTitle, shownBody } from '../../../../src/core/plans/model.js';
+import { AUTONOMY_INFO, type Autonomy, type Plan, type PlanBody, type PlanEvent, type PlanPr, type PlansState, diffBodies, milestoneDeps, planTitle, shownBody } from '../../../../src/core/plans/model.js';
 import type { MilestoneState, MilestoneView, NextStep, PlanView, TaskState, TaskView } from '../../../../src/core/plans/progress.js';
 import { pulseWords } from '../../../../src/core/plans/watchdog.js';
 
@@ -32,7 +32,7 @@ export const MILESTONE_STATE: Readonly<Record<MilestoneState, { readonly label: 
   draft: { label: 'Draft', tone: 'muted' },
   later: { label: 'Up next', tone: 'muted' },
   running: { label: 'In progress', tone: 'claude' },
-  checking: { label: 'Claude is checking', tone: 'claude' },
+  checking: { label: 'Agent is checking', tone: 'claude' },
   gate: { label: 'Ready to pass', tone: 'accent' },
   failed: { label: 'Check failed', tone: 'error' },
   merging: { label: 'Merging into the plan', tone: 'claude' },
@@ -101,7 +101,7 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
     case 'approve':
       return { title: 'Approve Plan', detail: 'Its tasks go on the board and the plan starts' };
     case 'review_changes':
-      return { title: 'Apply Changes', detail: 'Claude proposed changes to the plan' };
+      return { title: 'Apply Changes', detail: 'Your agent proposed changes to the plan' };
     case 'resume':
       return { title: 'Resume', detail: 'Paused: nothing starts until you resume it' };
     case 'start': {
@@ -112,13 +112,13 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
       return { title: claude === 1 ? `Start “${next.tasks.find((t) => !t.forYou)!.task.title}”` : `Start ${claude} Tasks`, detail: claude === 1 ? 'Ready to go' : 'Ready to go, side by side' };
     }
     case 'pass':
-      return { title: `Pass “${next.milestone.milestone.title}”`, detail: next.milestone.run.check ? (next.milestone.run.check.verdict === 'pass' ? 'Claude checked it: every criterion holds' : 'Claude’s check found problems') : 'Every task is finished' };
+      return { title: `Pass “${next.milestone.milestone.title}”`, detail: next.milestone.run.check ? (next.milestone.run.check.verdict === 'pass' ? 'The agent checked it: every criterion holds' : 'The agent’s check found problems') : 'Every task is finished' };
     case 'checking':
-      return { title: 'Claude is checking', detail: `The pass criteria of “${next.milestone.milestone.title}”` };
+      return { title: 'Agent is checking', detail: `The pass criteria of “${next.milestone.milestone.title}”` };
     case 'failed':
-      return { title: 'Needs a fix', detail: `“${next.milestone.milestone.title}” didn’t pass Claude’s check` };
+      return { title: 'Needs a fix', detail: `“${next.milestone.milestone.title}” didn’t pass the agent’s check` };
     case 'answer':
-      return { title: 'Claude asked something', detail: next.tasks.map((t) => t.issue?.key ?? t.task.title).join(', ') };
+      return { title: 'Your agent asked something', detail: next.tasks.map((t) => t.issue?.key ?? t.task.title).join(', ') };
     case 'stalled':
       return { title: next.tasks.length === 1 ? `Resume ${next.tasks[0]!.issue?.key ?? `“${next.tasks[0]!.task.title}”`}` : `Resume ${next.tasks.length} Tasks`, detail: next.tasks.map((t) => t.watch?.line ?? `${t.issue?.key ?? t.task.title} stopped again`).join(' · ') };
     case 'working':
@@ -128,7 +128,7 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
     case 'merging':
       return { title: next.text, detail: `“${next.milestone.milestone.title}” passes once its work is merged into the plan’s branch` };
     case 'ship':
-      if (next.pr?.state === 'OPEN') return { title: `Pull request #${next.pr.number} is open`, detail: `${next.branch} → main: its tasks are Done once it merges` };
+      if (next.pr?.state === 'OPEN') return { title: `Pull request #${next.pr.number} is open`, detail: `${next.branch} → main: ${prWords(next.pr)}` };
       if (next.pr?.state === 'CLOSED') return { title: `Pull request #${next.pr.number} was closed`, detail: 'Closed without merging: the plan’s tasks stay merged into the plan' };
       return { title: 'Open PR', detail: `Every milestone passed: ${next.branch} has all the plan’s work` };
     case 'done':
@@ -222,8 +222,8 @@ export function headline(view: PlanView): Headline {
   const running = view.active.filter((t) => t.state === 'running' || t.state === 'idle');
   const inMilestones = new Set(running.map((t) => t.milestoneId)).size;
   const alsoRunning = running.length ? ` · ${count(running.length, 'task')} running` : '';
-  if (!plan.body) return view.milestones.length ? { who: 'you', text: `Approve the plan: ${count(view.milestones.length, 'milestone')} · ${count(view.total, 'task')} · a draft, not on the board yet` } : { who: 'claude', text: 'Claude is writing the plan' };
-  if (plan.draft) return { who: 'you', text: `Review Claude’s changes: ${changeWords(plan)}` };
+  if (!plan.body) return view.milestones.length ? { who: 'you', text: `Approve the plan: ${count(view.milestones.length, 'milestone')} · ${count(view.total, 'task')} · a draft, not on the board yet` } : { who: 'claude', text: 'Your agent is writing the plan' };
+  if (plan.draft) return { who: 'you', text: `Review your agent’s changes: ${changeWords(plan)}` };
   if (next.kind !== 'done' && next.kind !== 'answer' && next.kind !== 'failed') {
     const merging = mergingLine(view);
     if (merging) return merging;
@@ -231,35 +231,38 @@ export function headline(view: PlanView): Headline {
   switch (next.kind) {
     case 'approve':
     case 'review_changes':
-      return { who: 'you', text: `Review Claude’s changes: ${changeWords(plan)}` };
+      return { who: 'you', text: `Review your agent’s changes: ${changeWords(plan)}` };
     case 'resume':
       return { who: 'you', text: 'Resume the plan: it’s paused, nothing starts' };
     case 'answer':
-      return { who: 'you', text: `Answer Claude in ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}` };
+      return { who: 'you', text: `Answer your agent in ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}` };
     case 'failed':
-      return { who: 'you', text: `${quoted(next.milestone)} didn’t pass Claude’s check: send it back or pass it anyway` };
+      return { who: 'you', text: `${quoted(next.milestone)} didn’t pass the agent’s check: send it back or pass it anyway` };
     case 'pass': {
       const m = next.milestone;
+      const failed = m.run.mergeFailed;
+      if (failed) return { who: 'you', text: `${quoted(m)} couldn’t merge into ${plan.branch ?? 'the plan’s branch'}: ${failed.reason} — fix that, then pass it again` };
       const n = m.milestone.criteria.length;
-      const why = m.run.check?.verdict === 'pass' ? `Claude checked ${n === 1 ? 'its criterion' : n === 2 ? 'both criteria' : `all ${n} criteria`}` : 'every task is finished';
+      const why = m.run.check?.verdict === 'pass' ? `The agent checked ${n === 1 ? 'its criterion' : n === 2 ? 'both criteria' : `all ${n} criteria`}` : 'every task is finished';
       return { who: 'you', text: `Pass ${quoted(m)} — ${why}` };
     }
     case 'start':
       return { who: 'you', text: next.tasks.length === 1 ? `Start “${next.tasks[0]!.task.title}”` : `Start ${count(next.tasks.length, 'task')}` };
     case 'checking':
-      return { who: 'claude', text: `Claude is checking ${quoted(next.milestone)}${alsoRunning}` };
-    case 'working':
-      return running.length ? { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` } : { who: 'beluga', text: 'Starting the next tasks' };
+      return { who: 'claude', text: `The agent is checking ${quoted(next.milestone)}${alsoRunning}` };
+    case 'working': {
+      if (running.length) return { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` };
+      const starting = startingMilestones(view);
+      return { who: 'beluga', text: starting.length ? settingUp(view, starting) : 'Starting the next tasks' };
+    }
     case 'waiting':
       return { who: 'beluga', text: next.why };
     case 'merging':
       return { who: next.milestone.merging?.conflict?.stuck ? 'you' : 'beluga', text: next.text };
     case 'stalled':
-      return { who: 'you', text: `Resume ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}: its Claude stopped again without finishing` };
+      return { who: 'you', text: `Resume ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}: its agent stopped again without finishing` };
     case 'ship':
-      if (next.pr?.state === 'OPEN') return { who: 'you', text: `Merge #${next.pr.number} on GitHub: every milestone passed` };
-      if (next.pr?.state === 'CLOSED') return { who: 'you', text: `#${next.pr.number} was closed without merging: open it again, or merge locally` };
-      return { who: 'you', text: `Open the plan’s pull request: ${next.branch} → main` };
+      return shipHeadline(plan, next.branch, next.pr);
     case 'done':
       return { who: 'beluga', text: 'Done: every milestone passed' };
   }
@@ -275,14 +278,14 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
   if (state === 'planned') return { who: 'beluga', text: 'Merged into the plan; done when the plan’s pull request merges' };
   switch (t.state) {
     case 'running':
-      return { who: 'claude', text: t.step ? `Claude is working on this: ${t.step}` : 'Claude is working on this' };
+      return { who: 'claude', text: t.step ? `The agent is working on this: ${t.step}` : 'The agent is working on this' };
     case 'asking':
-      return { who: 'you', text: 'Claude asked you something here' };
+      return { who: 'you', text: 'The agent asked you something here' };
     case 'idle':
       return { who: 'beluga', text: 'In progress; nobody is working on it right now' };
     case 'ready':
       if (t.forYou) return { who: 'you', text: 'Yours: answer it in the plan’s conversation (no worktree)' };
-      if (t.queued) return { who: 'claude', text: 'Next for this milestone’s Claude, in its worktree' };
+      if (t.queued) return { who: 'claude', text: 'Next for this milestone’s agent, in its worktree' };
       return m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'beluga', text: 'Ready: it starts by itself' };
     case 'blocked':
     case 'later':
@@ -300,9 +303,9 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
   // Done here: what's left is the milestone's.
   const others = m.tasks.filter((x) => x !== t && !['review', 'done', 'canceled', 'missing', 'planned'].includes(x.state)).length;
   if (m.state === 'running') return { who: 'beluga', text: `Done. Waiting for ${count(others, 'other task')} of ${quoted(m)}, then the milestone check; ${into}` };
-  if (m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check)) return { who: 'claude', text: `Done. Claude is checking ${quoted(m)}; ${into}` };
+  if (m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check)) return { who: 'claude', text: `Done. The agent is checking ${quoted(m)}; ${into}` };
   if (m.state === 'gate') return m.autonomy === 'autopilot' ? { who: 'beluga', text: `Done. ${quoted(m)} passes by itself; ${into}` } : { who: 'you', text: `Done. Pass ${quoted(m)} in the plan; ${into}` };
-  if (m.state === 'failed') return { who: 'you', text: `Done, but ${quoted(m)} didn’t pass Claude’s check` };
+  if (m.state === 'failed') return { who: 'you', text: `Done, but ${quoted(m)} didn’t pass the agent’s check` };
   return { who: 'beluga', text: `Done. Waiting for the milestone check; ${into}` };
 }
 
@@ -314,8 +317,8 @@ export function modeChange(view: PlanView, to: Autonomy): { readonly title: stri
   const label = AUTONOMY_INFO[to].label;
   const from = {
     step: 'From now on nothing starts by itself: you start each task. Tasks already running go on.',
-    gated: 'From now on tasks start by themselves, and each milestone waits for you to pass it once Claude has checked it.',
-    autopilot: `From now on Claude passes milestones itself${branch ? ` and merges them into ${branch}` : ''}. It stops only if a check fails.`,
+    gated: 'From now on tasks start by themselves, and each milestone waits for you to pass it once the agent has checked it.',
+    autopilot: `From now on the agent passes milestones itself${branch ? ` and merges them into ${branch}` : ''}. It stops only if a check fails.`,
   }[to];
   const open = view.open;
   const nowBits: string[] = [];
@@ -336,7 +339,7 @@ export function modeChange(view: PlanView, to: Autonomy): { readonly title: stri
 
 // ---- what happened
 
-export type FeedKind = 'started' | 'finished' | 'checking' | 'checked' | 'failed' | 'merged' | 'passed' | 'mode' | 'approved' | 'changed' | 'paused' | 'resumed' | 'done' | 'problem';
+export type FeedKind = 'started' | 'finished' | 'checking' | 'checked' | 'failed' | 'merged' | 'passed' | 'mode' | 'approved' | 'changed' | 'paused' | 'resumed' | 'done' | 'problem' | 'branch' | 'pr';
 
 export interface FeedItem {
   readonly id: string;
@@ -371,6 +374,9 @@ function feedKind(e: PlanEvent): FeedKind | undefined {
       return /^checked\b/.test(e.text) ? 'checked' : 'checking';
     case 'autonomy':
       return 'mode';
+    // Where the work goes: the plan's branch made, its pull request opened (other notes stay out).
+    case 'note':
+      return /^(made the plan’s branch|collects the plan’s work on)\b/.test(e.text) ? 'branch' : /^opened pull request #\d+/.test(e.text) ? 'pr' : undefined;
     default:
       return undefined;
   }
@@ -467,3 +473,215 @@ export function keyOf(board: BoardState, issueId: string | undefined): string | 
 }
 
 export type { MilestoneView };
+
+// ---------------------------------------------------------------- between milestones
+
+/** A milestone's line into one that waits on it, from how it stands: passed (merged in), merging, at its gate, or not yet. */
+export interface MilestoneLink {
+  readonly state: 'done' | 'ready' | 'waiting';
+  /** What the line says just below the gate it leaves. */
+  readonly label: string;
+}
+
+/**
+ * How a milestone's line reads. Passing it merges its work into the plan's branch first (by
+ * itself; a conflict goes to Claude), and what waits on it unlocks only once that's in: so the line
+ * says Merging, Fixing a conflict or Conflict while that runs, never a silent "Passed".
+ */
+export function milestoneLink(m: MilestoneView | undefined): MilestoneLink {
+  if (!m) return { state: 'waiting', label: 'Unlocks' };
+  if (m.state === 'merging') {
+    const c = m.merging?.conflict;
+    return { state: 'ready', label: c ? (c.stuck ? 'Conflict: needs you' : 'Fixing a conflict') : 'Merging' };
+  }
+  if (m.state === 'passed' || m.run.passedAt) return { state: 'done', label: 'Unlocked' };
+  return { state: m.state === 'gate' || m.state === 'checking' ? 'ready' : 'waiting', label: 'Unlocks' };
+}
+
+/**
+ * Where the lines from several milestones meet before the one that waits on all of them: how many
+ * are in, and what it says. One line in has no join (it simply leads there).
+ */
+export interface MilestoneJoin {
+  readonly passed: number;
+  readonly total: number;
+  readonly state: MilestoneLink['state'];
+  /** Its tooltip: which are in, which it still waits on, and the branch it starts from. */
+  readonly tip: string;
+}
+
+export function milestoneJoin(parents: readonly (MilestoneView | undefined)[], branch: string | undefined): MilestoneJoin | undefined {
+  if (parents.length < 2) return undefined;
+  const links = parents.map(milestoneLink);
+  const passed = links.filter((l) => l.state === 'done').length;
+  const total = parents.length;
+  const state: MilestoneLink['state'] = passed === total ? 'done' : links.some((l) => l.state === 'ready') ? 'ready' : 'waiting';
+  const left = parents.filter((m, i) => m && links[i]!.state !== 'done').map((m) => `“${m!.milestone.title}”`);
+  const into = branch ? ` and merged into ${branch}` : '';
+  const tip = passed === total ? `All ${total} passed${into}: it starts from ${branch ?? 'their work'}` : `Unlocks when all ${total} have passed${into} · waiting on ${left.join(', ')}`;
+  return { passed, total, state, tip };
+}
+
+/** What a gated milestone's lock says: what it waits on, or the branch it starts from once they're in. */
+export function lockWords(waitsOn: readonly string[], dependsOn: number, branch: string | undefined): string {
+  const names = waitsOn.map((t) => `“${t}”`).join(' and ');
+  if (waitsOn.length) return `Unlocks when ${names} ${waitsOn.length === 1 ? 'passes' : 'pass'}${branch ? ` and ${waitsOn.length === 1 ? 'is' : 'are'} merged into ${branch}` : ''}`;
+  if (!branch) return 'Unlocked';
+  return `Unlocked: starts from ${branch}, with ${dependsOn === 1 ? 'the milestone before it' : `all ${dependsOn} before it`} merged in`;
+}
+
+// ---------------------------------------------------------------- setting up
+
+/**
+ * Open milestones whose Claude Beluga is starting right now: on their way (not Step by Step, where
+ * you start each task), with a task of Claude's ready and nothing of theirs begun or handed to a
+ * Claude yet. Between approving and the first step this is everything there is to see, so it's
+ * said, never left looking frozen.
+ */
+export function startingMilestones(view: Pick<PlanView, 'plan' | 'open'>): readonly MilestoneView[] {
+  if (view.plan.status !== 'active' || view.plan.paused) return [];
+  return view.open.filter(
+    (m) =>
+      m.state === 'running' &&
+      m.autonomy !== 'step' &&
+      !m.run.agent &&
+      m.tasks.some((t) => t.state === 'ready' && !t.forYou && !t.queued) &&
+      !m.tasks.some((t) => t.worktree || t.state === 'running' || t.state === 'asking' || t.state === 'idle' || t.state === 'review'),
+  );
+}
+
+/** “Setting up: making the plan's branch, then starting an agent for “API” and “UI”” */
+export function settingUp(view: Pick<PlanView, 'plan'>, starting: readonly MilestoneView[]): string {
+  const names = starting.map((m) => `“${m.milestone.title}”`);
+  const list = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(' and ');
+  return `Setting up: ${view.plan.branch ? '' : 'making the plan’s branch, then '}starting an agent for ${list}`;
+}
+
+// ---- the plan's branch and pull request
+
+/** What stands in the way of the plan's pull request, in a few words (“checks pending · needs a review”). */
+export function prWords(pr: PlanPr): string {
+  if (pr.state === 'MERGED') return 'merged into main';
+  if (pr.state === 'CLOSED') return 'closed without merging';
+  const bits: string[] = [];
+  if (pr.draft) bits.push('a draft');
+  if (pr.conflicts) bits.push('conflicts with main');
+  else if (pr.mergeState === 'behind') bits.push('behind main');
+  if (pr.checks === 'failing') bits.push('checks failing');
+  else if (pr.checks === 'pending') bits.push('checks running');
+  else if (pr.checks === 'passing') bits.push('checks pass');
+  if (pr.review === 'CHANGES_REQUESTED') bits.push('changes requested');
+  else if (pr.review === 'REVIEW_REQUIRED') bits.push('needs a review');
+  else if (pr.review === 'APPROVED') bits.push('approved');
+  if (pr.autoMerge) bits.push('merges when checks pass');
+  return bits.length ? bits.join(' · ') : 'ready to merge';
+}
+
+/**
+ * What the plan's last step is now, once every milestone passed: open its pull request, bring main
+ * in (it conflicts), wait on Claude fixing that, merge it now or once its checks pass, or nothing (queued).
+ */
+export type ShipAction =
+  | { readonly kind: 'open'; readonly again: boolean }
+  | { readonly kind: 'catching_up'; readonly main: string }
+  | { readonly kind: 'fixing'; readonly files: readonly string[] }
+  | { readonly kind: 'stuck'; readonly files: readonly string[] }
+  | { readonly kind: 'resolve' }
+  | { readonly kind: 'draft' }
+  | { readonly kind: 'queued' }
+  | { readonly kind: 'wait' }
+  | { readonly kind: 'merge' }
+  | { readonly kind: 'merged' };
+
+export function shipAction(plan: Plan, pr: PlanPr | undefined): ShipAction {
+  const main = plan.mainMerge;
+  if (main?.conflict) return { kind: main.conflict.stuck ? 'stuck' : 'fixing', files: main.conflict.files };
+  if (main) return { kind: 'catching_up', main: main.main };
+  if (!pr || pr.state === 'CLOSED') return { kind: 'open', again: pr?.state === 'CLOSED' };
+  if (pr.state === 'MERGED') return { kind: 'merged' };
+  if (pr.conflicts) return { kind: 'resolve' };
+  if (pr.draft) return { kind: 'draft' };
+  if (pr.autoMerge) return { kind: 'queued' };
+  if (pr.checks === 'pending' || pr.checks === 'failing' || pr.review === 'REVIEW_REQUIRED' || pr.review === 'CHANGES_REQUESTED' || pr.mergeState === 'blocked') return { kind: 'wait' };
+  return { kind: 'merge' };
+}
+
+const fileList = (files: readonly string[]): string => files.slice(0, 2).join(', ') + (files.length > 2 ? ` and ${files.length - 2} more` : '');
+
+function shipHeadline(plan: Plan, branch: string, pr: PlanPr | undefined): Headline {
+  const a = shipAction(plan, pr);
+  const n = pr ? `#${pr.number}` : 'the pull request';
+  switch (a.kind) {
+    case 'open':
+      return a.again ? { who: 'you', text: `${n} was closed without merging: open it again, or merge locally` } : { who: 'you', text: `Open the plan’s pull request: ${branch} → main` };
+    case 'catching_up':
+      return { who: 'beluga', text: `Merging ${a.main} into ${branch}, so ${n} merges cleanly` };
+    case 'fixing':
+      return { who: 'claude', text: `Your agent is fixing the conflict with main in ${fileList(a.files)}` };
+    case 'stuck':
+      return { who: 'you', text: `The conflict with main in ${fileList(a.files)} is still there: ask your agent again, or fix it in its folder` };
+    case 'resolve':
+      return { who: 'you', text: `${n} conflicts with main: Resolve Conflicts brings main into ${branch}` };
+    case 'draft':
+      return { who: 'you', text: `${n} is a draft: mark it ready on GitHub` };
+    case 'queued':
+      return { who: 'beluga', text: `${n} merges by itself once its checks pass` };
+    case 'wait':
+      return { who: 'you', text: `${n}: ${prWords(pr!)} — merge it once they pass` };
+    case 'merge':
+      return { who: 'you', text: `Merge ${n} on GitHub: every milestone passed, ${prWords(pr!)}` };
+    case 'merged':
+      return { who: 'beluga', text: `${n} merged into main` };
+  }
+}
+
+/** One step on the way from the plan's milestones to main, for the branch view. */
+export interface FlowStep {
+  readonly id: string;
+  readonly kind: 'main' | 'pr' | 'branch' | 'milestone';
+  readonly label: string;
+  readonly detail: string;
+  readonly state: 'done' | 'active' | 'waiting' | 'problem' | 'later';
+}
+
+/**
+ * Where the plan's work goes, from main back: main, the pull request into it, the plan's branch,
+ * and each milestone merged into that branch (or merging, stopped at a conflict, couldn't, not yet).
+ */
+export function branchFlow(view: PlanView): readonly FlowStep[] {
+  const { plan } = view;
+  const branch = plan.branch;
+  const pr = plan.pr;
+  const steps: FlowStep[] = [];
+  const shipped = plan.shipped;
+  steps.push({ id: 'main', kind: 'main', label: 'main', detail: shipped ? (shipped.how === 'pr' ? `the plan’s work is in, via #${shipped.number}` : 'the plan’s work is in, merged here') : 'the plan’s work goes here at the end', state: shipped ? 'done' : 'waiting' });
+  if (branch) {
+    const ship = shipAction(plan, pr);
+    const prState: FlowStep['state'] = shipped || pr?.state === 'MERGED' ? 'done' : ship.kind === 'stuck' || ship.kind === 'resolve' || pr?.state === 'CLOSED' || pr?.checks === 'failing' ? 'problem' : pr ? 'active' : 'waiting';
+    const prDetail = plan.mainMerge?.conflict ? `conflicts with main in ${fileList(plan.mainMerge.conflict.files)}${plan.mainMerge.conflict.stuck ? ': needs you' : ': your agent is fixing it'}` : pr ? prWords(pr) : shipped?.how === 'local' ? 'merged here instead' : 'opened once every milestone passed';
+    steps.push({ id: 'pr', kind: 'pr', label: pr ? `Pull request #${pr.number}` : 'Pull request', detail: `${branch} → main · ${prDetail}`, state: shipped?.how === 'local' ? 'done' : prState });
+    steps.push({ id: 'branch', kind: 'branch', label: branch, detail: 'made from main: every task starts from it, each milestone merges into it', state: shipped ? 'done' : 'active' });
+  } else if (plan.body && plan.status !== 'done') {
+    const failed = [...plan.activity].reverse().find((e) => e.kind === 'problem' && /^couldn’t make the plan’s branch/.test(e.text));
+    steps.push({ id: 'branch', kind: 'branch', label: 'No plan branch', detail: failed ? `${failed.text.replace(/^couldn’t make the plan’s branch /, 'couldn’t make ')}` : 'not made yet: tasks start from main', state: failed ? 'problem' : 'waiting' });
+  }
+  for (const m of view.milestones) {
+    const c = m.merging?.conflict;
+    const failed = m.run.mergeFailed;
+    const state: FlowStep['state'] = m.state === 'merging' ? (c?.stuck ? 'problem' : 'active') : failed ? 'problem' : m.state === 'passed' ? 'done' : m.state === 'later' || m.state === 'draft' ? 'later' : 'waiting';
+    const detail =
+      m.state === 'merging'
+        ? c
+          ? `merging into ${branch ?? 'the branch'}: ${c.key ?? c.merging} conflicts in ${fileList(c.files)}${c.stuck ? ' — needs you' : ' — your agent is fixing it'}`
+          : `merging into ${branch ?? 'the branch'} now`
+        : failed
+          ? `couldn’t merge: ${failed.reason}`
+          : m.state === 'passed'
+            ? branch
+              ? `merged into ${branch}`
+              : 'passed'
+            : `merges into ${branch ?? 'the plan’s branch'} when it passes · ${m.finished}/${m.total} tasks finished`;
+    steps.push({ id: m.milestone.id, kind: 'milestone', label: m.milestone.title, detail, state });
+  }
+  return steps;
+}

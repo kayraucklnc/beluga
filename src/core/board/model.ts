@@ -6,6 +6,10 @@
  * Browser-safe: the Mac app runs it. See docs/tasks-and-plans.md.
  */
 
+import type { AgentRef } from '../../protocol.js';
+import type { LabelDef } from './labels.js';
+import { agentLabel } from '../../shared/agent-label.js';
+
 export const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled'] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 
@@ -63,7 +67,13 @@ export const ESTIMATES = [1, 2, 3, 5, 8] as const;
  */
 export type Actor =
   | { readonly kind: 'person'; readonly id: string; readonly name: string }
-  | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string }
+  | {
+      readonly kind: 'claude';
+      readonly owner: string;
+      readonly ownerName: string;
+      /** Which agent it was (BLG-498: Codex, a local model…); left out on older entries: Claude, as before. */
+      readonly agent?: AgentRef;
+    }
   | { readonly kind: 'beluga' };
 
 /**
@@ -79,8 +89,14 @@ export function renamedActors(value: unknown): unknown {
   return Object.fromEntries(entries.map(([k, v]) => [k, renamedActors(v)]));
 }
 
-/** Who a task is for: a person, or someone's Claude. */
-export type Assignee = { readonly kind: 'person'; readonly id: string; readonly name: string } | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string };
+/** Who a task is for: a person, never a Claude (BLG-278). Who works on it right now shows on its own. */
+export type Assignee = { readonly kind: 'person'; readonly id: string; readonly name: string };
+
+/** How older boards, older teammates and the activity history may still say it: someone's Claude. */
+export type AnyAssignee = Assignee | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string };
+
+/** A task given to someone's Claude (before BLG-278) is that person's. */
+export const personOf = (a: AnyAssignee): Assignee => (a.kind === 'person' ? a : { kind: 'person', id: a.owner, name: a.ownerName });
 
 export interface BriefRevision {
   readonly id: string;
@@ -93,7 +109,7 @@ export interface BriefRevision {
   readonly reason?: string;
 }
 
-export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan';
+export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan' | 'link' | 'private';
 
 export interface Activity {
   readonly id: string;
@@ -103,8 +119,8 @@ export interface Activity {
   /** In words ("moved this to In Review", "opened PR #42"); a comment's or note's text is `body`. */
   readonly text: string;
   readonly body?: string;
-  /** Who it was assigned to (screens say "you" and "your Claude" from where they look). */
-  readonly assignee?: Assignee | null;
+  /** Who it was assigned to (screens say "you" from where they look; older entries may name a Claude). */
+  readonly assignee?: AnyAssignee | null;
   /**
    * What the field was before this run of changes (quick changes to one field by one person
    * become one line: clicking through estimates leaves "estimated this at 5 points", once).
@@ -132,9 +148,18 @@ export interface Proof {
   readonly url?: string;
   /** An beluga-graph's JSON, or text. */
   readonly body?: string;
+  /**
+   * A file someone added for the work to use (dropped on the task, say): not proof that it works.
+   * Listed under Files on its page and given to the Claude doing the task; kept like proof.
+   */
+  readonly context?: boolean;
   readonly at: number;
   readonly by: Actor;
 }
+
+/** A task's files (added for the work to use) and its proof (that shows the work), apart. */
+export const taskFiles = (issue: Pick<Issue, 'proof'>): readonly Proof[] => issue.proof.filter((p) => p.context);
+export const taskProof = (issue: Pick<Issue, 'proof'>): readonly Proof[] => issue.proof.filter((p) => !p.context);
 
 /** The pull request a task's worktree opened (as the workbench last saw it). */
 export interface IssuePr {
@@ -149,10 +174,16 @@ export interface IssuePr {
 
 export interface Issue {
   readonly id: string;
-  /** "BOB-12": the project's prefix and the task's number in it. */
+  /** "BOB-12": its board's prefix and the task's number on it. */
   readonly key: string;
   readonly number: number;
+  /** The repo (project) it runs in: Start makes its worktree there. */
   readonly projectId: string;
+  /**
+   * The board it's on, when that isn't its repo's own board (a board covering several repos, see
+   * BoardProject.repos). Left out: its repo's board, as every task was before boards and repos split.
+   */
+  readonly board?: string;
   readonly title: string;
   /** The title came from a worktree's name and follows it until someone renames the task. */
   readonly autoTitle?: boolean;
@@ -196,11 +227,97 @@ export interface Issue {
   readonly closedAt?: number;
   /** When it went to the Archive (off the board, its words kept, its proof files let go). */
   readonly archivedAt?: number;
-  /** How it started: by hand, a worktree opening, Claude, or an approved plan. */
-  readonly origin: 'manual' | 'worktree' | 'claude' | 'plan';
+  /** How it started: by hand, a worktree opening, Claude, an approved plan, brought over from another tracker (Linear), or made from a GitHub issue. */
+  readonly origin: 'manual' | 'worktree' | 'claude' | 'plan' | 'sync' | 'github';
   /** The plan it's part of: the plan, its milestone and its task there (ids). */
   readonly plan?: IssuePlan;
+  /** The same task in another tracker (Linear), kept in step by sync (core/board/sync). */
+  readonly link?: IssueLink;
+  /** The GitHub issue it's for (made from it in Issues): its pull request says "Fixes #n", so merging closes the issue. */
+  readonly github?: IssueGitHub;
+  /** The agent (and model) that works it when it starts (BLG-497): its worktree's own. None: your default agent. */
+  readonly agent?: AgentRef;
+  /**
+   * Only you see it (BLG-501): it stays on this Mac, never reaching teammates on a team board or
+   * another tracker (Linear), until Share with Team. A private task's sub-tasks are private too.
+   */
+  readonly private?: true;
 }
+
+/**
+ * Words asking for a task to stay yours ("just for me", "keep it private", "don't share"): New
+ * Task makes it private from the start, before anything could reach the team (BLG-501).
+ */
+export const asksPrivate = (text: string): boolean => PRIVATE_ASK.test(text);
+const PRIVATE_ASK = /(^\s*private\b|\bprivate (task|todo|to-do|note|one|board)s?\b|\b(make|keep|leave) (it|this|them|these)( tasks?)? (private|to myself|off the team)\b|\b(just|only) (for )?me\b|\bfor my eyes only\b|\bdon[’']?t share\b|\bnot for the team\b|\b(is|as|stays?) private\b)/i;
+
+/** What Claude was last asked to do about a task's GitHub issue: find out why it happens (Investigate), or fix it. */
+export type GitHubStep = 'investigate' | 'fix';
+
+/** The GitHub issue a task is for (see core/issues). */
+export interface IssueGitHub {
+  /** "owner/repo". */
+  readonly repo: string;
+  /** Its host, when it isn't github.com (GitHub Enterprise). */
+  readonly host?: string;
+  readonly number: number;
+  readonly url: string;
+  readonly step?: GitHubStep;
+  /** Claude was asked to investigate it (once is enough): what it found is worth showing, and posting. */
+  readonly investigated?: boolean;
+}
+
+/** "#12", or "acme/api#12" when it's another repository's. */
+export const githubRef = (gh: Pick<IssueGitHub, 'repo' | 'number'>, repo?: string): string => (repo && repo.toLowerCase() === gh.repo.toLowerCase() ? `#${gh.number}` : `${gh.repo}#${gh.number}`);
+
+/** The task made from a GitHub issue (the newest one still on the board), if there is one. */
+export function taskForGitHub(board: Pick<BoardState, 'issues'>, projectId: string, repo: string, number: number): Issue | undefined {
+  const r = repo.toLowerCase();
+  return board.issues.filter((i) => i.projectId === projectId && i.github?.number === number && i.github.repo.toLowerCase() === r && !isArchived(i)).sort((a, b) => b.createdAt - a.createdAt)[0];
+}
+
+/** Trackers a project's board can sync with. */
+export const SYNC_PROVIDERS = ['linear'] as const;
+export type SyncProvider = (typeof SYNC_PROVIDERS)[number];
+
+export const PROVIDER_INFO: Readonly<Record<SyncProvider, { readonly label: string }>> = {
+  linear: { label: 'Linear' },
+};
+
+/** The fields sync keeps in step, each as a short fingerprint (see sync/fields.ts). */
+export type SyncedPrints = Readonly<Record<string, string>>;
+
+/** Where a task lives in another tracker, and what both sides looked like when they last agreed. */
+export interface IssueLink {
+  readonly provider: SyncProvider;
+  /** The tracker's own id. */
+  readonly id: string;
+  /** What people call it there ("ENG-12"). */
+  readonly key: string;
+  readonly url: string;
+  /** This side's fields at the last sync: a field that differs now was changed here. */
+  readonly local: SyncedPrints;
+  /** The tracker's fields at the last sync: one that differs there was changed there. */
+  readonly remote: SyncedPrints;
+}
+
+/** A project's sync with another tracker, as screens see it (never its key). */
+export interface ProjectSync {
+  readonly provider: SyncProvider;
+  /** The tracker's workspace and team ("Acme", "Engineering", "ENG"). */
+  readonly workspace?: string;
+  readonly team: string;
+  readonly teamKey: string;
+  /** Syncs by itself: every minute or so, and shortly after a change here. */
+  readonly auto: boolean;
+  readonly syncing?: boolean;
+  readonly syncedAt?: number;
+  /** Tasks linked to the tracker. */
+  readonly linked: number;
+  readonly error?: { readonly code: SyncErrorCode; readonly message: string; readonly at: number };
+}
+
+export type SyncErrorCode = 'auth' | 'offline' | 'rate_limited' | 'remote' | 'unknown';
 
 export interface IssuePlan {
   readonly id: string;
@@ -208,13 +325,67 @@ export interface IssuePlan {
   readonly task: string;
 }
 
-/** A project's board settings. */
+/**
+ * A board's settings. Every repo has a board of its own (keyed by the repo's project id); a board
+ * can cover other repos too, and boards of their own (keyed `board_…`) cover only the repos they
+ * name. Boards and repos are many to many: a task is on one board and runs in one repo.
+ */
 export interface BoardProject {
   /** "BOB": what keys start with. */
   readonly prefix: string;
   /** The next task's number. */
   readonly next: number;
+  /** Labels people added to this project's set, after the built-in ones (see labels.ts). */
+  readonly labels?: readonly LabelDef[];
+  /** What the project is, for Claude writing its tasks (BLG-298): shared with its teammates. */
+  readonly context?: ProjectContext;
+  /** What it's called, when not its repo's name (a board of its own always has one). */
+  readonly name?: string;
+  /** The repos it covers (project ids): a repo's own board covers its repo first, then these. */
+  readonly repos?: readonly string[];
 }
+
+/** A board of its own (made in Tasks, covering the repos it names), not one repo's. */
+export const isOwnBoard = (boardId: string): boolean => boardId.startsWith('board_');
+
+/** The board a task is on. */
+export const boardOf = (issue: Pick<Issue, 'board' | 'projectId'>): string => issue.board ?? issue.projectId;
+
+/** The repos a board covers (project ids), its own repo first. */
+export function reposOf(board: Pick<BoardState, 'projects'>, boardId: string): readonly string[] {
+  const more = board.projects[boardId]?.repos ?? [];
+  return isOwnBoard(boardId) ? more : [boardId, ...more.filter((r) => r !== boardId)];
+}
+
+/**
+ * Whether a board shows a task: every board shows the tasks on it, and a repo's own board also shows
+ * every task that runs in its repo from another board (a shade back, saying which board it's on), so
+ * nothing that runs in a repo goes missing from the repo's board.
+ */
+export const showsOn = (issue: Pick<Issue, 'board' | 'projectId'>, boardId: string): boolean => boardOf(issue) === boardId || (!isOwnBoard(boardId) && issue.projectId === boardId);
+
+/** A task a board shows that's on another board (its repo's own board showing it, see `showsOn`). */
+export const isVisiting = (issue: Pick<Issue, 'board' | 'projectId'>, boardId: string): boolean => boardOf(issue) !== boardId && showsOn(issue, boardId);
+
+/** A board's name: its own, else its repo's (`repoName` finds a repo's name). */
+export function boardName(board: Pick<BoardState, 'projects'>, boardId: string, repoName: (projectId: string) => string | undefined): string {
+  return board.projects[boardId]?.name ?? repoName(boardId) ?? 'Board';
+}
+
+/**
+ * A few paragraphs about a project: what the app is, who it's for, how the code is laid out, its
+ * words. Claude reads it whenever it writes a task there, so a task makes sense without a look at
+ * the whole codebase. The newest edit wins, here and on teammates' Macs.
+ */
+export interface ProjectContext {
+  readonly text: string;
+  /** Who wrote it last (their name), and when. */
+  readonly by: string;
+  readonly at: number;
+}
+
+/** How long a project's context may be: enough to say what it is, short enough to go in every prompt. */
+export const MAX_PROJECT_CONTEXT = 6000;
 
 export interface BoardState {
   /** The board runs (the Mac app's daemon); off elsewhere. */
@@ -223,6 +394,8 @@ export interface BoardState {
   readonly projects: Readonly<Record<string, BoardProject>>;
   /** Open a task for every new worktree (off by default: tasks come from plans). */
   readonly autoTasks: boolean;
+  /** Projects synced with another tracker (by project id). */
+  readonly sync?: Readonly<Record<string, ProjectSync>>;
 }
 
 export interface BoardSlice {
@@ -242,18 +415,24 @@ export const initialBoard: BoardSlice = { board: NO_BOARD };
 export type BoardAction =
   /** Everything at once (on start). */
   | { type: 'board_init'; state: BoardState }
-  /** One task changed (same id: replaced) or was added. */
-  | { type: 'board_issue'; issue: Issue }
+  /** One task changed (same id: replaced) or was added; `origin: 'team'`: a teammate's, through the team's board. */
+  | { type: 'board_issue'; issue: Issue; origin?: 'team' }
   | { type: 'board_remove'; id: string }
   | { type: 'board_meta'; projects: Readonly<Record<string, BoardProject>>; autoTasks: boolean }
+  /** A project's sync changed (no `sync`: disconnected). */
+  | { type: 'board_sync'; projectId: string; sync?: ProjectSync }
   | { type: 'board_off' };
 
-export const BOARD_ACTIONS: ReadonlySet<string> = new Set(['board_init', 'board_issue', 'board_remove', 'board_meta', 'board_off']);
+export const BOARD_ACTIONS: ReadonlySet<string> = new Set(['board_init', 'board_issue', 'board_remove', 'board_meta', 'board_sync', 'board_off']);
 
 export function reduceBoard(state: BoardSlice, action: BoardAction): BoardSlice {
   switch (action.type) {
     case 'board_init':
-      return { board: action.state };
+      return { board: { ...action.state, ...(state.board.sync ? { sync: state.board.sync } : {}) } };
+    case 'board_sync': {
+      const { [action.projectId]: _old, ...rest } = state.board.sync ?? {};
+      return { board: { ...state.board, sync: action.sync ? { ...rest, [action.projectId]: action.sync } : rest } };
+    }
     case 'board_issue': {
       const list = state.board.issues;
       const at = list.findIndex((i) => i.id === action.issue.id);
@@ -322,6 +501,15 @@ export function worktreeDoing(issue: Pick<Issue, 'worktrees' | 'worktreeGone' | 
 /** Whether Start can start it: not finished (in review, merged into its plan, done) or canceled, and not in the Archive. */
 export const isStartable = (issue: Pick<Issue, 'status' | 'archivedAt'>): boolean => isOpen(issue.status) && !isFinished(issue.status) && !isArchived(issue);
 
+/** Where a task's work is: the worktree carrying it (Claude moved it along from there), else its own last one. */
+export const worktreeOf = (issue: Issue): string | undefined => issue.carriedBy ?? issue.worktrees.at(-1);
+
+/** The worktree does this task (it was made for it, or a milestone's shared one) or carries it. */
+export const worksOn = (issue: Issue, workspaceId: string): boolean => issue.carriedBy === workspaceId || issue.worktrees.at(-1) === workspaceId;
+
+/** Every task a worktree is linked to: the one it was made for, those it carries, a milestone's shared ones. */
+export const issuesOfWorkspace = (board: BoardState, workspaceId: string): Issue[] => board.issues.filter((i) => !isArchived(i) && worksOn(i, workspaceId));
+
 /** Tasks this one waits on that aren't finished. */
 export const openBlockers = (board: BoardState, issue: Issue): Issue[] => issue.blockedBy.map((id) => issueById(board, id)).filter((i): i is Issue => Boolean(i && isOpen(i.status)));
 
@@ -329,6 +517,12 @@ export const openBlockers = (board: BoardState, issue: Issue): Issue[] => issue.
 export const blocking = (board: BoardState, issue: Issue): Issue[] => board.issues.filter((i) => i.blockedBy.includes(issue.id));
 
 export const childrenOf = (board: BoardState, issue: Issue): Issue[] => board.issues.filter((i) => i.parent === issue.id).sort(byRank);
+
+/** The other repos an epic's unfinished sub-tasks run in: Start makes a worktree in each too (BLG-561). */
+export const reposAlong = (board: BoardState, epic: Issue): string[] => [...new Set(childrenOf(board, epic).filter((k) => k.projectId !== epic.projectId && isStartable(k)).map((k) => k.projectId))];
+
+/** An epic: a task with sub-tasks (worked out from the board, never stored). */
+export const isEpic = (board: Pick<BoardState, 'issues'>, issue: Pick<Issue, 'id'>): boolean => board.issues.some((i) => i.parent === issue.id);
 
 /** Sub-tasks done out of all of them (not counting canceled ones). */
 export function progressOf(board: BoardState, issue: Issue): { readonly done: number; readonly total: number } {
@@ -351,13 +545,18 @@ export function rankBetween(before: number | undefined, after: number | undefine
   return (before + after) / 2;
 }
 
-/** Whether a task is yours: assigned to you, or to your Claude. */
-export const isMine = (issue: Issue, selfId: string): boolean => (issue.assignee?.kind === 'person' && issue.assignee.id === selfId) || (issue.assignee?.kind === 'claude' && issue.assignee.owner === selfId);
+/** Whether a task is yours: assigned to you. */
+export const isMine = (issue: Issue, selfId: string): boolean => issue.assignee?.id === selfId;
 
 export interface IssueFilter {
   /** Every scope but `archived` leaves archived tasks out. */
   readonly scope?: 'mine' | 'active' | 'backlog' | 'all' | 'archived';
-  readonly projectId?: string;
+  /** On this board. */
+  readonly boardId?: string;
+  /** With `boardId` a repo's own board: also the tasks running in its repo from other boards (`showsOn`). */
+  readonly visiting?: boolean;
+  /** Running in one of these repos (project ids). */
+  readonly repos?: readonly string[];
   readonly query?: string;
   readonly selfId?: string;
   /** Keep closed (Done, Canceled) tasks closed in the last this-many ms (the default: a week). */
@@ -375,12 +574,13 @@ export function matches(issue: Issue, query: string): boolean {
   return words.every((w) => hay.includes(w));
 }
 
-/** The tasks a view shows (scope, project, words), in list order. */
+/** The tasks a view shows (scope, board, repos, words), in list order. */
 export function filterIssues(board: BoardState, f: IssueFilter = {}): Issue[] {
   const now = f.now ?? Date.now();
   const within = f.closedWithin ?? WEEK;
   return board.issues
-    .filter((i) => (f.projectId ? i.projectId === f.projectId : true))
+    .filter((i) => (!f.boardId ? true : f.visiting ? showsOn(i, f.boardId) : boardOf(i) === f.boardId))
+    .filter((i) => (f.repos ? f.repos.includes(i.projectId) : true))
     .filter((i) => (f.scope === 'archived') === isArchived(i))
     .filter((i) => {
       switch (f.scope ?? 'all') {
@@ -411,15 +611,15 @@ export function actorName(actor: Actor, selfId: string): string {
     case 'person':
       return actor.id === selfId ? 'You' : actor.name;
     case 'claude':
-      return actor.owner === selfId ? 'Your Claude' : `${actor.ownerName}’s Claude`;
+      return agentLabel(actor.agent, actor.ownerName, actor.owner === selfId, { capital: true });
     default:
       return 'Beluga';
   }
 }
 
-export function assigneeName(assignee: Assignee | undefined, selfId: string): string {
+export function assigneeName(assignee: AnyAssignee | undefined, selfId: string): string {
   if (!assignee) return 'No one';
-  return assignee.kind === 'person' ? (assignee.id === selfId ? 'You' : assignee.name) : assignee.owner === selfId ? 'Your Claude' : `${assignee.ownerName}’s Claude`;
+  return assignee.kind === 'person' ? (assignee.id === selfId ? 'You' : assignee.name) : agentLabel(undefined, assignee.ownerName, assignee.owner === selfId, { capital: true });
 }
 
 /** An activity line in words from where you look ("assigned this to your Claude"). */
@@ -427,7 +627,8 @@ export function activityText(entry: Activity, selfId: string): string {
   if (entry.kind !== 'assignee' || entry.assignee === undefined) return entry.text;
   if (entry.assignee === null) return 'unassigned this';
   const name = assigneeName(entry.assignee, selfId);
-  return `assigned this to ${name === 'You' ? 'you' : name === 'Your Claude' ? 'your Claude' : name}`;
+  const mine = entry.assignee.kind === 'claude' && entry.assignee.owner === selfId;
+  return `assigned this to ${name === 'You' ? 'you' : mine ? agentLabel(undefined, undefined, true) : name}`;
 }
 
 /** A label's color, the same everywhere (a few calm hues). */

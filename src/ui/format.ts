@@ -2,6 +2,8 @@ import { type LogItem, isRunning } from '../core/store.js';
 import { renderMarkdown } from './markdown.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate, wrapText } from './text.js';
 import { SPINNER, colorFor, glyph, theme } from './theme.js';
+import { SLOT_WAIT_TITLE, slotWaitDetail } from '../shared/run-slots.js';
+import { agentLabel } from '../shared/agent-label.js';
 
 export interface RenderOptions {
   readonly selfId?: string;
@@ -47,7 +49,7 @@ function statusOf(item: AgentItem, opts: RenderOptions): StatusStyle {
     case 'awaiting_approval':
       return { label: `${glyph.wait} waiting for ${item.ownerName} to approve`, color: theme.warn };
     case 'queued':
-      return { label: `${glyph.wait} queued`, color: theme.muted };
+      return { label: `${glyph.wait} ${item.slotWait ? 'waiting for a free agent' : 'queued'}`, color: theme.muted };
     case 'done':
       return { label: `${glyph.ok} done${item.endTs ? ` · ${formatDuration(item.endTs - item.ts)}` : ''}`, color: theme.ok };
     case 'error':
@@ -120,8 +122,10 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
   if (body.length === 0) {
     const idle =
       item.status === 'awaiting_approval'
-        ? `${item.ownerName} needs to approve this before their Claude starts.`
-        : item.status === 'queued'
+        ? `${item.ownerName} needs to approve this before their agent starts.`
+        : item.status === 'queued' && item.slotWait
+          ? `${SLOT_WAIT_TITLE}. ${slotWaitDetail(item.slotWait)}`
+          : item.status === 'queued'
           ? item.owner === opts.selfId
             ? 'Starts when the current task finishes. Run it now or cancel it with the buttons below the box.'
             : 'Starts when the current task finishes.'
@@ -133,10 +137,10 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
   // Someone else's request: "mia (via kay's Claude)", since it ran on kay's computer with kay's Claude.
   const title: Line =
     item.requesterName === item.ownerName
-      ? [{ text: `${glyph.claude} ${item.ownerName}'s Claude`, color: theme.claude, bold: true }]
+      ? [{ text: `${glyph.claude} ${agentLabel(item.agent, item.ownerName, false)}`, color: theme.claude, bold: true }]
       : [
           { text: `${glyph.claude} ${item.requesterName}`, color: theme.claude, bold: true },
-          { text: ` (via ${item.ownerName}'s Claude)`, color: theme.muted },
+          { text: ` (via ${agentLabel(item.agent, item.ownerName, false)})`, color: theme.muted },
         ];
   const status = plain(st.label, { color: st.color });
   const gap = Math.max(2, cols - lineWidth(title) - lineWidth(status));

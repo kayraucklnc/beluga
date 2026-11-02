@@ -1,22 +1,30 @@
 import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../config.js';
-import { createClaudeBackend } from '../agent/runner.js';
+import { runtimeFor } from '../agent/runtime/registry.js';
+import { claudeStatus } from '../agent/runtime/claude/status.js';
+import type { AgentRuntime, RuntimeId } from '../agent/runtime/types.js';
 import { createMockBackend } from '../agent/mock.js';
-import { findConversation } from '../agent/claude-sessions.js';
+import { createCodexRuntime } from '../agent/runtime/codex/index.js';
+import { ScriptedCodex } from '../agent/runtime/codex/scripted.js';
+import { findConversation } from '../agent/runtime/claude/claude-sessions.js';
 import { otherTools } from '../agent/other-tools.js';
 import { copyNative, pasteText } from '../core/clipboard.js';
 import { DEFAULT_LINK } from '../core/project-invites.js';
 import { type SessionOptions, Session } from '../core/session.js';
-import { loadSettings, saveSettings } from '../core/settings.js';
+import { chosenAgent, loadSettings, publishedAgents, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
-import { networkSwitch } from '../core/network.js';
+import { leaveNetwork, networkSwitch } from '../core/network.js';
 import { launchBoard } from '../core/board/launch.js';
+import { launchDialogues } from '../core/dialogues/launch.js';
+import { launchSentinel } from '../core/sentinel/launch.js';
+import { launchAssistant } from '../core/assistant/launch.js';
 import { launchChat } from '../core/chat/launch.js';
 import { launchGateway } from '../core/gateway/launch.js';
+import { launchFriendShares } from '../core/friend-share/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
 import { launchSupport } from '../core/merge-counter.js';
-import { launchClaudeCode } from '../core/claude-code/launch.js';
+import { claudeHome, launchClaudeCode } from '../core/claude-code/launch.js';
 import { launchCompanion } from '../companion/launch.js';
 import { Store, initialState, prefsFrom } from '../core/store.js';
 import { createDemoFolders, createDemoWorkspaces, seedDemoContext, startDemoFriend, startDemoGuest } from '../demo.js';
@@ -29,6 +37,8 @@ import { TerminalManager } from '../terminal/index.js';
 import { WorkspaceManager } from '../workspaces/manager.js';
 import { belugaHome } from '../workspaces/store.js';
 import { belugaEnv } from '../core/beluga-env.js';
+import { loadDismissedNeeds } from '../core/dismissed-needs.js';
+import { claudeCodePath, claudeCodeReady } from '../agent/claude-code.js';
 
 /**
  * Everything Beluga is apart from its screens: your identity, the room (hosted or joined),
@@ -52,6 +62,14 @@ interface Room {
 }
 
 const roomInvite = (room: Room): string | undefined => (room.reach ? encodeInvite({ ...room.reach, secret: room.secret }) : undefined);
+
+let claudeWithStatus: AgentRuntime | undefined;
+/** The runtimes, Claude's saying whether it's signed in (a local model's side calls go to Claude only then, BLG-503). */
+function withClaudeStatus(id?: RuntimeId): AgentRuntime | undefined {
+  const rt = runtimeFor(id);
+  if (!rt || rt.id !== 'claude' || rt.status) return rt;
+  return (claudeWithStatus ??= { ...rt, status: () => claudeStatus() });
+}
 
 function lanAddress(): string | undefined {
   return Object.values(os.networkInterfaces())
@@ -114,7 +132,10 @@ async function addFallbackRelay(room: Room, session: Session, isClosing: () => b
   try {
     const tunnel = await openTunnel('auto', room.hub?.port ?? 0, {
       onDied: () => {
-        if (!isClosing() && room.reach) void update({ url: room.reach.url });
+        if (isClosing() || !room.reach) return;
+        void update({ url: room.reach.url });
+        // A fresh tunnel (a new name) in a moment, added to the invite once it answers.
+        setTimeout(() => void addFallbackRelay(room, session, isClosing), 30_000).unref();
       },
     });
     if (!tunnel || isClosing() || !(await waitUntilReachable(tunnel.publicUrl)) || !room.reach) return;
@@ -186,7 +207,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
 }
 
 /** What only a screen (or the process showing it) can do for the core. */
-export type CoreHooks = Pick<SessionOptions, 'copy' | 'desktopNotify' | 'zoom' | 'open' | 'shutdown'>;
+export type CoreHooks = Pick<SessionOptions, 'copy' | 'desktopNotify' | 'zoom' | 'raise' | 'open' | 'shutdown'>;
 
 export interface Core {
   readonly config: Config;
@@ -201,6 +222,8 @@ export interface Core {
   start(): void;
   /** Leave the room and stop everything. */
   stop(): Promise<void>;
+  /** The Mac is about to sleep: mail what friends haven't taken (BLG-277). */
+  sleeping(): Promise<void>;
 }
 
 /** Build Beluga's core for this config (hosting a room, or joining one). */
@@ -208,6 +231,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let config = input;
   const demo = config.mode === 'demo' ? createDemoFolders() : undefined;
   if (demo) config = { ...config, tunnel: 'none', policyChosen: true, shares: [{ name: 'landing', root: demo.mine, writable: true }] };
+  // The Mac app's first launch: fetch Claude Code now, so it's usually there before the first message (BLG-384).
+  if (!demo && config.agent && !belugaEnv('CLAUDE_PATH')) void claudeCodeReady().catch(() => {});
   // Your own key, kept between runs: friends recognize you, and the trust they gave you comes back.
   const identity = loadIdentity(path.join(belugaHome(), 'identity.json'));
   const saved = loadSettings();
@@ -217,12 +242,13 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   if (process.argv.includes('--name') || process.argv.includes('-n')) saveSettings({ name: config.name });
   const store = new Store(initialState(room.room, config.policy, { ...prefsFrom(saved), theme: config.theme, mouse: config.mouse, tunnel: config.tunnel, selfApproval: config.selfApproval }));
   if (room.invite) store.dispatch({ type: 'invite', invite: room.invite });
+  store.dispatch({ type: 'needs_dismissed', ids: loadDismissedNeeds() });
 
   const client = new PeerClient({
     url: room.url,
     ...(room.fallbackUrl ? { fallbackUrl: room.fallbackUrl } : {}),
     keys: deriveKeys(room.secret),
-    profile: { name: config.name, shares: shares.infos, agent: config.agent },
+    profile: { name: config.name, shares: shares.infos, agent: config.agent, agents: publishedAgents(saved), defaultAgent: chosenAgent(saved) },
     identity,
   });
   const hub = room.hub;
@@ -255,6 +281,9 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let closing = false;
   let saveAsked = false;
   const workspaces = demo ? await createDemoWorkspaces() : new WorkspaceManager();
+  // The demo reads Claude Code's conversations only from a pretend ~/.claude (BELUGA_CLAUDE_HOME, the e2e's), never yours.
+  const readsClaude = !demo || Boolean(belugaEnv('CLAUDE_HOME'));
+  if (demo && readsClaude) process.env.CLAUDE_CONFIG_DIR = claudeHome();
   const terminals = new TerminalManager();
   const session: Session = new Session({
     workspaces,
@@ -275,24 +304,33 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     saveSettings: (patch) => void saveSettings(patch),
     createAgent: demo
       ? (bridge) => createMockBackend(bridge, Number(belugaEnv('DEMO_PACE')) || 2.6) // unhurried, so you can watch workspaces run side by side
-      : config.agent
-        ? (bridge) =>
-            createClaudeBackend({
+      : undefined,
+    // The demo's Codex: the real Codex runtime over a scripted app-server, so a worktree can run on it (BLG-462).
+    ...(demo ? { alsoRuntimes: [createCodexRuntime({ connect: new ScriptedCodex({ stepMs: 600 }).connect })] } : {}),
+    // Your agent through the runtime seam (agent/runtime): Claude, the only one registered yet.
+    ...(!demo && config.agent
+      ? {
+          // runtime.agent stays unset (Claude): the routed backend's fallback, so side calls and usage keep a
+          // Claude to fall back on; each run follows its place's agent, side calls your default (session.sideRoute).
+          runtime: {
+            runtimes: withClaudeStatus,
+            options: {
               cwd: agentCwd,
               autoEdit: primary?.writable ?? false,
               additionalDirectories: config.shares.slice(1).map((s) => s.root),
-              bridge,
-              model: config.model,
-              claudePath: belugaEnv('CLAUDE_PATH'),
-            })
-        : undefined,
+              ...(config.model ? { model: config.model } : {}),
+              executablePath: belugaEnv('CLAUDE_PATH') ?? claudeCodePath(),
+            },
+          },
+        }
+      : {}),
     launchDir: process.cwd(),
     terminals,
     savedPeople: saved.people,
     loadPeople: () => loadSettings().people,
     replayFile: path.join(belugaHome(), 'seen.json'),
     stepsDir: path.join(belugaHome(), 'steps'),
-    ...(demo ? {} : { findConversation, otherTools }),
+    ...(readsClaude ? { findConversation, otherTools } : {}),
     ...(roomControl ? { room: roomControl } : {}),
   });
 
@@ -305,7 +343,11 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopClaudeCode = (): void => undefined;
   let stopGateway = (): void => undefined;
   let stopChat = (): void => undefined;
+  let stopFriendShares = (): void => undefined;
   let stopBoard = (): void => undefined;
+  let stopDialogues = (): void => undefined;
+  let stopSentinel = (): void => undefined;
+  let stopAssistant = (): void => undefined;
   let stopCompanion = async (): Promise<void> => undefined;
   const start = (): void => {
     session.start();
@@ -321,11 +363,19 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopGateway = launchGateway({ session, store, demo: Boolean(demo) });
     // Chats: files shared Mac to Mac, Claudes called into a conversation, your main channel.
     if (opts.network) stopChat = launchChat({ session, store, demo: Boolean(demo) });
+    // Projects, worktrees and folders shared with friends over the network, nobody hosting.
+    if (opts.network) stopFriendShares = launchFriendShares({ session, store, demo: Boolean(demo) });
     // Tasks (the board): opened by worktrees, moved by pull requests, kept true by Claude.
     if (opts.network) stopBoard = launchBoard({ session, store, demo: Boolean(demo) });
+    // Dialogues between your agents, chaired by Beluga (core/dialogues): saved beside plans.
+    if (opts.network) stopDialogues = launchDialogues({ session, store, demo: Boolean(demo) });
+    // Sentinel: watchers that run on a schedule or by hand, do a few steps and leave a report (docs/sentinel.md).
+    if (opts.network) stopSentinel = launchSentinel({ session, store, demo: Boolean(demo) });
+    // "Your Mac": one conversation with your Claude for the whole Mac, from the phone and the sidebar (core/assistant).
+    if (opts.network) stopAssistant = launchAssistant({ session, store, demo: Boolean(demo) });
     if (opts.network) stopClaudeCode = launchClaudeCode({ session, store, demo: Boolean(demo), notify: (e) => session.notifier.notify(e) });
     // Your phone (docs/companion.md): pairing it, and its link. Its DHT node runs only while a phone is paired or a pairing is open.
-    if (opts.network) stopCompanion = launchCompanion({ session, store, identity, demo: Boolean(demo), log: (line) => console.warn(line) });
+    if (opts.network) stopCompanion = launchCompanion({ session, store, identity, terminals, demo: Boolean(demo), log: (line) => console.warn(line) });
     if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => closing);
     if (!demo) return;
     // A pretend friend and a fake invite so every part of the UI has something to show.
@@ -333,7 +383,12 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     store.dispatch({ type: 'hosting', hosting: { phase: 'ready', copied: true } });
     session.system('Demo mode: bob, mia and every Claude are simulated. Nothing leaves your computer.');
     seedDemoContext(store);
-    setTimeout(() => session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }), 300);
+    setTimeout(() => {
+      session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } });
+      // A second and a third provider, so the Usage tab shows a card for each shape (BLG-458).
+      session.updateUsage({ plan: 'plus', windows: [{ label: 'Weekly', pct: 24 }] }, { runtime: 'codex', model: 'gpt-5', label: 'Codex' });
+      session.updateUsage({ tokens: { input: 182_000, output: 41_500 }, tokensPerSec: 38 }, { runtime: 'local', model: 'qwen3', label: 'Local' });
+    }, 300);
     // bob "arrives" a moment later so you first see how inviting works (sooner at a faster pace: the e2e tests).
     const soon = (ms: number): number => ms * Math.min(1, Number(process.env.KLAUD_DEMO_PACE) || 1);
     setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), soon(2500));
@@ -353,9 +408,14 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (closing) return;
     closing = true;
     closeAllTunnels();
+    await leaveNetwork(session);
     stopGateway();
     stopChat();
+    stopFriendShares();
+    stopAssistant();
+    stopSentinel();
     stopBoard();
+    stopDialogues();
     await stopCompanion();
     await stopNetwork();
     stopEarnings();
@@ -366,5 +426,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     await room.hub?.close();
   };
 
-  return { config, session, store, terminals, room: room.room, workspacesHome: workspaces.store.home, start, stop };
+  /** The Mac is about to sleep (BLG-277): what friends haven't taken goes to their mailboxes now. */
+  const sleeping = (): Promise<void> => leaveNetwork(session);
+  return { config, session, store, terminals, room: room.room, workspacesHome: workspaces.store.home, start, stop, sleeping };
 }

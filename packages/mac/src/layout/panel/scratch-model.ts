@@ -3,13 +3,15 @@
  * it sits, and which one the preview shows. No DOM here, so it's tested on its own.
  */
 
+import { isImageFile, isVideoFile } from '../../components/markdown/md-paths.js';
+
 export interface ScratchEntry {
   readonly path: string;
   readonly size: number;
   readonly mtime: number;
 }
 
-export type ScratchKind = 'image' | 'pdf' | 'json' | 'markdown' | 'text';
+export type ScratchKind = 'image' | 'pdf' | 'video' | 'html' | 'json' | 'markdown' | 'text';
 
 /** A file written this recently is marked as new. */
 export const FRESH_MS = 15_000;
@@ -24,8 +26,10 @@ export function timeAgo(ms: number, now = Date.now()): string {
 }
 
 export function fileKind(path: string): ScratchKind {
-  if (/\.(png|jpe?g|gif|webp|svg)$/i.test(path)) return 'image';
+  if (isImageFile(path)) return 'image';
   if (/\.pdf$/i.test(path)) return 'pdf';
+  if (isVideoFile(path)) return 'video';
+  if (/\.html?$/i.test(path)) return 'html';
   if (/\.json$/i.test(path)) return 'json';
   if (/\.(md|markdown)$/i.test(path)) return 'markdown';
   return 'text';
@@ -81,3 +85,35 @@ export function scratchState(list: { readonly files: readonly unknown[] } | null
 
 /** The placeholder rows' name widths (%), so the skeleton reads as a list of different files. */
 export const GHOST_WIDTHS = [62, 44, 71, 38] as const;
+
+// ---- sorting, and stepping through what can be looked at (BLG-111)
+
+/** How the list is ordered: newest first, or what can be looked at first (then newest first in each). */
+export type ScratchSort = 'newest' | 'viewable';
+
+/** Shown as what it is rather than as text: pictures, videos, PDFs and web pages. */
+export const isViewable = (path: string): boolean => {
+  const kind = fileKind(path);
+  return kind === 'image' || kind === 'video' || kind === 'pdf' || kind === 'html';
+};
+
+/**
+ * The files in the order picked: newest first, or (`viewable`) what can be looked at first, each
+ * group still newest first. Ties keep the listing's own order.
+ */
+export function sortScratch<T extends Pick<ScratchEntry, 'path' | 'mtime'>>(files: readonly T[], sort: ScratchSort): T[] {
+  const newest = [...files].sort((a, b) => b.mtime - a.mtime);
+  return sort === 'viewable' ? [...newest.filter((f) => isViewable(f.path)), ...newest.filter((f) => !isViewable(f.path))] : newest;
+}
+
+/**
+ * The next (`1`) or previous (`-1`) file that can be looked at, from `current`, in the order given:
+ * files that can't be are stepped over, and it stops at either end (undefined: nowhere to go).
+ * From a file that isn't in the list, it starts at that end.
+ */
+export function stepViewable(paths: readonly string[], current: string | undefined, dir: 1 | -1): string | undefined {
+  const at = current === undefined ? -1 : paths.indexOf(current);
+  let i = at < 0 ? (dir > 0 ? -1 : paths.length) : at;
+  for (i += dir; i >= 0 && i < paths.length; i += dir) if (isViewable(paths[i]!)) return paths[i];
+  return undefined;
+}

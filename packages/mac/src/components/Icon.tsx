@@ -1,4 +1,5 @@
 import type { SVGProps } from 'react';
+import { AGENT_MARKS, AGENT_MARK_VIEWBOX, type AgentMark } from '../../../../src/shared/agent-marks.js';
 
 /**
  * One small icon set, drawn on a 16×16 grid with 1.5 strokes (in the spirit of SF Symbols):
@@ -26,6 +27,8 @@ const PATHS = {
   branch: 'M5 3v10 M5 10c0-3 6-2 6-5 M11 2.5v2.5 M5 13a1.25 1.25 0 1 0 0-.01 M5 3a1.25 1.25 0 1 0 0-.01 M11 5a1.25 1.25 0 1 0 0-.01',
   /** Claude in Beluga: the logo's prompt and cursor, at the logo's proportions. */
   claude: 'M3 4.5L6.7 8 3 11.5 M9.15 10.8h3.9',
+  /** Max effort: a flame. */
+  flame: 'M8 14c-2.5 0-4.5-1.8-4.5-4.3C3.5 7 6 5.8 6.5 2.5c1.6 1 2.4 2.6 2.3 4.3.6-.4 1-1.1 1.1-1.9 1.4 1.1 2.6 2.8 2.6 4.8C12.5 12.2 10.5 14 8 14z M8 14c-1 0-1.8-.8-1.8-1.8 0-1.2 1-1.7 1.4-2.8.9.6 2.2 1.5 2.2 2.8 0 1-.8 1.8-1.8 1.8z',
   /** The old name for Claude's mark (kept so every use shows the same one). */
   spark: 'M3 4.5L6.7 8 3 11.5 M9.15 10.8h3.9',
   check: 'M3.5 8.5l3 3 6-7',
@@ -35,9 +38,13 @@ const PATHS = {
   stop: 'M4.5 4.5h7v7h-7z',
   archive: 'M2.5 3.5h11v3h-11z M3.5 6.5v6h9v-6 M6.5 9h3',
   share: 'M8 2.5v8 M5 5.5l3-3 3 3 M3.5 8.5v4.5h9V8.5',
+  plug: 'M6 2v3 M10 2v3 M4.5 5h7v2.2a3.5 3.5 0 0 1-7 0z M8 10.7V14',
   link: 'M6.5 9.5l3-3 M7 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1 M9 11.5l-1 1A2.5 2.5 0 0 1 4.5 9l1-1',
   copy: 'M5.5 5.5h7v7h-7z M3.5 10.5v-7h7',
   send: 'M8 13V3.5 M4 7.5l4-4 4 4',
+  /** Speak instead of typing (Settings › Voice). */
+  mic: 'M8 2.5a2 2 0 0 1 2 2v3.5a2 2 0 0 1-4 0V4.5a2 2 0 0 1 2-2z M4.5 7.5a3.5 3.5 0 0 0 7 0 M8 11v2.5 M6 13.5h4',
+  trash: 'M3 4.5h10 M6.5 4.5V3h3v1.5 M4.5 4.5l.7 8.5h5.6l.7-8.5 M7 7v3.5 M9 7v3.5',
   pencil: 'M10.5 2.75l2.75 2.75-7.5 7.5H3v-2.75z M9 4.25l2.75 2.75',
   image: 'M2.5 3.5h11v9h-11z M2.5 10.5l3-2.75 3 2.5 2-1.5 3 2.25 M10.25 6.25h.01',
   clip: 'M10.5 5.5l-4.3 4.3a1.4 1.4 0 0 0 2 2l4.8-4.8a2.8 2.8 0 0 0-4-4L4.2 7.8a4.2 4.2 0 0 0 6 6l4-4',
@@ -90,6 +97,10 @@ const PATHS = {
   bot: 'M4.5 6.5h7A1.5 1.5 0 0 1 13 8v3.5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5V8a1.5 1.5 0 0 1 1.5-1.5z M8 6.5V4.2 M8 2.8v.01 M6.2 9.4v.8 M9.8 9.4v.8 M1.5 9.2v1.4 M14.5 9.2v1.4',
   /** Tasks: a ring with a check (the board). */
   task: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M5.75 8.1l1.55 1.55 2.95-3.2',
+  /** A GitHub issue: a ring with a dot, as GitHub draws one (Issues). */
+  issue: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M8 7.25a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5z',
+  /** Fix It: a wrench. */
+  wrench: 'M9.8 4.2a.67.67 0 0 0 0 .93l1.07 1.07a.67.67 0 0 0 .93 0l2.51-2.51a4 4 0 0 1-5.29 5.29l-4.61 4.61a1.41 1.41 0 0 1-2-2l4.61-4.61a4 4 0 0 1 5.29-5.29z',
   /** A board's columns. */
   columns: 'M2.5 3.5h3v9h-3z M6.5 3.5h3v6h-3z M10.5 3.5h3v7.5h-3z',
   /** A list's rows. */
@@ -107,18 +118,47 @@ const PATHS = {
   chartLine: 'M2.5 2.5v11h11 M4.5 10.5l2.5-3 2 1.5 3.5-4.5',
   chartArea: 'M2.5 2.5v11h11 M4.5 11.5V9l2.5-2.5 2 1.5 3.5-3.5v7z',
   chartBar: 'M2.5 2.5v11h11 M5 11.5V8.5 M8 11.5V5.5 M11 11.5V7.5',
+  /** A timeline (gantt): bars that start one after another. */
+  gantt: 'M2.5 2.5v11 M4.5 4.5h4.5 M6.5 8h6.5 M5.5 11.5h3.5',
+  /** A heatmap: a grid of cells, some filled. */
+  heat: 'M2.5 2.5h11v11h-11z M2.5 8h11 M8 2.5v11 M4.5 4.5h1.5v1.5h-1.5z M10 10h1.5v1.5H10z',
   /** Your phone (the companion): the sidebar footer's mark, Settings › Phone. */
   phone: 'M5.5 1.75h5a1 1 0 0 1 1 1v10.5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1z M7.25 12.25h1.5',
+  /** Your Mac (core/assistant): a laptop. */
+  laptop: 'M3.5 3.5h9a1 1 0 0 1 1 1v6h-11v-6a1 1 0 0 1 1-1z M1.5 10.5h13l-.75 1.5a1 1 0 0 1-.9.5H3.15a1 1 0 0 1-.9-.5z',
   /** Supporting Beluga: a star on GitHub, a coffee, and the heart that goes with them. */
   star: 'M8 2.25l1.75 3.55 3.9.57-2.83 2.76.67 3.89L8 11.18l-3.49 1.84.67-3.89L2.35 6.37l3.9-.57z',
   cup: 'M3 6.5h7.5v3a3.5 3.5 0 0 1-3.5 3.5h-.5A3.5 3.5 0 0 1 3 9.5z M10.5 7.5h.75a1.75 1.75 0 0 1 0 3.5h-1.1 M5.5 2.5c-.4.6.4 1.1 0 1.75 M8 2.5c-.4.6.4 1.1 0 1.75',
   heart: 'M8 13.25S2.75 10.1 2.75 6.4A2.65 2.65 0 0 1 8 5.1a2.65 2.65 0 0 1 5.25 1.3C13.25 10.1 8 13.25 8 13.25z',
+  /** Sentinel (docs/sentinel.md): a shield with a small dot at its centre, a watcher. */
+  sentinel: 'M8 2l5 1.9v4c0 3-2.1 5.1-5 6.1-2.9-1-5-3.1-5-6.1v-4z M8 7.1a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8z',
+  /** Paused: two bars. */
+  pause: 'M5.75 3.75v8.5 M10.25 3.75v8.5',
+  /** Labels (core/board/labels.ts): a bug, an exclamation in a ring, sparkles, an open book, a bolt. */
+  bug: 'M5.5 6.75a2.5 2.5 0 0 1 5 0v3a2.5 2.5 0 0 1-5 0z M6.25 4.6L5.25 3.25 M9.75 4.6l1-1.35 M5.5 8.25H3 M13 8.25h-2.5 M5.6 10.6l-1.85 1.4 M10.4 10.6l1.85 1.4 M5.6 6.1L3.75 4.9 M10.4 6.1l1.85-1.2 M8 7.25v4.9',
+  exclaim: 'M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z M8 5v3.4 M8 10.75v.01',
+  sparkles: 'M7 2.5l1.15 3.1 3.1 1.15-3.1 1.15L7 11 5.85 7.9 2.75 6.75l3.1-1.15z M12 9.5v4 M10 11.5h4',
+  book: 'M2.75 3.5H6A2 2 0 0 1 8 5.5v8a1.5 1.5 0 0 0-1.5-1.5H2.75z M13.25 3.5H10A2 2 0 0 0 8 5.5v8A1.5 1.5 0 0 1 9.5 12h3.75z',
+  bolt: 'M9 2L3.75 9h4l-1 5 5.5-7.25h-4z',
+  /** An epic: a task with sub-tasks, as stacked layers. */
+  epic: 'M8 2.5l5.5 2.75L8 8 2.5 5.25z M2.5 8L8 10.75 13.5 8 M2.5 10.75L8 13.5l5.5-2.75',
   palette: 'M8 2.5a5.5 5.5 0 1 0 0 11c.9 0 1.3-.6 1.3-1.2 0-.8-.7-1-.7-1.8 0-.6.5-1 1.1-1h1.4A2.4 2.4 0 0 0 13.5 7c0-2.5-2.5-4.5-5.5-4.5z M5.25 7.25h.01 M7.25 5.25h.01 M10 5.5h.01',
 } as const;
 
-export type IconName = keyof typeof PATHS;
+/** Agents and model makers (BLG-497) are their makers' own logos, filled (shared/agent-marks.ts; the phone draws the same). */
+export type IconName = keyof typeof PATHS | AgentMark;
+
+const isMark = (name: IconName): name is AgentMark => name in AGENT_MARKS;
 
 export function Icon({ name, size = 16, ...rest }: { name: IconName; size?: number } & SVGProps<SVGSVGElement>) {
+  if (isMark(name)) {
+    const mark = AGENT_MARKS[name];
+    return (
+      <svg width={size} height={size} viewBox={AGENT_MARK_VIEWBOX} fill={mark.color ?? 'currentColor'} aria-hidden="true" {...rest}>
+        <path d={mark.d} {...(mark.evenOdd ? { fillRule: 'evenodd' as const, clipRule: 'evenodd' as const } : {})} />
+      </svg>
+    );
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...rest}>
       <path d={PATHS[name]} />

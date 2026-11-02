@@ -4,11 +4,15 @@ import { Button, Empty } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { useMaking } from '../lib/making.js';
 import { ChatView } from '../views/ChatView.js';
+import { ChatLog } from '../chat/ChatLog.js';
+import views from '../views/views.module.css';
 import { Toolbar } from './Toolbar.js';
-import { WorkspaceCenter } from './panel/FocusView.js';
+import { ProjectCenter, WorkspaceCenter } from './panel/FocusView.js';
 import { TerminalDrawer } from './panel/TerminalDrawer.js';
+import { WorkFrame } from '../work/WorkNav.js';
 import s from './Shell.module.css';
 import side from './Sidebar.module.css';
+import { SharedPlanPage } from '../team/SharedPlans.js';
 
 const OverviewView = lazy(() => import('../views/OverviewView.js').then((m) => ({ default: m.OverviewView })));
 const SearchView = lazy(() => import('../views/SearchView.js').then((m) => ({ default: m.SearchView })));
@@ -24,20 +28,44 @@ const WorktreesView = lazy(() => import('../views/worktrees/WorktreesView.js').t
 const RequestsView = lazy(() => import('../gateway/RequestsView.js').then((m) => ({ default: m.RequestsView })));
 const TasksView = lazy(() => import('../tasks/TasksView.js').then((m) => ({ default: m.TasksView })));
 const TaskPage = lazy(() => import('../tasks/TaskPage.js').then((m) => ({ default: m.TaskPage })));
+const IssuesView = lazy(() => import('../issues/IssuesView.js').then((m) => ({ default: m.IssuesView })));
+const IssuePage = lazy(() => import('../issues/IssuePage.js').then((m) => ({ default: m.IssuePage })));
+const ActionsView = lazy(() => import('../ci/ActionsView.js').then((m) => ({ default: m.ActionsView })));
+const RunPage = lazy(() => import('../ci/RunPage.js').then((m) => ({ default: m.RunPage })));
 const PlansView = lazy(() => import('../plans/PlansView.js').then((m) => ({ default: m.PlansView })));
 const PlanPage = lazy(() => import('../plans/PlanPage.js').then((m) => ({ default: m.PlanPage })));
+const SentinelPage = lazy(() => import('../sentinel/SentinelPage.js').then((m) => ({ default: m.SentinelPage })));
+const SentinelRunPage = lazy(() => import('../sentinel/RunPage.js').then((m) => ({ default: m.RunPage })));
+const SentinelHome = lazy(() => import('../sentinel/SentinelHome.js').then((m) => ({ default: m.SentinelHome })));
+const PhoneView = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhoneView })));
 
-/** A worktree being made: its page shows at once, and becomes its conversation when git is done. */
+/**
+ * A worktree being made: its page shows at once with what you asked (BLG-531), and becomes its
+ * conversation when git is done.
+ */
 function MakingWorktree() {
   const ws = useApp((st) => (st.view.kind === 'workspace' ? findWorkspace(st.projects, st.view.id) : undefined));
+  const asked = useApp((st) => (ws ? st.log.some((l) => l.channel === `ws:${ws.id}`) : false));
   if (!ws) return null;
+  const from = ws.base ?? 'the latest origin';
+  if (!asked) {
+    return (
+      <Empty
+        icon="branch"
+        mark={<span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />}
+        title={`Making ${ws.name}…`}
+        detail={`A new worktree from ${from}. Its conversation opens here in a moment; anything you asked your agent starts then.`}
+      />
+    );
+  }
   return (
-    <Empty
-      icon="branch"
-      mark={<span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />}
-      title={`Making ${ws.name}…`}
-      detail={`A new worktree from ${ws.base ?? 'the latest origin'}. Its conversation opens here in a moment; anything you asked Claude starts then.`}
-    />
+    <div className={views.chat}>
+      <ChatLog key={ws.id} channel={`ws:${ws.id}`} />
+      <div className={s.makingLine} role="status">
+        <span className={side.making} aria-hidden="true" />
+        Making {ws.name} from {from}. Your agent starts as soon as its folder is ready.
+      </div>
+    </div>
   );
 }
 
@@ -47,6 +75,7 @@ function Route() {
   if (making) return <MakingWorktree />;
   switch (view.kind) {
     case 'room':
+    case 'assistant':
     case 'draft':
     case 'draft_worktree':
       return <ChatView />;
@@ -66,6 +95,8 @@ function Route() {
       return <FilesView />;
     case 'terminal':
       return <TerminalView />;
+    case 'phone':
+      return <PhoneView />;
     case 'conversation':
       return <ConversationView id={view.id} />;
     case 'claude_code':
@@ -73,17 +104,43 @@ function Route() {
     case 'requests':
       return <RequestsView />;
     case 'tasks':
-      return <TasksView />;
+      return <WorkFrame page="tasks"><TasksView /></WorkFrame>;
     case 'task':
       return <TaskPage key={view.id} id={view.id} />;
+    case 'issues':
+      return <WorkFrame page="issues"><IssuesView /></WorkFrame>;
+    case 'gh_issue':
+      return <IssuePage key={`${view.projectId}#${view.number}`} projectId={view.projectId} number={view.number} />;
+    case 'actions':
+      return <WorkFrame page="actions"><ActionsView /></WorkFrame>;
+    case 'gh_run':
+      return <RunPage key={`${view.projectId}#${view.runId}`} projectId={view.projectId} runId={view.runId} />;
     case 'plans':
-      return <PlansView />;
+      return <WorkFrame page="plans"><PlansView /></WorkFrame>;
     case 'plan':
       return <PlanPage key={view.id} id={view.id} task={view.task} />;
+    case 'team_plan':
+      return <WorkFrame page="plans"><SharedPlanPage key={`${view.owner}/${view.id}`} owner={view.owner} id={view.id} /></WorkFrame>;
+    // Sentinel is one page (BLG-300): its board is on it, its chat docks beside it; the old views land there.
+    case 'sentinel_chat':
+      // Asked from a sentinel's own page: that page stays, the chat beside it.
+      if (view.about) return <SentinelPage key={view.about} id={view.about} />;
+      return <SentinelHome />;
+    case 'sentinel':
+    case 'dashboard':
+      return <SentinelHome />;
+    case 'sentinel_page':
+      return <SentinelPage key={view.id} id={view.id} />;
+    case 'sentinel_run':
+      return <SentinelRunPage key={view.runId} runId={view.runId} />;
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':
-      return view.page === 'history' ? <HistoryView projectId={view.id} /> : <ProjectHome id={view.id} />;
+      return view.page === 'history' ? <HistoryView projectId={view.id} /> : (
+        <ProjectCenter>
+          <ProjectHome id={view.id} />
+        </ProjectCenter>
+      );
   }
 }
 

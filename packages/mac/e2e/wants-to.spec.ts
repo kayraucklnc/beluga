@@ -37,7 +37,7 @@ test('a friend’s request pops up with a few words; See more shows it all; Allo
   await askMia(page, 'can your Claude grab a screenshot from me?');
   const card = cards(popup).first();
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card).toContainText('mia’s Claude wants to');
+  await expect(card).toContainText('mia’s agent wants to');
   await expect(card).toContainText('take a screenshot of your desktop and send it to me');
   await expect(card).toContainText('See the screen');
   await expect(card.getByTestId('request-popup-detail')).toHaveCount(0);
@@ -59,7 +59,7 @@ test('Decline answers it too, and × only hides the card', async ({ page }) => {
   // Still waiting in Beluga.
   await sidebar(page).getByRole('button', { name: /^Requests/ }).click();
   await page.getByRole('radio', { name: /^Received/ }).or(page.getByRole('tab', { name: /^Received/ })).first().click();
-  const row = page.getByRole('list', { name: 'Received requests' }).getByRole('button', { name: /^From mia’s Claude: .*Waiting for you to approve$/ }).first();
+  const row = page.getByRole('list', { name: 'Received requests' }).getByRole('button', { name: /^From mia’s agent: .*Waiting for you to approve$/ }).first();
   await expect(row).toBeVisible({ timeout: 10_000 });
   // A new page hears it again (closing only hid it there); Decline answers it.
   const again = await page.context().newPage();

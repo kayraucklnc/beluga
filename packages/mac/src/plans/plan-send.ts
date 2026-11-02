@@ -7,7 +7,7 @@
  */
 
 export interface PlanSendApi {
-  readonly attachments: { expand(text: string, channel: string, only?: number[]): Promise<string> };
+  readonly attachments: { expand(text: string, channel: string, only?: number[], shown?: number[]): Promise<string> };
   /** False (or a rejection) when it didn't go. */
   readonly session: { submit(text: string, opts: { channel: string; id: string; urgent?: boolean }): Promise<boolean | void> };
 }
@@ -18,11 +18,13 @@ export interface PlanMessage {
   readonly id: string;
   /** The images that went with it (only their "[image N]" become links). */
   readonly images?: readonly number[];
+  /** The number each of `images` had in the box (its "[image N]" says it). */
+  readonly shown?: readonly number[];
   /** What it says with its images expanded, once they were. */
   expanded?: string;
 }
 
-export const planMessage = (typed: string, images?: readonly number[]): PlanMessage => ({ typed, id: crypto.randomUUID(), ...(images ? { images } : {}) });
+export const planMessage = (typed: string, images?: readonly number[], shown?: readonly number[]): PlanMessage => ({ typed, id: crypto.randomUUID(), ...(images ? { images } : {}), ...(shown ? { shown } : {}) });
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -38,7 +40,7 @@ export async function sendPlanMessage(api: PlanSendApi, message: PlanMessage, ch
     let full = message.typed;
     if (hasImageRefs(full)) {
       try {
-        full = await api.attachments.expand(full, channel, message.images && [...message.images]);
+        full = await api.attachments.expand(full, channel, message.images && [...message.images], message.shown && [...message.shown]);
       } catch (err) {
         throw new Error(`Couldn't send the images: ${errorText(err)}`);
       }
@@ -51,5 +53,5 @@ export async function sendPlanMessage(api: PlanSendApi, message: PlanMessage, ch
   } catch (err) {
     throw new Error(errorText(err));
   }
-  if (went === false) throw new Error("Claude can't be asked here");
+  if (went === false) throw new Error("The agent can't be asked here");
 }

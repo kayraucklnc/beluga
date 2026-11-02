@@ -1,3 +1,5 @@
+import { agentPicker } from '../shared/agent-picker.js';
+import { CLAUDE_AGENT } from '../protocol.js';
 import type { AppState } from '../core/store.js';
 import type { Settings } from '../shared/settings-schema.js';
 import { TRUST_INFO, defaultTrust, trustOf } from '../core/trust.js';
@@ -60,12 +62,12 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
   switch (section) {
     case 'claude':
       return {
-        title: 'Settings › Claude',
-        intro: ['How your Claude works, for you and for the people you let use it.', ''],
+        title: 'Settings › Agent',
+        intro: ['How your agent works, for you and for the people you let use it.', ''],
         options: [
           { id: 'set-model', label: 'Model for new conversations', hint: `${modelLabel(state, p.model)}  ·  Enter to choose (each chat can pick its own)` },
           { id: 'set-effort', label: 'Thinking effort', hint: `${p.effort ?? 'Default'}${sw}` },
-          { id: 'set-self-approval', label: 'My Claude asks before commands', hint: `${p.selfApproval === 'ask' ? 'Yes (safer)' : 'No, it just works (secrets stay blocked)'}${sw}` },
+          { id: 'set-self-approval', label: 'My agent asks before commands', hint: `${p.selfApproval === 'ask' ? 'Yes (safer)' : 'No, it just works (secrets stay blocked)'}${sw}` },
           { id: 'set-pr-prompt', label: 'Pull request instructions', hint: `${extra.prCustom ? 'Customized' : 'Built-in'}  ·  Enter to edit in your editor` },
           ...(extra.prCustom ? [{ id: 'set-pr-reset', label: 'Reset pull request instructions', hint: 'back to the built-in ones' }] : []),
           { id: 'set-templates', label: 'Templates…', hint: `${state.templates.length} ways to start a task` },
@@ -75,17 +77,17 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
     case 'notify':
       return {
         title: 'Settings › Notifications',
-        intro: ['Beluga tells you when something needs you, on the desktop and in the inbox (top right).', 'Nothing is announced about the conversation you are looking at.', ''],
+        intro: ['Beluga tells you when something needs you, on the desktop and in the inbox (top right).', 'In the conversation you are looking at, only a long run of yours finishing is announced.', ''],
         options: [
           { id: 'n-desktop', label: 'Desktop notifications', hint: `${onOff(p.notify.desktop)}${sw}` },
           { id: 'n-sound', label: 'Sound', hint: `${onOff(soundOn(p.notify))}${sw}` },
           { id: 'n-onlyAway', label: 'Only when Beluga isn’t in front', hint: `${onOff(p.notify.onlyAway)}${sw}` },
           { id: 'n-dnd', label: 'Do Not Disturb', hint: dndActive(p.notify) ? `On ${dndLabel(p.notify)}  ·  Enter for longer, then off` : 'Off  ·  Enter: for 1 hour, then longer' },
-          { id: 'n-needsYou', label: 'Claude needs you', hint: `${onOff(p.notify.needsYou)}  ·  questions, plans, approvals` },
-          { id: 'n-done', label: 'Claude finished', hint: `${onOff(p.notify.done)}${sw}` },
+          { id: 'n-needsYou', label: 'Your agent needs you', hint: `${onOff(p.notify.needsYou)}  ·  questions, plans, approvals` },
+          { id: 'n-done', label: 'Your agent finished', hint: `${onOff(p.notify.done)}${sw}` },
           { id: 'n-mentions', label: 'Mentions and messages to you', hint: `${onOff(p.notify.mentions)}  ·  @${state.self?.name ?? 'you'}` },
           { id: 'n-people', label: 'People', hint: `${onOff(p.notify.people)}  ·  joins, leaves, invites, handoffs` },
-          { id: 'n-background', label: 'Background tasks', hint: `${onOff(p.notify.background)}  ·  Claude's background work, worktree setup` },
+          { id: 'n-background', label: 'Background tasks', hint: `${onOff(p.notify.background)}  ·  your agent's background work, worktree setup` },
           { id: 'n-problems', label: 'Errors and merge conflicts', hint: `${onOff(p.notify.problems)}${sw}` },
           { id: 'n-pr', label: 'Pull requests', hint: `${onOff(p.notify.pr)}  ·  opened, checks passed or failed` },
           { id: 'n-test', label: 'Send a test notification', hint: 'whatever the settings above say' },
@@ -125,8 +127,8 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
       return {
         title: 'Settings › Environment variables',
         intro: [
-          'Given to your shells, setup and run commands, and your Claude (never to a friend\'s request).',
-          'New shells and Claude runs pick up changes. They stay on this computer.',
+          'Given to your shells, setup and run commands, and your agent (never to a friend\'s request).',
+          'New shells and agent runs pick up changes. They stay on this computer.',
           'For one project only: /env project KEY=value in one of its workspaces.',
           '',
         ],
@@ -189,7 +191,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
           { id: 'set-theme', label: 'Color theme', hint: `${THEME_LABELS[p.theme]}${sw}` },
           { id: 'sec:people', label: 'People & permissions ›', hint: `new people: ${TRUST_INFO[defaultTrust(state)].short}${others ? ` · ${others} here` : ''}` },
           { id: 'sec:notify', label: 'Notifications ›', hint: dndActive(n) ? `Do Not Disturb ${dndLabel(n)}` : n.desktop ? `desktop on${soundOn(n) ? ' · sound' : ''}` : 'desktop off · inbox only' },
-          { id: 'sec:claude', label: 'Claude ›', hint: `${modelLabel(state, p.model)} · PR instructions · templates` },
+          { id: 'sec:claude', label: 'Agent ›', hint: `${modelLabel(state, p.model)} · PR instructions · templates` },
           { id: 'sec:workspaces', label: 'Workspaces ›', hint: `setup ${p.autoSetup ? 'on' : 'off'} · terminal · environment · top bar` },
           { id: 'sec:display', label: 'Display ›', hint: 'mouse, text size, context meter, sub-agents' },
           { id: 'close', label: 'Done', hint: 'Esc' },
@@ -204,19 +206,42 @@ function envHint(state: AppState): string {
   const mine = state.envKeys.global.length;
   const projects = Object.values(state.envKeys.projects).reduce((n, x) => n + x.keys.length, 0);
   const parts = [mine ? `${mine} yours` : '', projects ? `${projects} in projects` : ''].filter(Boolean);
-  return parts.length ? parts.join(' · ') : 'none yet  ·  for shells, scripts and Claude';
+  return parts.length ? parts.join(' · ') : 'none yet  ·  for shells, scripts and agents';
 }
 
 /** Pick the model for one conversation (or the default for new ones). */
-export function modelMenu(state: AppState, current: string | undefined, forWhat: string): MenuSpec {
+/**
+ * /model (BLG-446): the agent picker as a menu. Your default agent's models, then each other
+ * runtime with its own, or greyed with what's missing. A model of the same runtime switches models
+ * (`model:<value>`); one of another runtime switches agent (`agent:<runtime>:<value>`).
+ */
+export function modelMenu(state: AppState, channel: string | undefined, forWhat: string): MenuSpec {
+  const picker = myAgentPicker(state, channel ?? 'draft');
+  const options = picker.groups.flatMap((g) => {
+    const head = picker.groups.length > 1 ? [{ id: `runtime:${g.runtime}`, label: `${g.label}${g.isDefault ? ' (your default)' : ''}`, ...(g.why ? { hint: g.why } : {}) }] : [];
+    const rows = g.models.map((m) => ({
+      id: g.current || !picker.conversation ? `model:${m.value}` : `agent:${g.runtime}:${m.value}`,
+      label: `  ${m.on ? '◉' : '○'} ${m.label}`,
+      hint: m.description,
+    }));
+    // New conversations take your default agent's models; another runtime is picked per worktree.
+    return !picker.conversation && !g.isDefault ? head.map((h) => ({ ...h, hint: g.why ?? 'Pick it in a worktree' })) : [...head, ...rows];
+  });
   return {
-    title: `Model for ${forWhat}`,
-    intro: ['Each conversation can use its own model. It applies from the next message.', ''],
-    options: [
-      ...state.models.map((m) => ({ id: `model:${m.value}`, label: `${(current ?? '') === m.value ? '◉' : '○'} ${m.label}`, hint: m.description })),
-      { id: 'close', label: 'Cancel', hint: 'Esc' },
-    ],
+    title: `Agent and model for ${forWhat}`,
+    intro: ['Each conversation can use its own agent and model. A model applies from the next message; another agent starts its own conversation.', ''],
+    options: [...options, { id: 'close', label: 'Cancel', hint: 'Esc' }],
   };
+}
+
+/**
+ * The picker from your agent's side: its runtime is "your default", and its model the default
+ * model (Settings' model is Claude's; another runtime's model goes with the agent).
+ */
+export function myAgentPicker(state: AppState, channel: string): ReturnType<typeof agentPicker> {
+  const mine = state.prefs.defaultAgent;
+  const other = mine && mine.runtime !== CLAUDE_AGENT.runtime ? mine : undefined;
+  return agentPicker({ ...state, prefs: { model: other ? other.model : state.prefs.model } }, channel, other?.runtime ?? CLAUDE_AGENT.runtime);
 }
 
 /** The inbox as the menu shows it: which notices, and whether each row clears one. */

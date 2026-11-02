@@ -8,6 +8,7 @@ import { Choice, Sheet } from '../dialogs/native/parts.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { backLine, whereLine } from './popup-model.js';
 import { closeRequest, useRequestSheet } from './request-native.js';
+import { openFriendCard } from '../network/use-net.js';
 import s from './access.module.css';
 
 /**
@@ -39,6 +40,7 @@ function Body({ task }: { task: TaskView }) {
   const { client } = useBeluga();
   const level = useApp((st) => st.levels[task.peerId] ?? st.remembered[task.peerId]?.trust ?? (st.policy === 'deny' ? 'blocked' : st.policy === 'auto' ? 'trusted' : 'ask'));
   const caps = useApp((st) => st.gateway.capabilities);
+  const friend = useApp((st) => st.network.friends.some((f) => f.peerId === task.peerId));
   const [mode, setMode] = useState<Mode>('choose');
   const [scope, setScope] = useState<'this' | 'any'>('this');
   const [command, setCommand] = useState<'this' | 'any'>('this');
@@ -50,7 +52,7 @@ function Body({ task }: { task: TaskView }) {
   const facts = factsOf(task);
   const scopes = scopeChoices(facts);
   const preview = ruleFor(facts, task.peerName, { scope, command, expiry }, Date.now(), 'r_preview00');
-  const who = `${task.peerName}${task.by === 'agent' ? '’s Claude' : ''}`;
+  const who = `${task.peerName}${task.by === 'agent' ? '’s agent' : ''}`;
   const answer = async (decision: Parameters<typeof api.gateway.decide>[1]): Promise<void> => {
     setBusy(true);
     setError(undefined);
@@ -103,16 +105,17 @@ function Body({ task }: { task: TaskView }) {
     <>
       {error ? <span className={s.footNote} style={{ color: 'var(--error)' }}>{error}</span> : <span className={s.grow} />}
       <Button onClick={() => setMode('decline')}>Decline…</Button>
-      <Button onClick={() => setMode('always')}>Always…</Button>
+      {/* A secret is asked about each time: trust, rules and Always never cover it. */}
+      {task.secret ? null : <Button onClick={() => setMode('always')}>Always…</Button>}
       <Button variant="primary" disabled={busy} onClick={() => void answer({ answer: 'yes', scope: 'this', command: 'this', expiry: 'never' })}>
-        Approve Once
+        {task.secret ? 'Allow Once' : 'Approve Once'}
       </Button>
     </>
   );
   return (
     <Sheet
-      title={task.kind === 'run' ? `${who} wants to run a command on your Mac` : task.kind === 'file' ? `${who} wants a file from your Mac` : `${who} wants your Claude to do something`}
-      subtitle={waiting ? (task.by === 'agent' ? `${task.peerName} asked their Claude, and it asks yours.` : `${task.peerName} asks you directly.`) : stateLabel(task)}
+      title={task.secret ? `${who} wants ${task.secret.label}` : task.kind === 'run' ? `${who} wants to run a command on your Mac` : task.kind === 'file' ? `${who} wants a file from your Mac` : `${who} wants your agent to do something`}
+      subtitle={waiting && task.secret ? 'This is a secret. You’re asked each time: if you allow it, Beluga sends this one file, and their agent is told you approved it.' : waiting ? (task.by === 'agent' ? `${task.peerName} asked their agent, and it asks yours.` : `${task.peerName} asks you directly.`) : stateLabel(task)}
       badge={<Avatar name={task.peerName} id={task.peerId} claude={task.by === 'agent'} size={32} />}
       close={closeRequest}
       footer={footer}
@@ -124,9 +127,22 @@ function Body({ task }: { task: TaskView }) {
         <span className={s.factLabel}>From</span>
         <span className={s.factValue} role="listitem">
           {task.peerName} · you: {TRUST_INFO[level].label.toLowerCase()}
-          {level !== 'trusted' && level !== 'full' ? (
+          {level !== 'trusted' && level !== 'full' && !task.secret ? (
             <button type="button" className={s.linkButton} onClick={() => void trust()}>
               Trust {task.peerName} instead
+            </button>
+          ) : null}
+          {/* Trust is set on their card (BLG-202); "Trust them instead" stays as this request's shortcut. */}
+          {friend ? (
+            <button
+              type="button"
+              className={s.linkButton}
+              onClick={() => {
+                closeRequest();
+                openFriendCard(client, task.peerId);
+              }}
+            >
+              Their card…
             </button>
           ) : null}
         </span>

@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { AgentRef } from '../../protocol.js';
+import { agentName } from '../../shared/agent-label.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
-import { type Actor, type IssuePr, renamedActors } from '../board/model.js';
+import { type Actor, renamedActors } from '../board/model.js';
 import type { Store } from '../store.js';
 import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from './edit.js';
 import {
@@ -18,11 +20,15 @@ import {
   MAX_PARALLEL,
   type MilestoneAgent,
   type MilestoneRun,
+  type PlanEpics,
+  type PlanRescue,
   type Plan,
   type PlanBody,
   type PlanEvent,
   type PlanEventKind,
+  type PlanMainMerge,
   type PlanMerge,
+  type PlanPr,
   type PlanShipped,
   type PlansState,
   type TaskWatch,
@@ -83,6 +89,8 @@ const SavedPlan = z
     autonomy: z.enum(AUTONOMIES).default('gated'),
     maxParallel: z.number().int().min(1).max(MAX_PARALLEL).catch(DEFAULT_PARALLEL),
     testsAt: z.enum(TESTS_AT).catch('milestone'),
+    // Who works it (BLG-497): one that doesn't read is let go (your default works it).
+    agent: AgentRef.optional().catch(undefined),
     body: Body.optional().catch(undefined),
     draft: Body.optional().catch(undefined),
     paused: z.boolean().default(false),
@@ -129,7 +137,7 @@ export class Plans {
   // ------------------------------------------------------------------ drafting
 
   /** A new plan: an empty draft in its conversation (Claude writes it there). Your goal is never its title: a quick model names it (autoTitle), and Claude's plan_write after that. */
-  create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }, by: Actor): Plan {
+  create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt; readonly agent?: AgentRef }, by: Actor): Plan {
     const at = this.now();
     const title = (input.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || UNTITLED;
     const plan: Plan = {
@@ -142,6 +150,7 @@ export class Plans {
       autonomy: input.autonomy ?? DEFAULT_AUTONOMY,
       maxParallel: DEFAULT_PARALLEL,
       testsAt: input.testsAt ?? 'milestone',
+      ...(input.agent ? { agent: input.agent } : {}),
       paused: false,
       runs: {},
       activity: [event(by, 'created', 'started this plan', at)],
@@ -255,10 +264,22 @@ export class Plans {
     return this.change(plan, { testsAt }, [event(by, 'note', testsAt === 'end' ? 'runs the test suites only at the end, in the final step' : 'runs the test suites once per milestone, at its check', this.now())]);
   }
 
+  /**
+   * The agent (and model) its milestones and tasks are worked on by from here on (BLG-498);
+   * undefined: your default. Milestones and tasks already at work keep the agent they opened with.
+   */
+  setWorkAgent(id: string, agent: AgentRef | undefined, by: Actor): Plan {
+    const plan = this.need(id);
+    const was = plan.agent;
+    if (was?.runtime === agent?.runtime && was?.model === agent?.model && was?.label === agent?.label) return plan;
+    const text = agent ? `gave its work to ${agentName(agent, { model: true })} from here on` : 'gave its work to the default agent from here on';
+    return this.change(plan, { agent: agent ? { runtime: agent.runtime, label: agent.label, ...(agent.model ? { model: agent.model } : {}) } : undefined }, [event(by, 'note', text, this.now())]);
+  }
+
   /** The head Claude was asked to check a milestone (a new round of checking). */
   checkAsked(id: string, milestone: string): Plan {
     const plan = this.need(id);
-    return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'beluga' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, Claude is checking its pass criteria`, this.now())]);
+    return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'beluga' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, the agent is checking its pass criteria`, this.now())]);
   }
 
   /** Work came back to a milestone (a task reopened, fix tasks added): its next check is a new one. */
@@ -285,7 +306,8 @@ export class Plans {
     const plan = this.need(id);
     if (plan.runs[milestone]?.passedAt) return plan;
     const at = this.now();
-    const next = this.change(plan, { runs: withRun(plan, milestone, { passedAt: at, passedBy: by }) }, [event(by, 'passed', `passed ${milestoneName(plan, milestone)}`, at)]);
+    const { mergeFailed: _failed, ...run } = plan.runs[milestone] ?? {};
+    const next = this.change(plan, { runs: { ...plan.runs, [milestone]: { ...run, passedAt: at, passedBy: by } } }, [event(by, 'passed', `passed ${milestoneName(plan, milestone)}`, at)]);
     const left = (next.body?.milestones ?? []).filter((m) => !next.runs[m.id]?.passedAt);
     return left.length ? next : this.change(next, { status: 'done', doneAt: at }, [event({ kind: 'beluga' }, 'done', 'every milestone passed: the plan is done', at)]);
   }
@@ -299,11 +321,40 @@ export class Plans {
     return this.change(plan, { runs: { ...plan.runs, [milestone]: rest }, status: 'active', doneAt: undefined }, [event(by, 'note', `reopened ${milestoneName(plan, milestone)}`, this.now())]);
   }
 
+  /** Passing a milestone couldn't merge it into the plan's branch (undefined: cleared, it's being passed again). */
+  setMergeFailed(id: string, milestone: string, reason: string | undefined): Plan {
+    const plan = this.need(id);
+    const { mergeFailed: _was, ...rest } = plan.runs[milestone] ?? {};
+    if (!reason && !_was) return plan;
+    return this.change(plan, { runs: { ...plan.runs, [milestone]: reason ? { ...rest, mergeFailed: { at: this.now(), reason } } : rest } }, []);
+  }
+
   /** A milestone's own Claude and the tasks handed to it (undefined: none, its worktree went). */
   setAgent(id: string, milestone: string, agent: MilestoneAgent | undefined): Plan {
     const plan = this.need(id);
     const { agent: _was, ...rest } = plan.runs[milestone] ?? {};
     return this.change(plan, { runs: { ...plan.runs, [milestone]: agent ? { ...rest, agent } : rest } }, []);
+  }
+
+  /** Beluga's rescue of a stalled plan (undefined: it's moving again). */
+  setRescue(id: string, rescue: Readonly<Record<string, PlanRescue>> | undefined): Plan {
+    const plan = this.need(id);
+    if (JSON.stringify(plan.rescue) === JSON.stringify(rescue)) return plan;
+    return this.change(plan, { rescue }, []);
+  }
+
+  /** Its epics on the board (see epics.ts). */
+  setEpics(id: string, epics: PlanEpics): Plan {
+    const plan = this.need(id);
+    if (JSON.stringify(plan.epics) === JSON.stringify(epics)) return plan;
+    return this.change(plan, { epics }, []);
+  }
+
+  /** The conversation that checks a milestone (undefined: none, it was archived). */
+  setChecker(id: string, milestone: string, checker: string | undefined): Plan {
+    const plan = this.need(id);
+    const { checker: _was, ...rest } = plan.runs[milestone] ?? {};
+    return this.change(plan, { runs: { ...plan.runs, [milestone]: checker ? { ...rest, checker } : rest } }, []);
   }
 
   /** A task's start being combined from several branches (undefined: no longer). */
@@ -338,14 +389,24 @@ export class Plans {
     return this.change(plan, { merging: Object.keys(next).length ? next : undefined }, []);
   }
 
+  /** Main being merged into the plan's branch (undefined: it's in, or nothing's under way). */
+  setMainMerge(id: string, mainMerge: PlanMainMerge | undefined): Plan {
+    const plan = this.need(id);
+    if (!mainMerge && !plan.mainMerge) return plan;
+    return this.change(plan, { mainMerge }, []);
+  }
+
   /** The branch's pull request as last seen (what changed goes in the activity). */
-  setPr(id: string, pr: IssuePr): Plan {
+  setPr(id: string, found: PlanPr): Plan {
     const plan = this.need(id);
     const before = plan.pr;
-    if (before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.title === pr.title && before.draft === pr.draft) return plan;
+    // Only what the plan shows (GitHub's answer carries more, like each check run).
+    const { number, url, state, title, draft, checks, review, conflicts, autoMerge, mergeState } = found;
+    const pr: PlanPr = { number, url, state, title, draft, checks, ...(review ? { review } : {}), ...(conflicts ? { conflicts } : {}), ...(autoMerge ? { autoMerge } : {}), ...(mergeState ? { mergeState } : {}) };
+    if (before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.title === pr.title && before.draft === pr.draft && before.conflicts === pr.conflicts && before.autoMerge === pr.autoMerge && before.mergeState === pr.mergeState) return plan;
     const notes: PlanEvent[] = [];
     const at = this.now();
-    if (!before || before.number !== pr.number) notes.push(event({ kind: 'beluga' }, 'note', `pull request #${pr.number} is open for ${plan.branch ?? 'the plan'}`, at));
+    if (!before || before.number !== pr.number) notes.push(event({ kind: 'beluga' }, 'note', `opened pull request #${pr.number}: ${plan.branch ?? 'the plan’s branch'} → main`, at));
     if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') notes.push(event({ kind: 'beluga' }, 'problem', `pull request #${pr.number} was closed without merging: its tasks stay merged into the plan`, at));
     return this.change(plan, { pr }, notes);
   }

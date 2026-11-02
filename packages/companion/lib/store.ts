@@ -1,13 +1,21 @@
-import { AppState, type AppStateStatus, Platform } from 'react-native';
+import { AppState, type AppStateStatus, Linking, Platform } from 'react-native';
 import { fromB64, fromUtf8, toB64 } from './b64';
 import { kv } from './kv';
 import { BareTransport } from './link/bare';
 import { type Call, calls } from './link/calls';
 import { DemoTransport } from './link/demo/transport';
-import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, MAX_UPLOAD_BYTES, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
-import type { DeviceSecret, LinkPhase, Pairing } from './link/rpc';
-import type { PairInput, PairStep, Transport } from './link/transport';
+import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, isMacTopic, type MacFrame, type NeedsYou, type OutputView, type PhoneOp, type Topic, viewSchema } from './link/protocol';
+import { controlNote, controlState, mirrorAck, onAccessibilityChange, onControlStop, phoneAllowed, phoneControlAvailable, runOp, setPhoneAllowed, watchAdb, watchMirror } from './phone';
+import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
+import { checkOnline } from './link/online';
+import { graceExpired, onResume, PROBE_TIMEOUT_MS, RETRY_LIMIT, retryDelay } from './link/resume';
+import { notifyNudge, stayOn, stayService } from './stay';
+import type { Attempt, DeviceSecret, LinkHints, LinkPathName, LinkPhase, Pairing } from './link/rpc';
+import type { PairInput, PairStep, PathInfo, PhaseInfo, Transport } from './link/transport';
 import { secure } from './secure';
+import { Assembly, MAX_SAVE_BYTES, PIECE_TIMEOUT_MS } from './pieces';
+import { fileSink, memorySink, type Sink } from './sink';
+import { mediaPath } from './media';
 
 /**
  * The phone's one store: which Mac, the link's state, the views on screen (and the last ones,
@@ -28,9 +36,19 @@ export interface LinkState {
   readonly me?: { name: string; peerId: string };
   /** The two sides can't talk: whose update would fix it. */
   readonly outdated?: 'mac' | 'app';
+  /** The Mac's protocol version (its minor says what it has: SINCE). */
+  readonly proto?: { major: number; minor: number };
   readonly pairing?: Pairing;
   readonly ready: boolean;
+  /** Why it can't connect, in plain words (the away band and its "Why?" sheet). */
+  readonly diagnosis?: Diagnosis;
+  /** How the open link got through, and what was tried (Settings › Advanced). */
+  readonly path?: LinkPathName;
+  readonly tried?: readonly Attempt[];
 }
+
+/** Relay URLs kept (newest first). */
+const RELAYS_KEPT = 3;
 
 export interface CachedView<T = unknown> {
   readonly data: T;
@@ -49,7 +67,7 @@ export interface OutboxItem {
 
 export interface FileState {
   readonly status: 'loading' | 'ready' | 'error';
-  /** Pictures: a data: URI. */
+  /** Pictures: a file:// URI in the cache (full pictures on the phone) or a data: URI. */
   readonly uri?: string;
   /** Text files: what has come so far. */
   readonly text?: string;
@@ -68,9 +86,14 @@ export interface Toast {
 }
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
-type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number };
+/** A terminal's output or status, as the Mac sends it (1.7). */
+export type TermFrame = Extract<MacFrame, { t: 'term_data' | 'term_status' }>;
+/** A fetch in flight. Pictures come piece by piece (`asm` asks for the next), into `sink`; `timer` fails it if a piece doesn't come. */
+type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number; asm?: Assembly; sink?: Sink; timer?: ReturnType<typeof setTimeout>; save?: Saving };
+/** A copy being fetched to save on the phone (lib/saved.ts): it ends one way or the other. */
+type Saving = { resolve: (uri: string) => void; reject: (e: Error) => void };
 
-const APP = 'beluga-companion/0.1.0';
+const APP = 'beluga-companion/0.16.0';
 const PLATFORM: 'android' | 'ios' = Platform.OS === 'ios' ? 'ios' : 'android';
 
 class Store {
@@ -89,11 +112,24 @@ class Store {
   private latest = new Map<string, OutputView>();
   private toasts: Toast[] = [];
   private seq = 1;
+  /** The Mac said welcome on this link (calls may go; they're answered). */
+  private welcomed = false;
   private grace: ReturnType<typeof setTimeout> | undefined;
+  /** The app is in front (AppState), and since when it's been away (the wall clock: BLG-105). */
+  private active = false;
+  private awayAt: number | undefined;
+  /** When the dial in flight began; whether a check of the open link is out. */
+  private dialingSince: number | undefined;
+  private probing = false;
+  /** One automatic retry at a time, backing off (lib/link/resume.ts retryDelay). */
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryAttempt = 0;
+  /** Away with Stay connected on (BLG-128): the link stays open, the views are off, nudges notify. */
+  private stayingAway = false;
   private listeners = new Map<string, Set<() => void>>();
   private snapshots = new Map<string, unknown>();
   /** What the image viewer shows, and where it opened from (for the transition back). */
-  gallery: { items: OutputView[]; index: number; origin?: { x: number; y: number; w: number; h: number } } = { items: [], index: 0 };
+  gallery: { items: OutputView[]; index: number; origin?: { x: number; y: number; w: number; h: number }; topic?: Topic } = { items: [], index: 0 };
 
   // ---- subscribe (for useSyncExternalStore)
 
@@ -117,7 +153,9 @@ class Store {
     return this.state;
   }
   private setState(patch: Partial<LinkState>): void {
+    const was = this.state.phase;
     this.state = { ...this.state, ...patch };
+    if (this.state.phase !== was) this.stayNote();
     this.emit('state');
   }
 
@@ -134,8 +172,15 @@ class Store {
     }
     if (mode === 'demo' || (mode === 'bare' && pairing)) this.use(mode, pairing);
     this.setState({ ready: true });
+    this.active = AppState.currentState === 'active';
     AppState.addEventListener('change', (s) => this.onAppState(s));
+    // Opened by a link (or a notification's) while in the background: back in front, so link now.
+    // AppState says so too; whichever comes first dials, the other finds it dialing (single flight).
+    Linking.addEventListener('url', () => this.foreground());
     if (mode && AppState.currentState === 'active') this.foreground();
+    else if (mode === 'bare' && stayOn()) this.stayAway();
+    // Your Mac using this phone (BLG-150): start watching the service and debugging port if allowed.
+    if (mode === 'bare' && phoneControlAvailable()) this.controlSet(phoneAllowed());
   }
 
   private use(mode: Mode, pairing?: Pairing): void {
@@ -147,7 +192,7 @@ class Store {
     });
     this.transport = t;
     if (t instanceof DemoTransport && kv.get<boolean>('demo-asleep')) t.setAsleep(true);
-    this.unsubs = [t.onFrame((f) => this.onFrame(f)), t.onPhase((p, d) => this.onPhase(p, d))];
+    this.unsubs = [t.onFrame((f) => this.onFrame(f)), t.onPhase((p, d, i) => this.onPhase(p, d, i)), (t as Transport).onPath?.((i: PathInfo) => this.onPath(i)) ?? (() => {})];
     this.setState({ mode, pairing, phase: 'closed' });
   }
 
@@ -156,12 +201,24 @@ class Store {
     this.unsubs = [];
     this.transport?.dispose();
     this.transport = undefined;
+    this.clearRetry();
+    this.probing = false;
+    this.dialingSince = undefined;
   }
 
   /** Pair with a Mac (or start the demo, `mode: 'demo'`). */
   pair(mode: Mode, input: Omit<PairInput, 'platform'>, onStep: (step: PairStep) => void): { cancel(): void } {
     const t: Transport = mode === 'demo' ? new DemoTransport() : new BareTransport(async () => undefined);
-    const run = t.pair({ ...input, platform: PLATFORM }, (step) => {
+    const offPath = t.onPath?.((i) => this.onPath(i));
+    const run = t.pair({ ...input, platform: PLATFORM, hints: this.hints() }, (step) => {
+      if (step.step === 'failed' && !step.diagnosis) {
+        // Say what went wrong in words: check the phone is online first, so nothing else is blamed for that.
+        const known = step.refusal ? undefined : step.report;
+        void (known ? checkOnline() : Promise.resolve(undefined)).then((online) =>
+          onStep({ ...step, diagnosis: diagnose({ stage: 'pair', ...(online !== undefined ? { online } : {}), ...(step.report ? { report: step.report } : {}), ...(step.refusal ? { refusal: step.refusal as PairRefusal } : {}), reason: step.reason }) }),
+        );
+        return;
+      }
       if (step.step === 'paired') {
         void (async () => {
           if (mode === 'bare') {
@@ -169,6 +226,7 @@ class Store {
             await secure.set('device-secret', step.secret);
           }
           kv.set('mode', mode);
+          offPath?.();
           t.dispose();
           this.use(mode, step.pairing);
           this.foreground();
@@ -191,6 +249,8 @@ class Store {
     if (this.state.phase === 'open') onMac = await this.call(calls.signOut(), { queue: false }).then(() => true, () => false);
     this.transport?.send({ t: 'bye' });
     this.dropTransport();
+    this.stayingAway = false;
+    stayService(undefined);
     await secure.remove('pairing');
     await secure.remove('device-secret');
     kv.clear();
@@ -222,26 +282,162 @@ class Store {
     else if (s === 'background') this.background();
   }
 
+  /**
+   * The app is in front again (or you asked to try again): make sure the link is really there.
+   * Decided by lib/link/resume.ts: an open link is pinged and replaced if it doesn't answer; one
+   * left open past the grace (Android froze it instead of closing it) is replaced at once; a dial
+   * under way is left alone; anything else dials now, with the retries' backoff started afresh.
+   */
   foreground(): void {
+    this.active = true;
     if (this.grace) clearTimeout(this.grace);
     this.grace = undefined;
+    const stayed = this.stayingAway;
+    this.stayingAway = false;
+    // In front is the only time Android lets the service start.
+    this.stayNote(true);
+    // Kept open on purpose while away: it isn't stale for having been away, only checked.
+    const awayAt = stayed ? undefined : this.awayAt;
+    this.awayAt = undefined;
+    this.clearRetry();
+    this.retryAttempt = 0;
     const t = this.transport;
     if (!t) return;
-    if (this.state.phase === 'open') {
+    const next = onResume({ phase: this.state.phase, now: Date.now(), ...(awayAt !== undefined ? { awayAt } : {}), ...(this.dialingSince !== undefined ? { dialingSince: this.dialingSince } : {}), probing: this.probing });
+    if (next.do === 'none') return;
+    if (next.do === 'probe') {
       t.send({ t: 'focus', on: true });
+      if (stayed) t.send({ t: 'sub', topics: this.topics() });
+      // The Mac stops a terminal's stream while the app is away: its screen draws afresh now.
+      this.reattachTerms();
+      this.probe();
       return;
     }
-    t.open({ t: 'hello', v: { ...COMPANION_PROTO }, app: APP, platform: PLATFORM, topics: this.topics() });
+    this.dial(next.replace);
+  }
+
+  /** Dial now; `replace`: drop the link or dial there is first (it can't be trusted). */
+  private dial(replace: boolean): void {
+    const t = this.transport;
+    if (!t) return;
+    this.clearRetry();
+    if (replace && (this.state.phase === 'open' || this.state.phase === 'dialing')) t.close('stale');
+    this.dialingSince = Date.now();
+    t.open({ t: 'hello', v: { ...COMPANION_PROTO }, app: APP, platform: PLATFORM, topics: this.topics() }, this.hints());
+  }
+
+  /** Ping the open link; if it doesn't answer in time it's half-open: dial a new one. */
+  private probe(): void {
+    const t = this.transport;
+    if (!t?.probe || this.probing) return;
+    this.probing = true;
+    void t.probe(PROBE_TIMEOUT_MS).then(
+      (ok) => {
+        this.probing = false;
+        if (ok || t !== this.transport || !this.active) return;
+        if (this.state.phase === 'open' || this.state.phase === 'closed') this.dial(true);
+      },
+      () => void (this.probing = false),
+    );
+  }
+
+  private clearRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+  }
+
+  /** The link dropped, or the Mac didn't answer, while you look: try again by itself, backing off. */
+  private scheduleRetry(): void {
+    this.clearRetry();
+    const staying = this.stayingAway && !this.active;
+    const fast = retryDelay({ phase: this.state.phase, active: this.active || staying, attempt: this.retryAttempt }, Math.random());
+    // Away, after the quick ones: every two minutes (the Mac may be asleep for the night).
+    const delay = fast !== undefined && staying && this.retryAttempt >= RETRY_LIMIT ? 120_000 : fast;
+    if (delay === undefined) return;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      const p = this.state.phase;
+      if (!(this.active || this.stayingAway) || !this.transport || (p !== 'closed' && p !== 'asleep')) return;
+      this.retryAttempt++;
+      this.dial(false);
+    }, delay);
+  }
+
+  // ---- reaching the Mac on any network (docs/companion.md, "Any network")
+
+  /** The relays seen and the way that worked per network (kv: nothing secret). */
+  private hints(): LinkHints {
+    const h = kv.get<LinkHints>('link-hints') ?? { relays: [], prefer: {} };
+    const paired = this.state.pairing?.relay;
+    return paired && !h.relays.includes(paired) ? { ...h, relays: [...h.relays, paired] } : h;
+  }
+
+  private keepRelay(relay: string | undefined): void {
+    if (!relay) return;
+    const h = this.hints();
+    if (h.relays[0] === relay) return;
+    kv.set('link-hints', { ...h, relays: [relay, ...h.relays.filter((r) => r !== relay)].slice(0, RELAYS_KEPT) });
+  }
+
+  private onPath(i: PathInfo): void {
+    const h = this.hints();
+    kv.set('link-hints', { relays: i.relay ? [i.relay, ...h.relays.filter((r) => r !== i.relay)].slice(0, RELAYS_KEPT) : h.relays, prefer: i.network ? { ...h.prefer, [i.network]: i.way } : h.prefer });
+    this.setState({ path: i.path, tried: i.tried });
   }
 
   background(): void {
+    this.active = false;
+    this.clearRetry();
+    this.awayAt ??= Date.now();
     if (!this.transport || this.grace) return;
+    if (this.state.mode === 'bare' && stayOn()) return this.stayAway();
     if (this.state.phase === 'open') this.transport.send({ t: 'focus', on: false });
+    this.armGrace(BACKGROUND_GRACE_MS);
+  }
+
+  /**
+   * Stay connected (BLG-128): away, the link stays open with nothing on screen, so the Mac sends
+   * only nudges (and pings come and go), and the tiles for Home-screen widgets when any are placed
+   * (BLG-361); a link that drops is dialed again, slowly.
+   */
+  private stayAway(): void {
+    this.stayingAway = true;
+    this.active = false;
+    this.awayAt ??= Date.now();
+    if (this.state.phase === 'open') {
+      this.transport?.send({ t: 'focus', on: false });
+      this.transport?.send({ t: 'sub', topics: this.topics() });
+    } else if (this.state.phase !== 'dialing') this.dial(false);
+    this.stayNote();
+  }
+
+  /** Turned on or off in Settings: the service follows, and so does the link if the app is away. */
+  staySet(): void {
+    if (!stayOn()) {
+      this.stayingAway = false;
+      stayService(undefined);
+      return;
+    }
+    this.stayNote(true);
+  }
+
+  /** The service's quiet line says how the link is. */
+  private stayNote(force = false): void {
+    if (this.state.mode !== 'bare' || !stayOn()) return stayService(undefined);
+    stayService(this.state.phase === 'open' ? 'Connected to your Mac' : 'Reconnecting to your Mac…', force);
+  }
+
+  private armGrace(ms: number): void {
     this.grace = setTimeout(() => {
       this.grace = undefined;
+      // Android runs a timer paused in the background late, often just as the app comes back:
+      // close only if it's still away, and long enough by the clock.
+      if (this.active || this.awayAt === undefined) return;
+      const now = Date.now();
+      if (!graceExpired({ active: this.active, awayAt: this.awayAt, now })) return this.armGrace(this.awayAt + BACKGROUND_GRACE_MS - now);
       this.transport?.send({ t: 'bye' });
       this.transport?.close('background');
-    }, BACKGROUND_GRACE_MS);
+    }, ms);
   }
 
   /** Try again now (the "asleep" banner's button). */
@@ -249,11 +445,18 @@ class Store {
     this.foreground();
   }
 
-  private onPhase(phase: LinkPhase, detail?: string): void {
+  private onPhase(phase: LinkPhase, detail?: string, info?: PhaseInfo): void {
+    if (phase === 'dialing') {
+      if (this.state.phase !== 'dialing' || this.dialingSince === undefined) this.dialingSince = Date.now();
+      this.clearRetry();
+    } else this.dialingSince = undefined;
     if (phase === 'open') {
-      this.setState({ phase, detail: undefined });
+      this.retryAttempt = 0;
+      this.clearRetry();
+      this.setState({ phase, detail: undefined, diagnosis: undefined });
       // Screens may have changed while dialing: say what's on screen now.
       this.transport?.send({ t: 'sub', topics: this.topics() });
+      this.reattachTerms();
       const wanted = [...this.deferred.values()];
       this.deferred.clear();
       for (const w of wanted) {
@@ -265,13 +468,34 @@ class Store {
       }
       return;
     }
-    if (phase === 'unreachable') this.setState({ phase: 'asleep', detail });
-    else this.setState({ phase, detail });
-    // Calls in flight won't be answered: back to the outbox they go.
-    for (const [, p] of this.pending) p.reject(new Error('The link closed.'));
+    if (phase === 'unreachable') {
+      this.setState({ phase: 'asleep', detail, path: undefined });
+      // In words, once we know whether the phone itself is online.
+      void checkOnline().then((online) => {
+        if (this.state.phase !== 'asleep') return;
+        const d = diagnose({ stage: 'link', online, ...(info?.report ? { report: info.report } : {}), ...(detail ? { reason: detail } : {}) });
+        // Removed on the Mac: trying again won't help, pairing again will (the banner says so).
+        if (!d.retry) this.clearRetry();
+        this.setState({ diagnosis: d });
+      });
+    } else {
+      // Dialing again keeps saying what was wrong (the banner stays put while it retries by itself).
+      const d = phase === 'dialing' && this.state.diagnosis?.auto ? this.state.diagnosis : phase === 'refused' ? diagnose({ stage: 'link', ...(info?.code !== undefined ? { closeCode: info.code } : {}), ...(detail ? { reason: detail } : {}) }) : undefined;
+      this.setState({ phase, detail, path: phase === 'closed' ? this.state.path : undefined, diagnosis: d && (d.problem !== 'unknown' || phase === 'dialing') ? d : undefined });
+    }
+    this.welcomed = false;
+    if (phase === 'closed' || phase === 'unreachable') this.scheduleRetry();
+    // Calls in flight won't be answered. Marked `lost`: the Mac may or may not have done it
+    // (lib/sends.ts checks the Mac's view before it says either).
+    for (const [, p] of this.pending) p.reject(Object.assign(new Error('The link closed.'), { lost: true }));
     this.pending.clear();
     for (const [id, f] of this.fetches) {
       this.fetches.delete(id);
+      this.endFetch(f);
+      if (f.save) {
+        this.failSave(f, 'Your Mac went away. Try again.');
+        continue;
+      }
       if (this.files.get(f.key)?.status === 'loading') {
         this.deferred.set(f.key, { ref: f.ref, variant: f.variant, more: false });
         this.setFile(f.key, { status: 'error', got: 0, error: 'Your Mac is away' });
@@ -284,8 +508,15 @@ class Store {
       case 'welcome': {
         const ok = compatible(COMPANION_PROTO, f.v, f.min);
         const outdated = ok ? undefined : COMPANION_PROTO.major < f.min.major ? ('app' as const) : ('mac' as const);
-        this.setState({ mac: f.mac, me: f.me, outdated });
+        const older = this.state.proto?.minor !== f.v.minor;
+        this.setState({ mac: f.mac, me: f.me, outdated, proto: f.v });
+        this.keepRelay(f.relay);
+        // What's on screen again, now that it's known what this Mac has (an older one drops a `sub` naming a topic it doesn't know).
+        if (older) this.transport?.send({ t: 'sub', topics: this.topics() });
+        this.welcomed = !outdated;
         if (!outdated) this.flushOutbox();
+        if (!outdated) this.reportControl();
+        this.emit('linked');
         return;
       }
       case 'view': {
@@ -311,8 +542,13 @@ class Store {
           return;
         }
         const fetch = this.fetches.get(f.id);
-        if (fetch && !f.ok) {
+        if (fetch?.save && !f.ok) {
           this.fetches.delete(f.id);
+          this.endFetch(fetch);
+          this.failSave(fetch, f.error ?? 'Not available');
+        } else if (fetch && !f.ok) {
+          this.fetches.delete(f.id);
+          this.endFetch(fetch);
           this.setFile(fetch.key, { status: 'error', got: 0, error: f.error ?? 'Not available' });
         }
         return;
@@ -320,7 +556,31 @@ class Store {
       case 'chunk':
         this.onChunk(f);
         return;
+      case 'term_data':
+      case 'term_status':
+        for (const fn of [...(this.termListeners.get(f.term) ?? [])]) fn(f);
+        return;
+      case 'req':
+        // The Mac wants the phone to act (BLG-150): the native side does it, the reply goes back.
+        void runOp(f.op as PhoneOp, f.args as Record<string, unknown>).then(
+          (value) => this.transport?.send({ t: 'reply', id: f.id, ok: true, value }),
+          (err: unknown) => this.transport?.send({ t: 'reply', id: f.id, ok: false, error: err instanceof Error ? err.message : String(err) }),
+        );
+        return;
+      case 'vid_ack':
+        mirrorAck(f.seq);
+        return;
+      case 'tun_open':
+      case 'tun_data':
+      case 'tun_ack':
+      case 'tun_close':
+        // The adb tunnel lives in the worklet (it has bare-tcp); nothing for the screens to do.
+        return;
       case 'nudge':
+        if (!this.active) {
+          void notifyNudge(f);
+          return;
+        }
         this.toast({ text: `${f.title} · ${f.body}`, tone: f.kind === 'needsYou' ? 'warn' : 'info', topic: f.topic });
         return;
       case 'bye':
@@ -329,11 +589,106 @@ class Store {
     }
   }
 
+  /** Linked and welcomed: a call now goes, and is answered (unless the link drops). */
+  get linked(): boolean {
+    return this.welcomed && this.state.phase === 'open' && Boolean(this.transport);
+  }
+
+  // ---- your Mac using this phone (BLG-150)
+
+  private offAcc?: () => void;
+  private offAdb?: () => void;
+  private offStop?: () => void;
+  private offMirror?: () => void;
+
+  /** Tell the Mac what this phone allows and how it can be reached (only to a Mac that supports it). */
+  private reportControl(): void {
+    if (!phoneControlAvailable() || !this.supports('control') || this.state.phase !== 'open') return;
+    this.transport?.send({ t: 'control', state: controlState() });
+  }
+
+  /**
+   * The user turned "Let your Mac use this phone" on or off (Settings): watch the Accessibility
+   * service and this phone's Wireless-debugging port while on, and tell the Mac the new state.
+   */
+  controlSet(allowed: boolean): void {
+    if (!phoneControlAvailable()) return;
+    this.offAcc ??= onAccessibilityChange(() => this.reportControl());
+    // The screen's video for the Mac's mirror (1.18), piece by piece as the encoder makes it.
+    this.offMirror ??= watchMirror((f) => this.transport?.send(f));
+    this.offStop ??= onControlStop(() => {
+      setPhoneAllowed(false);
+      this.controlSet(false);
+    });
+    this.offAdb?.();
+    this.offAdb = watchAdb(allowed, () => this.reportControl());
+    // The ongoing "Your Mac is using this phone" notice (with Stop) shows while control is allowed.
+    controlNote(allowed, 'Your agent can act on this phone');
+    this.reportControl();
+  }
+
+  /** The Wireless-debugging pairing code the user typed, sent to the Mac for `adb pair`. */
+  sendAdbCode(code: string): void {
+    this.transport?.send({ t: 'adb_code', code });
+  }
+
   // ---- views
 
-  /** The topics on screen right now (what the Mac should send). */
+  /** The topics on screen right now (what the Mac should send); away, only the ones kept while away. */
   private topics(): Topic[] {
-    return [...this.subCounts.keys()].slice(0, 16);
+    if (this.stayingAway) return [...this.awayTopics].filter(([t, wanted]) => wanted() && this.knows(t)).map(([t]) => t);
+    return [...this.subCounts.keys()].filter((t) => this.knows(t)).slice(0, 16);
+  }
+
+  /** Topics that keep coming while away with Stay connected, as long as `wanted` says (the Home-screen widgets' tiles). */
+  private awayTopics = new Map<Topic, () => boolean>();
+  keepWhileAway(topic: Topic, wanted: () => boolean): void {
+    this.awayTopics.set(topic, wanted);
+  }
+
+  /** Does the Mac have this (its protocol's minor, SINCE)? Before its welcome, only what every 1.x has. */
+  supports(what: keyof typeof SINCE): boolean {
+    const v = this.state.proto;
+    if (!v) return this.state.mode === 'demo';
+    return v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE[what]);
+  }
+  private knows(topic: Topic): boolean {
+    if (isMacTopic(topic)) return this.supports('assistant');
+    if (topic === 'sentinels' || topic.startsWith('sentinel:')) return this.supports('sentinel');
+    if (topic.startsWith('dashboard:')) return this.supports('dashboard');
+    if (topic === 'widgets') return this.supports('widgets');
+    return topic === 'tasks' || topic.startsWith('task:') ? this.supports('tasks') : true;
+  }
+
+  // ---- projects' icons: by checksum, fetched once (companion.icon), kept across launches
+
+  private icons = new Map<string, string>();
+  private iconAsked = new Set<string>();
+  /** A project's icon as a data: URI; undefined while it comes (it's asked for once), or without one. */
+  cachedIcon(sum: string | undefined): string | undefined {
+    if (!sum) return undefined;
+    const have = this.icons.get(sum) ?? kv.get<string>(`icon:${sum}`);
+    if (have) this.icons.set(sum, have);
+    return have;
+  }
+  /** The icon, asking the Mac for it once when it isn't here yet. */
+  icon(sum: string | undefined): string | undefined {
+    if (!sum) return undefined;
+    const have = this.cachedIcon(sum);
+    if (have) return have;
+    if (this.state.phase !== 'open' || this.iconAsked.has(sum) || !this.supports('icon')) return undefined;
+    this.iconAsked.add(sum);
+    this.call<{ sum: string; mime: string; b64: string }>(calls.icon(sum), { queue: false }).then(
+      (r) => {
+        if (!r?.b64) return;
+        const uri = `data:${r.mime};base64,${r.b64}`;
+        this.icons.set(sum, uri);
+        kv.set(`icon:${sum}`, uri);
+        this.emit(`icon:${sum}`);
+      },
+      () => this.iconAsked.delete(sum),
+    );
+    return undefined;
   }
 
   /** A screen shows `topic`: subscribe while it's mounted. */
@@ -358,6 +713,11 @@ class Store {
 
   view<T>(topic: Topic): CachedView<T> | undefined {
     return this.views.get(topic) as CachedView<T> | undefined;
+  }
+
+  /** Every view kept now (on screen, or the last ones), newest first. */
+  cachedViews(): Array<[Topic, CachedView]> {
+    return [...this.views].sort((a, b) => b[1].at - a[1].at) as Array<[Topic, CachedView]>;
   }
 
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
@@ -470,6 +830,19 @@ class Store {
     }
   }
 
+  /**
+   * Dismiss a needs-you item without answering it: gone here at once, and (a Mac with
+   * SINCE.dismiss) gone on the Mac too and after a relink. An older Mac: hidden until the phone relinks.
+   */
+  dismiss(item: NeedsYou): void {
+    this.hide(item.id);
+    if (!this.supports('dismiss')) return;
+    this.call(calls.dismissNeed(item.id)).catch((e: Error) => {
+      this.hide(item.id, false);
+      this.toast({ text: e.message, tone: 'error' });
+    });
+  }
+
   /** Answer a needs-you item: hide it now, show it again if the Mac says no. */
   async answer(item: NeedsYou, c: Call, done: string): Promise<void> {
     this.hide(item.id);
@@ -484,7 +857,7 @@ class Store {
 
   // ---- files
 
-  file(ref: string, variant: 'thumb' | 'full' | 'text'): FileState | undefined {
+  file(ref: string, variant: 'thumb' | 'full' | 'text' | 'save'): FileState | undefined {
     return this.files.get(`${ref}#${variant}`);
   }
 
@@ -504,29 +877,161 @@ class Store {
     }
     const off = more ? (have?.got ?? 0) : 0;
     const id = this.seq++;
-    this.fetches.set(id, { key, ref, variant, parts: [], base: more ? (have?.text ?? '') : '', got: off });
-    this.setFile(key, { ...(have ?? { got: 0 }), status: 'loading' });
-    this.transport.send({ t: 'get', id, ref: ref as OutputView['ref'], variant, off });
+    const fetch: Fetch = { key, ref, variant, parts: [], base: more ? (have?.text ?? '') : '', got: off, ...(variant === 'text' ? {} : { asm: new Assembly() }) };
+    this.fetches.set(id, fetch);
+    this.setFile(key, { ...(have ?? { got: 0 }), status: 'loading', error: undefined });
+    this.ask(id, fetch, off);
+  }
+
+  /** Ask for a piece, and fail the fetch (with Retry on screen) if it doesn't come in time. */
+  private ask(id: number, fetch: Fetch, off: number): void {
+    if (fetch.timer) clearTimeout(fetch.timer);
+    fetch.timer = setTimeout(() => {
+      if (this.fetches.get(id) !== fetch) return;
+      this.fetches.delete(id);
+      this.endFetch(fetch);
+      if (fetch.save) return this.failSave(fetch, 'Your Mac took too long to send it.');
+      this.setFile(fetch.key, { status: 'error', got: 0, error: 'Your Mac took too long to send it.' });
+    }, PIECE_TIMEOUT_MS);
+    this.transport?.send({ t: 'get', id, ref: fetch.ref as OutputView['ref'], variant: fetch.variant, off });
+  }
+
+  private endFetch(fetch: Fetch, keep = false): void {
+    if (fetch.timer) clearTimeout(fetch.timer);
+    fetch.timer = undefined;
+    if (!keep) fetch.sink?.drop();
   }
 
   private onChunk(f: MacFrame & { t: 'chunk' }): void {
     const fetch = this.fetches.get(f.id);
     if (!fetch) return;
+    if (fetch.asm) return this.onPicturePiece(f.id, fetch, fetch.asm, f);
     fetch.parts.push(f.b64);
     if (!f.eof) return;
     this.fetches.delete(f.id);
-    if (fetch.variant === 'text') {
-      const bytes = fromB64(fetch.parts.join(''));
-      const text = fetch.base + fromUtf8(bytes);
-      this.setFile(fetch.key, { status: 'ready', text, got: fetch.got + bytes.length, size: f.size, mime: f.mime });
-    } else {
-      this.setFile(fetch.key, { status: 'ready', uri: `data:${f.mime};base64,${fetch.parts.join('')}`, got: f.size, size: f.size, mime: f.mime });
+    this.endFetch(fetch);
+    const bytes = fromB64(fetch.parts.join(''));
+    const text = fetch.base + fromUtf8(bytes);
+    this.setFile(fetch.key, { status: 'ready', text, got: fetch.got + bytes.length, size: f.size, mime: f.mime });
+  }
+
+  /**
+   * A piece of a picture (BLG-106): kept, then the next asked for until the last, so a Retina
+   * screenshot or a big GIF comes whole (it used to stop at the first 192 KB, for ever).
+   */
+  private onPicturePiece(id: number, fetch: Fetch, asm: Assembly, f: MacFrame & { t: 'chunk' }): void {
+    const step = asm.add(f);
+    const fail = (error: string): void => {
+      this.fetches.delete(id);
+      this.endFetch(fetch);
+      if (fetch.save) return this.failSave(fetch, error);
+      this.setFile(fetch.key, { status: 'error', got: 0, error });
+    };
+    if (step.t === 'fail') return fail(step.error);
+    // Full pictures go to a file as they come; thumbnails are small.
+    fetch.sink ??= fetch.variant === 'full' ? fileSink(fetch.ref, f.mime, fetch.save ? 'save' : 'picture') : memorySink();
+    fetch.sink.add(f.b64);
+    if (step.t === 'next') {
+      this.setFile(fetch.key, { status: 'loading', got: step.got, size: step.size, mime: f.mime });
+      return this.ask(id, fetch, step.off);
     }
+    this.fetches.delete(id);
+    this.endFetch(fetch, true);
+    try {
+      const uri = fetch.sink.finish(f.mime);
+      this.setFile(fetch.key, { status: 'ready', uri, got: step.got, size: step.size, mime: f.mime });
+      fetch.save?.resolve(uri);
+    } catch (e) {
+      fail((e as Error).message);
+    }
+  }
+
+  /**
+   * The whole of an output in a file on the phone, to save it (BLG-123): a video or a file that
+   * isn't on the phone yet, piece by piece like a full picture (bigger ones allowed: MAX_SAVE_BYTES).
+   * How far it got is `file(ref, 'save')`; the copy is the caller's to delete.
+   */
+  saveCopy(ref: string): Promise<string> {
+    const key = `${ref}#save`;
+    if ([...this.fetches.values()].some((f) => f.key === key)) return Promise.reject(new Error('Already saving it.'));
+    if (this.state.phase !== 'open' || !this.transport) return Promise.reject(new Error('Saving needs your Mac: it’s away.'));
+    return new Promise<string>((resolve, reject) => {
+      const id = this.seq++;
+      const fetch: Fetch = { key, ref, variant: 'full', parts: [], base: '', got: 0, asm: new Assembly(MAX_SAVE_BYTES), save: { resolve, reject } };
+      this.fetches.set(id, fetch);
+      this.setFile(key, { status: 'loading', got: 0 });
+      this.ask(id, fetch, 0);
+    });
+  }
+
+  /** What `file(ref, 'save')` says goes, once the copy is saved (or it failed and was said). */
+  doneSaving(ref: string): void {
+    this.files.delete(`${ref}#save`);
+    this.emit(`file:${ref}#save`);
+  }
+
+  /** The cache was emptied (Settings › Storage): full pictures are fetched again when next shown. */
+  forgetPictures(): void {
+    for (const [key, f] of [...this.files]) {
+      if (!key.endsWith('#full') || f.status === 'loading') continue;
+      this.files.delete(key);
+      this.emit(`file:${key}`);
+    }
+  }
+
+  private failSave(fetch: Fetch, error: string): void {
+    this.setFile(fetch.key, { status: 'error', got: 0, error });
+    fetch.save?.reject(new Error(error));
+  }
+
+  // ---- videos (BLG-100, BLG-103): streamed by the link worklet's loopback server
+
+  /** A URL the video player streams this output from, or why it can't (the demo, the Mac away). */
+  async mediaUrl(o: Pick<OutputView, 'ref' | 'name'>): Promise<string> {
+    const t = this.transport;
+    if (!t?.mediaBase) throw new Error('Videos play when the phone is linked to your Mac.');
+    if (this.state.phase !== 'open') throw new Error('Your Mac is away.');
+    return `${await t.mediaBase()}${mediaPath(o.ref, o.name)}`;
   }
 
   private setFile(key: string, s: FileState): void {
     this.files.set(key, s);
     this.emit(`file:${key}`);
+  }
+
+  // ---- a worktree's terminals (1.7): streamed only while their screen is open
+
+  private termListeners = new Map<string, Set<(f: TermFrame) => void>>();
+  private termsOn = new Map<string, number>();
+
+  /**
+   * Show a terminal: its output and status come to `fn` (from a clean screen first) until the
+   * returned function is called. Attached again when the link opens or the app comes back.
+   */
+  attachTerm(key: string, fn: (f: TermFrame) => void): () => void {
+    let set = this.termListeners.get(key);
+    if (!set) this.termListeners.set(key, (set = new Set()));
+    set.add(fn);
+    this.termsOn.set(key, (this.termsOn.get(key) ?? 0) + 1);
+    if (this.state.phase === 'open') this.transport?.send({ t: 'term_attach', term: key });
+    return () => {
+      set!.delete(fn);
+      const n = (this.termsOn.get(key) ?? 1) - 1;
+      if (n > 0) return void this.termsOn.set(key, n);
+      this.termsOn.delete(key);
+      if (this.state.phase === 'open') this.transport?.send({ t: 'term_detach', term: key });
+    };
+  }
+
+  /** Keys typed on the phone, into the session the Mac shows too (dropped while the Mac is away). */
+  termInput(key: string, data: string): boolean {
+    if (this.state.phase !== 'open' || !this.transport || !data) return false;
+    for (let at = 0; at < data.length; at += 64_000) this.transport.send({ t: 'term_input', term: key, data: data.slice(at, at + 64_000) });
+    return true;
+  }
+
+  private reattachTerms(): void {
+    for (const key of this.termsOn.keys()) this.transport?.send({ t: 'term_attach', term: key });
   }
 
   // ---- toasts

@@ -1,11 +1,14 @@
 import { motion } from 'motion/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { Select, Switch } from '../dialogs/settings-controls.js';
+import { STARTERS, type FireLook, DEFAULT_FIRE, presetOf, starterOf } from '../chat/fire-look.js';
+import { Preview } from '../dialogs/FireSettings.js';
+import { Switch } from '../dialogs/settings-controls.js';
 import { previewRequestPopup } from '../gateway/request-native.js';
 import { useApi, useApp } from '../lib/beluga.js';
-import { askNotificationPermission } from '../lib/sounds/access.js';
-import { ACCENTS, type Accent, type UiPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
+import { askNotificationPermission, openNotificationSettings, useNotificationAccess } from '../lib/sounds/access.js';
+import { ACCENTS, type Accent, type UiPrefs, getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EASE_OUT, Rise, SPRING, Words } from './fx.js';
 import { Glass } from './Glass.js';
 import s from './onboarding.module.css';
@@ -133,6 +136,56 @@ function SetupRow({ label, detail, children, index }: { readonly label: string; 
 }
 
 /**
+ * The message box's fire: two pixel fires or none, tried in a box like the real one as you pick.
+ * Someone still on the default starts on Arcade; a look of their own is left alone until they pick.
+ */
+export function Fire() {
+  const look = usePrefs().maxFire;
+  const set = (patch: Partial<FireLook>): void => {
+    const next = { ...getPrefs().maxFire, ...patch };
+    setPrefs({ maxFire: { ...next, preset: presetOf(next) } });
+  };
+  useEffect(() => {
+    const now = getPrefs().maxFire;
+    const untouched = (['preset', 'show', 'typing', 'popDelete', 'border'] as const).every((k) => now[k] === DEFAULT_FIRE[k]);
+    if (untouched) set(STARTERS[0]!.set);
+  }, []);
+  const picked = starterOf(look);
+  const starter = STARTERS.find((x) => x.id === picked);
+  return (
+    <div className={s.setup}>
+      <h2 className={s.title}>
+        <Words text="Set your words on fire." />
+      </h2>
+      <Rise delay={0.2} className={s.body}>
+        On Max effort, the box you type in burns. Pick one and type below to try it; Settings › Fire & Confetti has the rest.
+      </Rise>
+      <Rise delay={0.3} className={s.fireTry}>
+        <Preview look={look} className={s.fireStage} />
+      </Rise>
+      <Glass radius={16} width="100%" className={s.fireRows}>
+        <SetupRow index={0} label={starter?.name ?? 'Your own'} detail={starter?.blurb ?? 'Tuned in Settings. Pick one to change it.'}>
+          <Choice label="Fire" value={picked ?? ''} onChange={(id) => set(STARTERS.find((x) => x.id === id)!.set)} options={STARTERS.map((x) => ({ value: x.id, label: x.name }))} />
+        </SetupRow>
+        {picked !== 'none' ? (
+          <SetupRow index={1} label="Where it burns" detail={look.where === 'max' ? 'Only on Max effort, so it tells you you’re on Max.' : 'With every model and effort.'}>
+            <Choice
+              label="Where it burns"
+              value={look.where}
+              onChange={(where) => set({ where })}
+              options={[
+                { value: 'max', label: 'On Max Only' },
+                { value: 'everywhere', label: 'Everywhere' },
+              ]}
+            />
+          </SetupRow>
+        ) : null}
+      </Glass>
+    </div>
+  );
+}
+
+/**
  * When something needs you (Claude asks, a decision of yours in a plan, a friend's request): a
  * card in the corner of the screen, over any app, full-screen ones too. It needs no macOS
  * permission; notifications (asked for here) are the fallback and fill Notification Center.
@@ -141,19 +194,25 @@ export function Popups() {
   const api = useApi();
   const notify = useApp((st) => st.prefs.notify);
   const [asked, setAsked] = useState<'no' | 'asking' | 'done'>('no');
+  // What macOS says (checked again as you come back from System Settings).
+  const { access, recheck } = useNotificationAccess();
+  const state = access?.state;
   const ask = (): void => {
     setAsked('asking');
     void askNotificationPermission()
       .catch(() => undefined)
-      .then(() => setAsked('done'));
+      .then((a) => {
+        setAsked('done');
+        recheck(a);
+      });
   };
   return (
     <div className={s.setup}>
       <h2 className={s.title}>
-        <Words text="Never miss it when Claude needs you." />
+        <Words text="Never miss it when your agent needs you." />
       </h2>
       <Rise delay={0.2} className={s.body}>
-        When Claude asks you something, a plan waits on your decision, or a friend asks your Claude, a small card shows in the corner of your screen, over whatever you’re doing, full-screen apps too. It never takes the keyboard from you.
+        When your agent asks you something, a plan waits on your decision, or a friend asks your agent, a small card shows in the corner of your screen, over whatever you’re doing, full-screen apps too. It never takes the keyboard from you.
       </Rise>
       <Glass radius={16} width="100%" className={s.rows}>
         <SetupRow index={0} label="Show on-screen popups when something needs me" detail="Needs no permission. Off: you still get notifications.">
@@ -164,10 +223,32 @@ export function Popups() {
             Show Me a Sample
           </button>
         </SetupRow>
-        <SetupRow index={2} label="Notifications too" detail={asked === 'done' ? 'Asked. You can change it in System Settings › Notifications.' : 'macOS asks once. They reach you when popups are off, and stay in Notification Center.'}>
-          <button type="button" className={cx(s.input, s.rowButton)} disabled={asked !== 'no'} onClick={ask}>
-            {asked === 'done' ? 'Asked' : asked === 'asking' ? 'Asking…' : 'Allow Notifications'}
-          </button>
+        <SetupRow
+          index={2}
+          label="Notifications too"
+          detail={
+            state === 'allowed'
+              ? 'Allowed. They reach you when popups are off, and stay in Notification Center.'
+              : state === 'off'
+                ? 'Turned off for Beluga in System Settings › Notifications.'
+                : asked === 'done'
+                  ? 'Asked. You can change it in System Settings › Notifications.'
+                  : 'Optional. macOS asks once. They reach you when popups are off, and stay in Notification Center.'
+          }
+        >
+          {state === 'allowed' ? (
+            <span className={s.grant} data-grant="granted">
+              <Icon name="check" size={11} /> Allowed
+            </span>
+          ) : state === 'off' ? (
+            <button type="button" className={cx(s.input, s.rowButton)} onClick={() => void openNotificationSettings()}>
+              Open System Settings
+            </button>
+          ) : (
+            <button type="button" className={cx(s.input, s.rowButton)} disabled={asked !== 'no'} onClick={ask}>
+              {asked === 'done' ? 'Asked' : asked === 'asking' ? 'Asking…' : 'Allow Notifications'}
+            </button>
+          )}
         </SetupRow>
       </Glass>
     </div>
@@ -184,7 +265,6 @@ export function Setup() {
   const self = useApp((st) => st.self?.name ?? '');
   const policy = useApp((st) => st.policy);
   const core = useApp((st) => st.prefs);
-  const models = useApp((st) => st.models);
   const [name, setName] = useState(self);
   // What's typed is saved on Return, on leaving the field, and when the step goes (⌘] doesn't blur).
   const typed = useRef({ name, self });
@@ -206,7 +286,7 @@ export function Setup() {
         <SetupRow index={0} label="Your name" detail="What friends see when you work together.">
           <input className={s.input} aria-label="Your name" value={name} placeholder="Your name" maxLength={64} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Enter' && saveName()} />
         </SetupRow>
-        <SetupRow index={1} label="When a friend asks your Claude" detail={policy === 'ask' ? 'Recommended: you see and approve every request.' : policy === 'auto' ? 'Requests from friends run without asking.' : 'Only you can use your Claude.'}>
+        <SetupRow index={1} label="When a friend asks your agent" detail={policy === 'ask' ? 'Recommended: you see and approve every request.' : policy === 'auto' ? 'Requests from friends run without asking.' : 'Only you can use your agent.'}>
           <Choice
             label="Friends' requests"
             value={policy}
@@ -218,18 +298,14 @@ export function Setup() {
             ]}
           />
         </SetupRow>
-        <SetupRow index={2} label="Tell me when Claude needs me" detail={core.notify.onlyAway ? 'When a run finishes or waits for you, while you’re in another app.' : 'When a run finishes or waits for you.'}>
+        <SetupRow index={2} label="Tell me when my agent needs me" detail={core.notify.onlyAway ? 'When a run finishes or waits for you, while you’re in another app.' : 'When a run finishes or waits for you.'}>
           <Switch label="Notifications" on={core.notify.desktop} onChange={(v) => void api.session.setPrefs({ notify: { ...core.notify, desktop: v, ...(v ? { onlyAway: true } : {}) } })} />
         </SetupRow>
-        <SetupRow index={3} label="Ask before my Claude runs commands" detail="Off lets Claude work on its own in your worktrees. Secrets stay blocked either way.">
+        <SetupRow index={3} label="Ask before my agent runs commands" detail="Off lets your agent work on its own in your worktrees. Secrets stay blocked either way.">
           <Switch label="Ask before running commands" on={core.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
         </SetupRow>
-        {models.length ? (
-          <SetupRow index={4} label="Model for new conversations" detail="Each conversation can pick its own.">
-            <Select label="Model" value={core.model ?? ''} onChange={(v) => void api.workbench.setModel(undefined, v)} options={models.map((m) => ({ value: m.value, label: m.label }))} />
-          </SetupRow>
-        ) : null}
-        <SetupRow index={5} label="Send messages with" detail={prefs.sendWith === 'enter' ? 'Shift-Return makes a new line.' : 'Return makes a new line.'}>
+        {/* Your agent is picked on its own step, right after the welcome (AgentsStep.tsx). */}
+        <SetupRow index={4} label="Send messages with" detail={prefs.sendWith === 'enter' ? 'Shift-Return makes a new line.' : 'Return makes a new line.'}>
           <Choice
             label="Send with"
             value={prefs.sendWith}

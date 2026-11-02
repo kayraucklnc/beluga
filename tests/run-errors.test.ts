@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AgentBackend } from '../src/agent/types.js';
-import { keepLines, trackedSpawn } from '../src/agent/claude-process.js';
+import { keepLines, trackedSpawn } from '../src/agent/runtime/claude/claude-process.js';
 import { AgentHost } from '../src/core/agent-host.js';
 import { Board } from '../src/core/board/board.js';
 import { BoardWork } from '../src/core/board/work.js';
@@ -10,10 +10,12 @@ import { liveFrom, planView } from '../src/core/plans/progress.js';
 import { LIMIT_MARGIN_MS, pulseWords } from '../src/core/plans/watchdog.js';
 import { PlansWork } from '../src/core/plans/work.js';
 import { Store, initialState } from '../src/core/store.js';
+import { Workbench } from '../src/core/workbench.js';
 import type { WorkspaceController } from '../src/core/workspace-controller.js';
 import type { BodyOf } from '../src/protocol.js';
 import { CONTINUE_PROMPT, CRASH_RETRY_MS, RunFailedError, classifyRun, decodeFailure, encodeFailure, failureText, failureTitle, resetFromText } from '../src/shared/run-failure.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
+import { PLATFORM_DOCS, signInChoices } from '../packages/mac/src/chat/sign-in-choices.js';
 import { waitFor } from './helpers.js';
 
 /** Running out of usage or Claude Code crashing: said in words, continued in one click, or by itself. */
@@ -26,7 +28,7 @@ describe('how a run ended, in words', () => {
     const resetsAt = at(15) + 24 * 60 * MIN;
     const f = classifyRun({ error: 'Claude Code process exited with code 1', rejectedUntil: resetsAt, stderr: [] });
     expect(f).toMatchObject({ kind: 'usage_limit', resetsAt });
-    expect(failureTitle({ ...f, resetsAt: at(15) }, at(12))).toBe('Claude hit your usage limit · resets at 15:00');
+    expect(failureTitle({ ...f, resetsAt: at(15) }, at(12))).toBe('You hit your Claude plan usage limit · resets at 15:00');
   });
 
   it("Claude Code's limit notice: the reset time read from its words", () => {
@@ -65,6 +67,54 @@ describe('how a run ended, in words', () => {
     expect(classifyRun({ error: 'Claude Code process exited with code 1', stderr: ['Error: read ECONNRESET'] }).kind).toBe('network');
     expect(classifyRun({ result: 'API Error: 529 Overloaded', apiError: 'overloaded' }).kind).toBe('api');
     expect(classifyRun({ error: 'aborted', stopped: true }).kind).toBe('stopped');
+  });
+
+  it('Claude Code with no login is signed out (Sign In, not Continue), not an API failure', () => {
+    const f = classifyRun({ result: 'Not logged in · Please run /login', apiError: 'authentication_failed' });
+    expect(f.kind).toBe('signed_out');
+    expect(failureTitle(f)).toBe('Claude Code isn’t signed in on this Mac');
+    expect(classifyRun({ error: 'Claude Code process exited with code 1', stderr: ['OAuth token has expired'] }).kind).toBe('signed_out');
+    // A bad API key is yours to fix in your variables: signing in wouldn't help.
+    expect(classifyRun({ result: 'Invalid API key · Fix external API key', apiError: 'authentication_failed' }).kind).toBe('api');
+  });
+
+  it('a sign-in that expired or was revoked is signed out too (BLG-589), and says it expired', () => {
+    for (const result of ['Failed to authenticate: Auth session expired and could not be refreshed', 'Failed to authenticate: OAuth session expired and could not be refreshed', 'Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.']) {
+      const f = classifyRun({ result, apiError: 'authentication_failed' });
+      expect(f.kind).toBe('signed_out');
+      expect(failureTitle(f)).toBe('Claude Code’s sign-in on this Mac expired');
+    }
+  });
+
+  it('Sign In offers /login’s three choices: a subscription, a Console account, or a 3rd-party platform’s setup page', () => {
+    const picked: string[] = [];
+    const opened: string[] = [];
+    const rows = signInChoices((how) => picked.push(how), (url) => opened.push(url));
+    expect(rows.map((r) => r.label)).toEqual(['Claude account with subscription', 'Anthropic Console account', '3rd-party platform']);
+    rows[0]!.onSelect();
+    rows[1]!.onSelect();
+    expect(picked).toEqual(['claudeai', 'console']);
+    expect(rows[2]!.submenu?.map((r) => r.label)).toEqual(['Amazon Bedrock', 'Microsoft Foundry', 'Google Vertex AI']);
+    rows[2]!.submenu!.forEach((r) => r.onSelect());
+    expect(opened).toEqual(PLATFORM_DOCS.map((p) => p.url));
+  });
+
+  it('a Claude or Console account signs in with its own flag of `claude auth login`', async () => {
+    const store = new Store(initialState('t', 'ask'));
+    const wb = new Workbench({
+      store,
+      controller: { manager: { list: [], find: () => undefined } } as unknown as WorkspaceController,
+      notify: () => undefined,
+      toast: () => undefined,
+      intend: () => undefined,
+      askClaude: () => undefined,
+      setPrefs: () => undefined,
+      remoteRef: () => undefined,
+    });
+    const open = vi.spyOn(wb as unknown as { openSession: (...a: unknown[]) => unknown }, 'openSession').mockReturnValue(undefined);
+    await wb.signInClaude('shell:1', 'room');
+    await wb.signInClaude('shell:1', 'room', 'console');
+    expect(open.mock.calls.map((c) => String(c[2]).replace(/^.* auth login/, 'auth login'))).toEqual(['auth login --claudeai', 'auth login --console']);
   });
 
   it("the card's words carry it: a readable line first, the facts after", () => {
@@ -211,7 +261,7 @@ describe('a usage limit pauses the plan, and it goes on by itself when usage is 
     await t.later(resetsAt - t.now() + LIMIT_MARGIN_MS);
     expect(t.asked.filter((a) => a.channel === 'ws:main' && a.prompt === CONTINUE_PROMPT)).toHaveLength(1);
     expect(t.wakes()).toHaveLength(1);
-    expect(t.wakes()[0]!.prompt).toContain('Claude hit your usage limit');
+    expect(t.wakes()[0]!.prompt).toContain('You hit your Claude plan usage limit');
     await t.later(MIN);
     expect(t.wakes()).toHaveLength(1);
     expect(t.asked.filter((a) => a.prompt === CONTINUE_PROMPT)).toHaveLength(1);

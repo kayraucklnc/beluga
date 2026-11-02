@@ -157,33 +157,44 @@
 .close:hover {
   background: var(--bg-hover);
 }
+/*
+ * The frame the picture sits in. The picture is drawn at its own size, its top-left corner at the
+ * frame's center, and placed with a transform (ChatImages' Full, components/zoom-model.ts): centered
+ * both ways at any size and shape, and zoomed without laying anything out again.
+ */
 .stage {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: grid;
   place-items: center;
-  padding: 18px 40px 8px;
+  overflow: hidden;
   cursor: zoom-out;
+  touch-action: none;
 }
-/* Zoomed past the window: it scrolls, both ways. */
+/* Zoomed in: drag (or scroll) to look around. */
 .stageZoom {
-  display: block;
-  overflow: auto;
-  cursor: default;
+  cursor: grab;
 }
-.stageZoom .full {
-  display: block;
-  max-width: none;
-  max-height: none;
-  margin: auto;
+.stageZoom.dragging {
+  cursor: grabbing;
 }
 .full {
-  max-width: 100%;
-  max-height: 100%;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;
   border-radius: 6px;
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.45);
   cursor: default;
-  object-fit: contain;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.stageZoom .full {
+  cursor: inherit;
+  border-radius: 0;
 }
 .fullPending {
   width: 280px;
@@ -226,6 +237,15 @@
   overflow: hidden;
   background: var(--bg-sunken);
   box-shadow: 0 0 0 0.5px var(--hairline-strong);
+}
+.pendingOpen {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
 }
 .pendingItem img {
   width: 100%;

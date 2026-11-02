@@ -27,12 +27,27 @@ const DIR_CACHE_MS = 5_000;
 
 /**
  * Files the Mac app shows as themselves, by extension: images a document shows inline (SVG goes
- * in an <img>, where scripts never run) and PDFs its reader draws page by page.
+ * in an <img>, where scripts never run), PDFs its reader draws page by page, and videos it plays
+ * (BLG-100).
  */
-const DOC_IMAGE_TYPES: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf' };
+const DOC_IMAGE_TYPES: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+};
 export const MAX_DOC_IMAGE_BYTES = 10 * 1024 * 1024;
 /** PDFs are often bigger than a diagram (scans, slides). */
 export const MAX_DOC_PDF_BYTES = 40 * 1024 * 1024;
+/** A video plays from memory in the reader (a screen recording, a demo). */
+export const MAX_DOC_VIDEO_BYTES = 64 * 1024 * 1024;
 
 export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
@@ -160,7 +175,7 @@ export class RoomFiles {
   serveFs(from: string, body: BodyOf<'fs_list'> | BodyOf<'fs_read'> | BodyOf<'fs_fetch'>): Promise<void> {
     if (body.kind === 'fs_fetch') return this.serveChunk(from, body);
     if (body.kind === 'fs_list') {
-      return this.reply(from, body.reqId, async () => ({ kind: 'fs_list_result', reqId: body.reqId, ok: true, entries: await this.deps.shares.list(body.share, body.path, from === this.selfId) }), 'fs_list_result');
+      return this.reply(from, body.reqId, async () => ({ kind: 'fs_list_result', reqId: body.reqId, ok: true, entries: await this.deps.shares.list(body.share, body.path, from === this.selfId, body.times === true) }), 'fs_list_result');
     }
     this.deps.shares.watchFile(body.share, body.path);
     return this.reply(from, body.reqId, async () => ({ kind: 'fs_read_result', reqId: body.reqId, ok: true, ...(await this.deps.shares.read(body.share, body.path, from === this.selfId)) }), 'fs_read_result');
@@ -245,12 +260,12 @@ export class RoomFiles {
   async readImageFile(at: Location): Promise<{ mediaType: string; bytes: Buffer }> {
     const mediaType = DOC_IMAGE_TYPES[path.extname(at.path).toLowerCase()];
     if (!mediaType) throw new Error('Not an image');
-    const max = mediaType === 'application/pdf' ? MAX_DOC_PDF_BYTES : MAX_DOC_IMAGE_BYTES;
+    const max = mediaType === 'application/pdf' ? MAX_DOC_PDF_BYTES : mediaType.startsWith('video/') ? MAX_DOC_VIDEO_BYTES : MAX_DOC_IMAGE_BYTES;
     return { mediaType, bytes: await fetchBytes(at, (to, b) => this.request(to, b), max) };
   }
 
-  async listFiles(at: Location): Promise<readonly FsEntry[]> {
-    const res = await this.request<BodyOf<'fs_list_result'>>(at.owner, { kind: 'fs_list', reqId: randomUUID(), share: at.share, path: at.path });
+  async listFiles(at: Location, opts: { times?: boolean } = {}): Promise<readonly FsEntry[]> {
+    const res = await this.request<BodyOf<'fs_list_result'>>(at.owner, { kind: 'fs_list', reqId: randomUUID(), share: at.share, path: at.path, ...(opts.times ? { times: true } : {}) });
     return res.entries ?? [];
   }
 

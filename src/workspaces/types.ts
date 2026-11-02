@@ -1,3 +1,5 @@
+import type { AgentRef } from '../protocol.js';
+import type { Effort } from '../shared/settings-schema.js';
 import type { Status } from './git.js';
 import type { DefaultBranch, FetchProblem } from './sync.js';
 import type { ProjectScripts, ResolvedScripts } from './scripts.js';
@@ -11,6 +13,8 @@ export interface WorkspaceUsage {
   /** Estimated cost in USD (what the SDK reports; not a bill). */
   readonly cost: number;
   readonly runs: number;
+  /** A local or bring-your-own model (BLG-450): no plan, no cost; how fast its last turn wrote, in tokens a second. */
+  readonly local?: { readonly tps?: number };
   /** The SDK reports running totals per conversation; remembered to add only what's new. */
   readonly lastSession?: string;
   readonly last?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };
@@ -41,15 +45,27 @@ export interface WorkspaceRecord {
   readonly archived?: boolean;
   /** Archived smartly: how much space it freed, what it kept, and what makes the rest again. */
   readonly archive?: { readonly freedBytes: number; readonly keptBytes: number; readonly remake: readonly string[]; readonly at: number };
-  /** Claude conversation to resume in this workspace. */
+  /** The conversation to resume in this workspace (its runtime's own id: see sessionRuntime). */
   readonly sessionId?: string;
+  /** The runtime sessionId and forkFromSession belong to (unset: 'claude'); another runtime never resumes them. */
+  readonly sessionRuntime?: string;
+  /** The agent picked for this workspace (unset: your default). */
+  readonly agent?: AgentRef;
+  /** Switched quietly from this agent (its name, BLG-592): the recent conversation goes with your next message, then this clears. */
+  readonly carryFrom?: string;
   /** Set on forks until their first run, so Claude branches the parent's conversation. */
   readonly forkFromSession?: string;
   readonly forkedFrom?: string;
+  /** Brought in from a Claude Code conversation that ran outside Beluga (its session id, BLG-321). */
+  readonly importedSession?: string;
   /** Hashes of env files copied into this worktree at creation, to detect changes later. */
   readonly envSnapshot?: Readonly<Record<string, string>>;
+  /** Env files changed here that you said stay in this worktree (by their hash then): not asked again until they change. */
+  readonly envKept?: Readonly<Record<string, string>>;
   /** Model picked for this conversation (unset: your default). */
   readonly model?: string;
+  /** Thinking effort picked for this conversation (a Sentinel step's, BLG-498; unset: Settings'). */
+  readonly effort?: Effort;
   readonly usage?: WorkspaceUsage;
   /** Handed off to a friend (their name), who continues it on their computer. */
   readonly handedTo?: string;
@@ -59,6 +75,26 @@ export interface WorkspaceRecord {
   readonly purpose?: 'sync_main';
   /** You carried on after this PR merged (Continue After Merge): it and older ones are done, so the branch can have a new one. */
   readonly prDone?: number;
+  /** That PR (Continue After Merge): Claude is told its earlier work shipped in it, and that what's new goes in a new one. */
+  readonly prShipped?: { readonly number: number; readonly url?: string; readonly into: string };
+  /**
+   * Merge When Ready: Beluga merges PR `number` itself once its checks pass (and stops, saying why,
+   * if they fail or it conflicts). Not GitHub's auto-merge: that merges at once when no check is required.
+   */
+  readonly mergeWhenReady?: MergeWait;
+  /**
+   * A project's main checkout only: the chat its conversation from before became (BLG-70). The main
+   * checkout is no conversation of its own; opening it opens that chat, or the project's home.
+   */
+  readonly movedTo?: string;
+}
+
+export interface MergeWait {
+  readonly number: number;
+  readonly method: 'squash' | 'merge' | 'rebase';
+  /** When you asked (a PR with no checks yet gets a moment for them to show up). */
+  readonly since: number;
+  readonly deleteBranch?: boolean;
 }
 
 /** A workspace as shown in the UI: record + live git status. */

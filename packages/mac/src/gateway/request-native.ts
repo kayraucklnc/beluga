@@ -3,7 +3,7 @@ import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { inApp } from '../lib/boot.js';
 import { dndActive } from '@beluga/shared/quiet.js';
 import { planOfChannel } from '@beluga/core/notify.js';
-import { NOTIFICATION_TAP } from '../lib/notices.js';
+import { NOTIFICATION_TAP, macNoticeTarget } from '../lib/notices.js';
 import { popupPublisher } from './popup-bridge.js';
 import { type PopupItem, type PopupNeed, isNeedId, isPreviewId, popupNeeds, popupRequests, previewItems } from './popup-model.js';
 import { REQUEST_NOTIFICATION, type RequestAction, outsideStep, parseRequestMenuId, trayRequests } from './request-actions.js';
@@ -54,7 +54,7 @@ export async function runRequestAction(client: SocketClient, action: RequestActi
     stopPreview();
     return void client.store.dispatch({ type: 'toast', text: 'That was a preview: nothing was asked, and nothing was sent', level: 'info' });
   }
-  if (isNeedId(approval)) return openNeed(shownNeeds.get(approval!));
+  if (isNeedId(approval)) return openNeed(client, approval!);
   const approvals = client.store.getState().approvals;
   const known = approvals.find((a) => a.id === approval) ?? (task ? approvals.find((a) => a.task === task) : undefined);
   const say = (text: string, level: 'info' | 'success' | 'error' = 'info'): void => void client.store.dispatch({ type: 'toast', text, level });
@@ -62,6 +62,8 @@ export async function runRequestAction(client: SocketClient, action: RequestActi
   if (step.kind === 'gone') return say('That request was already answered');
   if (step.kind === 'review') {
     if (step.task) openRequest(step.task);
+    // Your own Claude's approval: the conversation it holds up, where its card is.
+    else if (known && !known.peer) openWhere(client, known.channel);
     else client.store.dispatch({ type: 'view', view: { kind: 'requests' } });
     return;
   }
@@ -93,10 +95,28 @@ const quietNow = (st: ReturnType<SocketClient['store']['getState']>): boolean =>
 /** What your own Claude needs, as the card shows it now (by id), so Open knows where to go. */
 const shownNeeds = new Map<string, PopupNeed>();
 
-/** Open on a "Claude needs you" card: where it's asked (a plan's conversation opens the plan), like clicking its notification. */
-function openNeed(need: PopupNeed | undefined): void {
-  if (!need?.channel) return;
-  document.dispatchEvent(new CustomEvent(NOTIFICATION_TAP, { detail: { channel: need.channel } }));
+/**
+ * Open on a "Claude needs you" card: where it's asked (a plan's conversation opens the plan), like
+ * clicking its notification. The card may have left the pop-up's list by now (bringing the window
+ * forward changes what counts as showing), so what it's about is looked up again by its id.
+ */
+function openNeed(client: SocketClient, id: string): void {
+  openWhere(client, shownNeeds.get(id)?.channel ?? needChannel(client.store.getState(), id));
+}
+
+/** The conversation a need's id ("need:a:<approval>", "need:q:<qid>", "need:pass:<plan>:…") is about, from the state. */
+function needChannel(st: ReturnType<SocketClient['store']['getState']>, id: string): string | undefined {
+  const [, kind, rest = ''] = /^need:(a|q|pass):(.*)$/.exec(id) ?? [];
+  if (kind === 'a') return st.approvals.find((a) => a.id === rest)?.channel;
+  if (kind === 'q') return st.questions.find((q) => q.qid === rest)?.channel;
+  if (kind === 'pass') return st.plans.plans.find((p) => rest.startsWith(`${p.id}:`))?.home;
+  return undefined;
+}
+
+/** Go to a conversation (the notification's way: a plan's opens the plan); with none the window can open, Your Mac, which shows every approval. */
+function openWhere(client: SocketClient, channel: string | undefined): void {
+  if (channel && macNoticeTarget(client.store.getState(), channel)) document.dispatchEvent(new CustomEvent(NOTIFICATION_TAP, { detail: { channel } }));
+  else client.store.dispatch({ type: 'view', view: { kind: 'assistant' } });
 }
 
 /** The preview (⌘K › Preview Request Pop-up) while it shows, and who to tell when it changes. */

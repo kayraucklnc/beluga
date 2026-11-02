@@ -1,5 +1,6 @@
 import type { Intent } from '../core/intents.js';
 import { planById } from '../core/plans/model.js';
+import { planConversations } from '../core/plans/owner.js';
 import {
   type Action,
   type AppState,
@@ -42,11 +43,34 @@ export const initialScreen: ScreenState = { view: { kind: 'room' }, tabs: [], aw
 
 const clamp = (n: number, max: number): number => Math.min(Math.max(0, max), Math.max(0, n));
 
+/**
+ * A project's main checkout is no conversation (BLG-70): going to it goes to the chat its old
+ * conversation became, else to the project's home. Your Mac without a chat named goes to the one
+ * open (its tabs, BLG-102), and a chat that was deleted to that one too. Anything else as it is.
+ */
+export function viewFor(view: View, domain: Pick<DomainState, 'projects'> & Partial<Pick<DomainState, 'assistant'>>): View {
+  if (view.kind === 'assistant') {
+    const chats = domain.assistant?.chats ?? [];
+    if (!chats.length || (view.chat && chats.some((c) => c.id === view.chat))) return view;
+    return { kind: 'assistant', chat: chats.some((c) => c.id === domain.assistant?.active) ? domain.assistant!.active : chats[0]!.id };
+  }
+  if (view.kind !== 'workspace') return view;
+  for (const p of domain.projects) {
+    const ws = p.workspaces.find((w) => w.id === view.id);
+    if (!ws) continue;
+    if (ws.kind !== 'main') return view;
+    const chat = ws.movedTo ? p.workspaces.find((w) => w.id === ws.movedTo && !w.archived) : undefined;
+    return chat ? { ...view, id: chat.id } : { kind: 'project', id: p.id };
+  }
+  return view;
+}
+
 export function reduceScreen(screen: ScreenState, action: ScreenAction, domain: DomainState): ScreenState {
   switch (action.type) {
     case 'view': {
-      const tabs = action.view.kind === 'workspace' && !screen.tabs.includes(action.view.id) ? [...screen.tabs, action.view.id] : screen.tabs;
-      return { ...screen, view: action.view, tabs };
+      const view = viewFor(action.view, domain);
+      const tabs = view.kind === 'workspace' && !screen.tabs.includes(view.id) ? [...screen.tabs, view.id] : screen.tabs;
+      return { ...screen, view, tabs };
     }
     case 'close_tab': {
       const tabs = screen.tabs.filter((t) => t !== action.id);
@@ -90,6 +114,13 @@ export function reconcileScreen(prev: DomainState, next: DomainState, screen: Sc
   if (!sameLoc(prev.viewer, next.viewer)) out = { ...out, viewerScroll: 0 };
   if (prev.review?.workspaceId !== next.review?.workspaceId || prev.review?.selected !== next.review?.selected) out = { ...out, diffScroll: 0 };
   if (prev.search.hits !== next.search.hits) out = { ...out, searchCursor: 0 };
+  // Your Mac's tabs: another chat opened (a new one, one picked on another window) shows here too; a deleted one leaves.
+  const v = out.view;
+  if (v.kind === 'assistant' && prev.assistant !== next.assistant && next.assistant.chats.length) {
+    const moved = prev.assistant.active !== next.assistant.active;
+    const gone = !next.assistant.chats.some((c) => c.id === v.chat);
+    if ((moved || gone) && v.chat !== next.assistant.active) out = { ...out, view: viewFor({ kind: 'assistant', chat: next.assistant.active }, next) };
+  }
   return out;
 }
 
@@ -125,14 +156,19 @@ export function screenOf(state: AppState): ScreenState {
   };
 }
 
+/** At most this many conversations a plan's page counts as shown (the link takes 50). */
+const PLAN_SHOWN = 40;
+
 /** What this screen is looking at, for unread counts and notifications. */
 export function attentionOf(screen: ScreenState, domain?: Pick<DomainState, 'plans' | 'board'>): Attention {
   const view = screen.view;
-  // A plan's page shows its own conversation: what's new there is seen. Its tasks' chats keep their
-  // marks on the page (each one says which task has news) until you open them.
+  // A plan's page shows the whole plan: its own conversation and what each task's says (their cards),
+  // so what's new in any of them is seen, and the plan's count clears when you open it. Only its own
+  // conversation is visible: a task's news still notifies.
   const plan = view.kind === 'plan' && domain ? planById(domain.plans, view.id) : undefined;
   if (plan) {
-    return { shown: [plan.home], visible: screen.away ? [] : [plan.home], files: false, front: !screen.away };
+    const tasks = planConversations(domain!, plan.id).map((ws) => `ws:${ws}`).filter((c) => c !== plan.home);
+    return { shown: [plan.home, ...tasks].slice(0, PLAN_SHOWN), visible: screen.away ? [] : [plan.home], files: false, front: !screen.away };
   }
   const shown = shownChannel(view);
   // Overview, Search, Terminal… show no conversation: nothing is visible there, but the window is in front.

@@ -1,13 +1,15 @@
 import { type ReactNode, createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LogItem, ShellItem } from '@beluga/core/store.js';
-import { isRunning } from '@beluga/ui/format.js';
+import { HIDDEN_STEPS, isRunning } from '@beluga/ui/format.js';
 import { formatDuration } from '@beluga/shared/text.js';
 import { splitImages } from '@beluga/shared/attachment-links.js';
 import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR, type SteeredMessage, isLimitNotice } from '@beluga/shared/claude-notices.js';
 import { CONTINUE_PROMPT, type RunFailure, decodeFailure, failureTitle } from '@beluga/shared/run-failure.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Button, Dot, Tip, claudeColor, cx } from '../components/ui.js';
-import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
+import { Avatar, Button, Dot, Tip, claudeColor, cx, personColor } from '../components/ui.js';
+import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
+import { openExternal } from '../lib/system.js';
+import { type SignInHow, signInChoices } from './sign-in-choices.js';
 import { sendSteerNow, stopClaude } from '../lib/commands.js';
 import { copyText } from '../lib/copy.js';
 import { useActions } from '../lib/actions.js';
@@ -17,6 +19,9 @@ import { useClock } from '../lib/window-active.js';
 import { countRender } from '../lib/render-count.js';
 import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
+import { agentBadge, agentName, useMyAgentName } from '../lib/agent-words.js';
+import type { AgentRef } from '@beluga/protocol.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { brandText } from '../lib/brand.js';
 import { messageItems } from './message-menu.js';
 import { Markdown } from './Markdown.js';
@@ -28,7 +33,16 @@ import { Shimmer } from './steps/StepRow.js';
 import { useMentionWorld } from './Mention.js';
 import type { TaskView } from '@beluga/core/gateway/model.js';
 import { TaskCard } from '../gateway/TaskCard.js';
+import { SlotWaitNotice } from './SlotWait.js';
+import { EditPrompt } from './EditPrompt.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import { PersonButton } from '../network/PersonProfile.js';
+import { KnockCard } from '../team/Team.js';
 import s from './chat.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
+import { revealTerminal } from '../lib/panel.js';
+import { claimShell } from '../lib/ws-shells.js';
+import { globalShellId, globalShellNumber, isGlobalShell } from '@beluga/shared/terminal-keys.js';
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
@@ -40,6 +54,17 @@ export const useNow = useClock;
 const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** What a message's right-click menu needs: the box to quote into, and how to reach Claude here. */
+/** What runs the agent and its model, small and quiet beside its name ("Opus", "Codex · GPT-5"). */
+function AgentBadge({ agent }: { agent: AgentRef | undefined }) {
+  const text = agentBadge(agent);
+  return text ? (
+    <span className={s.agentBadge} title={`${agent!.label}: ${agent!.runtime}${agent!.model ? `, ${agent!.model}` : ''}`}>
+      <Icon name={agentMark(agent)} size={10} />
+      {text}
+    </span>
+  ) : null;
+}
+
 function useMenuContext() {
   const { ui, client } = useBeluga();
   // In a group room only a mention reaches Claude; elsewhere quoting already asks it.
@@ -86,12 +111,13 @@ function Folding({ children }: { children: ReactNode }) {
 function SteerWaiting({ steer }: { steer: SteeredMessage }) {
   const { client } = useBeluga();
   const stopping = steer.waiting === 'stopping';
+  const agent = useMyAgentName();
   return (
     <div className={s.steerWaiting} data-steer-waiting={steer.waiting} role="status">
       <Icon name="clock" size={11} />
-      <span>{stopping ? 'Sent · Claude is stopping its step to read it' : 'Sent · waiting for Claude to read it'}</span>
+      <span>{stopping ? `Sent · ${agent} is stopping its step to read it` : `Sent · waiting for ${agent} to read it`}</span>
       {stopping ? null : (
-        <Tip label="Stop Claude’s current step so it reads this now" keys="⇧⌥↩">
+        <Tip label={`Stop ${agent}’s current step so it reads this now`} keys={shortcutKeys('composer-send-now')}>
           <button type="button" className={s.steerNow} onClick={() => sendSteerNow(client, steer.request)}>
             <Icon name="send" size={10} />
             Send now
@@ -102,8 +128,27 @@ function SteerWaiting({ steer }: { steer: SteeredMessage }) {
   );
 }
 
+/**
+ * Under a message to a friend's worktree while their Mac was offline: it waits (and goes when it's
+ * back), then says it was delivered. Nothing for messages that went at once.
+ */
+function Delivery({ request, channel }: { request: string; channel: string }) {
+  const state = useApp((st) => st.delivery[request]);
+  const owner = useApp((st) => {
+    const w = st.shared.find((x) => `ws:${x.id}` === channel);
+    return w ? (st.network.friends.find((f) => f.peerId === w.owner)?.name ?? 'their') : 'their';
+  });
+  if (!state) return null;
+  return (
+    <div className={s.steerWaiting} data-delivery={state} role="status">
+      <Icon name={state === 'waiting' ? 'clock' : 'check'} size={11} />
+      <span>{state === 'waiting' ? `Waiting for ${owner}'s Mac · it goes when it's back` : 'Delivered'}</span>
+    </div>
+  );
+}
+
 /** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. `steer`: steered in, not read yet. */
-export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: { item: ChatItem; continued: boolean; mine: boolean; steer?: SteeredMessage | undefined }) {
+export const ChatRow = memo(function ChatRow({ item, continued, ends = true, mine, steer }: { item: ChatItem; continued: boolean; ends?: boolean; mine: boolean; steer?: SteeredMessage | undefined }) {
   countRender(`chat:${item.id}`);
   const prefs = usePrefs();
   // Screenshots and other images sent with the message show as pictures, under its words.
@@ -113,26 +158,97 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: {
   const mentions = useMentionWorld(item.channel, { tasks: mine });
   // The message you just sent flies in from the box (see flight.ts).
   const row = useRef<HTMLDivElement>(null);
-  useFlightLanding(row, item.channel, 'chat', item.text, mine && !item.byAgent);
+  const own = mine && !item.byAgent;
+  useFlightLanding(row, item.channel, 'chat', item.text, own);
+  // Your own message in one of your conversations can be edited (BLG-385): rewound to, or forked from.
+  const wsId = own && item.channel.startsWith('ws:') ? item.channel.slice(3) : undefined;
+  const kind = useApp((st) => (wsId ? findWorkspace(st.projects, wsId)?.kind : undefined));
+  const editable = Boolean(wsId) && (kind === 'worktree' || kind === 'chat') && !steer;
+  const [editing, setEditing] = useState(false);
+  // Your own words: a tinted bubble on the right, no name or picture (it's plainly you).
+  if (own)
+    return (
+      <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)), ...(editable ? { lead: [{ label: 'Edit Message', icon: 'pencil', onSelect: () => setEditing(true) }] } : {}) })}>
+        <div ref={row} className={cx(s.message, s.own, continued && s.continued, steer && s.unread)} data-mine="true" data-steer={steer ? 'waiting' : undefined}>
+          <div className={s.body}>
+            {editing && wsId ? (
+              <EditPrompt wsId={wsId} lineId={item.id} text={item.text} worktree={kind === 'worktree'} onClose={() => setEditing(false)} />
+            ) : text ? (
+              <div className={s.bubbleRow}>
+                {editable ? (
+                  <span className={s.ownActions}>
+                    <Tip label="Edit: rewind to here, or fork from here">
+                      <Button size="small" variant="quiet" icon="pencil" aria-label="Edit message" onClick={() => setEditing(true)} />
+                    </Tip>
+                  </span>
+                ) : null}
+                <div className={s.bubble} title={time(item.ts)}>
+                  <Folding>
+                    <Markdown text={text} paths localImages mentions={mentions} tasks typed />
+                  </Folding>
+                </div>
+              </div>
+            ) : null}
+            <ImageGrid images={images} />
+            {steer ? <SteerWaiting steer={steer} /> : null}
+            {item.request && item.channel ? <Delivery request={item.request} channel={item.channel} /> : null}
+          </div>
+        </div>
+      </ActionsContext>
+    );
+  // A friend's words in a shared worktree (BLG-210): a bubble of their colour on the left, their name
+  // above the run and their picture at its end, as in a chat with friends.
+  if (!item.byAgent)
+    return (
+      <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
+        <div ref={row} className={cx(s.message, s.theirs, continued && s.continued, steer && s.unread)} data-steer={steer ? 'waiting' : undefined} style={{ ['--person' as string]: personColor(item.from) }}>
+          <div className={cx(s.gutter, s.gutterEnd)}>{ends ? (
+              <PersonButton peerId={item.from} name={item.name}>
+                <Avatar name={item.name} id={item.from} size={26} />
+              </PersonButton>
+            ) : null}</div>
+          <div className={cx(s.body, s.theirsBody)}>
+            {continued ? null : (
+              <div className={s.meta}>
+                <PersonButton peerId={item.from} name={item.name}>
+                  <span className={s.author}>{item.name}</span>
+                </PersonButton>
+                {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
+              </div>
+            )}
+            {text ? (
+              <div className={cx(s.theirBubble, ends && s.theirTail)}>
+                <Folding>
+                  <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} tasks={mine} typed />
+                </Folding>
+              </div>
+            ) : null}
+            <ImageGrid images={images} />
+            {steer ? <SteerWaiting steer={steer} /> : null}
+          </div>
+        </div>
+      </ActionsContext>
+    );
   return (
     <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
-      <div ref={row} className={cx(s.message, continued && s.continued, steer && s.unread)} data-mine={mine && !item.byAgent ? 'true' : undefined} data-steer={steer ? 'waiting' : undefined}>
-        <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} size={26} />}</div>
+      <div ref={row} className={cx(s.message, continued && s.continued, steer && s.unread)} data-steer={steer ? 'waiting' : undefined}>
+        <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} agent={item.agent} size={26} />}</div>
         <div className={s.body}>
           {continued ? null : (
             <div className={s.meta}>
               <span className={cx(s.author, item.byAgent && s.claudeName)} style={item.byAgent && claudeColor(item.from) ? { color: claudeColor(item.from) } : undefined}>
-                {mine && !item.byAgent ? 'You' : item.name}
+                {item.name}
               </span>
+              {item.byAgent ? <AgentBadge agent={item.agent} /> : null}
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
           )}
           {text ? (
             item.byAgent ? (
-              <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} />
+              <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} tasks={mine} />
             ) : (
               <Folding>
-                <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} />
+                <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} tasks={mine} />
               </Folding>
             )
           ) : null}
@@ -148,16 +264,19 @@ export const SystemRow = memo(function SystemRow({ item }: { item: SystemItem })
   const menu = useMenuContext();
   return (
     <ActionsContext items={() => messageItems({ ...menu, text: item.text })}>
-        <div className={cx(s.system, item.level === 'warn' && s.systemWarn, item.level === 'error' && s.systemError)}>
-          {/* Core words ("beluga") in this app's; a line quoting what someone said stays as written. */}
-          <Markdown text={item.said ? item.text : brandText(item.text)} />
-        </div>
+        {/* A teammate knocking on this worktree (BLG-416): its card while it waits, then the line. */}
+        <KnockCard id={item.id.startsWith('wt-knock-') ? item.id.slice('wt-knock-'.length) : ''} text={item.text}>
+          <div className={cx(s.system, item.level === 'warn' && s.systemWarn, item.level === 'error' && s.systemError)}>
+            {/* Core words ("beluga") in this app's; a line quoting what someone said stays as written. */}
+            <Markdown text={item.said ? item.text : brandText(item.text)} />
+          </div>
+        </KnockCard>
     </ActionsContext>
   );
 });
 
 /** What a steered message's card says once Claude read it: the turn's answer comes after it (see live-tail.ts). */
-const STEERED_BELOW = 'Claude read this while it worked; the answer below covers it.';
+const STEERED_BELOW = 'The agent read this while it worked; the answer below covers it.';
 
 /** The card's header status, when there's one to say (working is said by the working line at the bottom). */
 function statusOf(item: AgentItem): { label: string; tone: 'claude' | 'ok' | 'error' | 'warn' | 'muted' } {
@@ -165,7 +284,7 @@ function statusOf(item: AgentItem): { label: string; tone: 'claude' | 'ok' | 'er
     case 'awaiting_approval':
       return { label: `Waiting for ${item.ownerName} to approve`, tone: 'warn' };
     case 'queued':
-      return { label: 'Queued', tone: 'muted' };
+      return { label: item.slotWait ? `Waiting for a free ${agentName(item.agent)}` : 'Queued', tone: 'muted' };
     case 'done':
       // The answer itself says it's done: no "Done in 3m" on every message.
       return { label: '', tone: 'ok' };
@@ -215,16 +334,19 @@ function TurnHead({ item, part, mine }: { item: AgentItem; part: TurnPart; mine:
   const steps = useDisclosure(`${item.channel}/${item.id}`);
   const running = isRunning(item.status) && item.status !== 'queued';
   const folded = item.status === 'done' && Boolean(item.text) && prefs.doneSteps === 'fold' && !steps.shown;
+  // No step yet: a head would be a bare name over "continues below". Its tail says it all.
+  if (!item.steps.some((x) => !HIDDEN_STEPS.test(x))) return null;
   return (
     <div className={cx(s.message, s.agent, s.turnHead)} data-turn={item.status} data-turn-part="head">
       <div className={s.gutter}>
-        <Avatar name="Claude" id={item.owner} claude size={26} />
+        <Avatar name={agentName(item.agent)} id={item.owner} claude agent={item.agent} size={26} />
       </div>
       <div className={s.body}>
         <div className={s.meta}>
           <span className={cx(s.author, s.claudeName)} style={claudeColor(item.owner) ? { color: claudeColor(item.owner) } : undefined}>
-            {mine ? 'Claude' : `${item.ownerName}'s Claude`}
+            {mine ? agentName(item.agent) : `${item.ownerName}'s ${agentName(item.agent)}`}
           </span>
+          <AgentBadge agent={item.agent} />
         </div>
         <StepsFold folded={folded}>
           <AgentSteps item={item} running={false} part={part} />
@@ -326,10 +448,20 @@ function TurnCard({
   // The same session goes on, ahead of what queued behind the failed turn (that follows, in order).
   const resume = (): void =>
     void client.api.session.submit(`${item.channel === 'room' && group ? '@claude ' : ''}${CONTINUE_PROMPT}`, { channel: item.channel, urgent: true }).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  // Claude Code isn't signed in (or its sign-in expired): Continue would fail the same way. Sign In
+  // offers /login's choices; a Claude or Console account runs `claude auth login` in a shell you can
+  // see (the worktree's own, else the Terminal's), and Claude goes on once it ends well.
+  const signIn = (how: SignInHow): void => {
+    const terminals = client.store.getState().terminals;
+    const key = item.channel.startsWith('ws:') ? claimShell(item.channel.slice(3), terminals) : globalShellId(Math.max(0, ...Object.keys(terminals).filter(isGlobalShell).map(globalShellNumber)) + 1);
+    ui.patch({ termKey: key });
+    requestAnimationFrame(() => revealTerminal(client.store.getState(), true));
+    void client.api.workbench.signInClaude(key, item.channel, how).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  };
   const hasSteps = item.steps.length > 0 || item.subagents.length > 0;
   const folded = answered && prefs.doneSteps === 'fold' && !steps.shown;
   const lead: ActionItem[] = stoppable
-    ? [{ label: 'Stop Claude', icon: 'stop', keys: '⌘.', onSelect: stop }]
+    ? [{ label: `Stop ${agentName(item.agent)}`, icon: 'stop', ...(shortcutKeys('conv-stop') ? { keys: shortcutKeys('conv-stop') } : {}), onSelect: stop }]
     : answered && hasSteps && prefs.doneSteps === 'fold'
       ? [{ label: steps.shown ? 'Hide Steps' : 'Show Steps', icon: 'rows', onSelect: () => steps.setShown(!steps.shown) }]
       : [];
@@ -337,13 +469,14 @@ function TurnCard({
     <ActionsContext items={() => messageItems({ ...menu, text: item.text, lead })}>
       <div className={cx(s.message, s.agent)} data-turn={item.status} data-turn-part={part ? 'tail' : undefined}>
         <div className={s.gutter}>
-          <Avatar name="Claude" id={item.owner} claude size={26} />
+          <Avatar name={agentName(item.agent)} id={item.owner} claude agent={item.agent} size={26} />
         </div>
         <div className={s.body}>
           <div className={s.meta}>
             <span className={cx(s.author, s.claudeName)} style={claudeColor(item.owner) ? { color: claudeColor(item.owner) } : undefined}>
-              {mine ? 'Claude' : `${item.ownerName}'s Claude`}
+              {mine ? agentName(item.agent) : `${item.ownerName}'s ${agentName(item.agent)}`}
             </span>
+            <AgentBadge agent={item.agent} />
             {forSomeoneElse ? <span className={s.time}>for {item.requesterName}</span> : null}
             {!running && item.text && item.status === 'done' && !steeredIn ? (
               <span className={s.hoverActions}>
@@ -355,7 +488,7 @@ function TurnCard({
               </span>
             ) : stoppable ? (
               <span className={s.hoverActions}>
-                <Button size="small" variant="quiet" icon="stop" onClick={stop} title="Stop Claude here (⌘.)">
+                <Button size="small" variant="quiet" icon="stop" onClick={stop} title={`Stop ${agentName(item.agent)} here${shortcutKeys('conv-stop') ? ` (${shortcutKeys('conv-stop')})` : ''}`}>
                   Stop
                 </Button>
               </span>
@@ -382,14 +515,26 @@ function TurnCard({
           ) : failure ? (
             <FailureNotice failure={failure} />
           ) : item.text ? (
-            <Markdown text={item.text} paths localImages={mine} live={running} />
+            <Markdown text={item.text} paths localImages={mine} live={running} tasks={mine} />
+          ) : item.status === 'queued' && item.slotWait ? (
+            // Nothing runs here: your Claude works in as many other conversations as it may at once.
+            <SlotWaitNotice wait={item.slotWait} requestId={mine && item.requester === selfId ? item.requestId : undefined} />
           ) : item.status === 'queued' ? (
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>
           ) : null}
-          {limited ? (
+          {/* Sign In runs Claude Code's own login: only for a Claude run (Codex says how to sign in on its card). */}
+          {limited && failure?.kind === 'signed_out' && (failure.runtime ?? 'claude') === 'claude' ? (
             <div className={s.limitActions}>
-              <Button size="small" icon="play" onClick={resume} title="Send “continue”: Claude picks up where it stopped">
+              <ActionsDropdown items={signInChoices(signIn, (url) => void openExternal(url))} align="start">
+                <Button size="small" icon="person" title="Sign in to Claude Code again; then the run picks up where it stopped">
+                  Sign In
+                </Button>
+              </ActionsDropdown>
+            </div>
+          ) : limited ? (
+            <div className={s.limitActions}>
+              <Button size="small" icon="play" onClick={resume} title={`Send “continue”: ${agentName(item.agent)} picks up where it stopped`}>
                 Continue
               </Button>
             </div>

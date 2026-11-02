@@ -64,16 +64,16 @@ describe('a conversation’s signal: needs you > unread > working > idle', () =>
     const s = base();
     expect(workspaceSignal(s, api.workspaces[1]!)).toMatchObject({ level: 'idle', unread: 0, tip: '' });
     const busy = apply(s, view('auth'), run('started'));
-    expect(signalOf(busy, 'ws:auth', 'auth')).toMatchObject({ level: 'working', working: true, tip: 'Claude is working' });
+    expect(signalOf(busy, 'ws:auth', 'auth')).toMatchObject({ level: 'working', working: true, tip: 'Your agent is working' });
     const cc = apply(s, { type: 'claude_code', sessions: [session({})] });
     expect(signalOf(cc, 'ws:hooks', 'hooks').level).toBe('working');
   });
 
   it('is unread once Claude finished elsewhere, and says so', () => {
     const s = apply(base(), view('auth'), run('started'), overview, run('done'));
-    expect(signalOf(s, 'ws:auth', 'auth')).toMatchObject({ level: 'unread', unread: 1, tip: 'Claude finished · 1 new message' });
+    expect(signalOf(s, 'ws:auth', 'auth')).toMatchObject({ level: 'unread', unread: 1, tip: 'Your agent finished · 1 new message' });
     const stopped = apply(base(), view('auth'), run('started'), overview, run('error'));
-    expect(signalOf(stopped, 'ws:auth', 'auth').tip).toBe('Claude stopped · 1 new message');
+    expect(signalOf(stopped, 'ws:auth', 'auth').tip).toBe('Your agent stopped · 1 new message');
     const chat = apply(base(), overview, { type: 'chat', id: 'c1', from: 'bob', text: 'hi', ts: 3, byAgent: false, channel: 'ws:hooks' }, { type: 'chat', id: 'c2', from: 'bob', text: 'there?', ts: 4, byAgent: false, channel: 'ws:hooks' });
     expect(signalOf(chat, 'ws:hooks', 'hooks')).toMatchObject({ level: 'unread', unread: 2, tip: '2 new messages' });
   });
@@ -96,9 +96,9 @@ describe('a conversation’s signal: needs you > unread > working > idle', () =>
 
   it('keeps needing you after you open it, while the unread part clears', () => {
     let s = apply(base(), view('auth'), run('started'), overview, question('q1', 'ws:auth'), { type: 'chat', id: 'c1', from: 'me', text: 'hm', ts: 6, byAgent: true, channel: 'ws:auth' });
-    expect(signalOf(s, 'ws:auth', 'auth')).toMatchObject({ level: 'needs', need: 'question', unread: 1, tip: 'Claude asks a question · 1 new message' });
+    expect(signalOf(s, 'ws:auth', 'auth')).toMatchObject({ level: 'needs', need: 'question', unread: 1, tip: 'Your agent asks a question · 1 new message' });
     s = apply(s, view('auth'));
-    expect(signalOf(s, 'ws:auth', 'auth')).toMatchObject({ level: 'needs', unread: 0, tip: 'Claude asks a question' });
+    expect(signalOf(s, 'ws:auth', 'auth')).toMatchObject({ level: 'needs', unread: 0, tip: 'Your agent asks a question' });
   });
 
   it('archived conversations stay quiet', () => {

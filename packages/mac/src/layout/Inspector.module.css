@@ -54,6 +54,19 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* A control that takes the panel's whole width, with its explanation under it. */
+.wide {
+  padding: 3px 0;
+}
+.wide > * {
+  width: 100%;
+}
+.note {
+  margin: 6px 0 4px;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
 .tone_claude {
   color: var(--claude);
 }
@@ -145,6 +158,36 @@
   margin-left: auto;
   color: var(--text-3);
 }
+.taskLink {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: calc(100% + 12px);
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 0.94rem;
+}
+.taskLink:hover {
+  background: var(--bg-hover);
+}
+.taskLink svg {
+  flex: none;
+}
+.taskKey {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  color: var(--text-3);
+}
+.taskTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .notice {
   display: flex;
   align-items: baseline;
@@ -173,16 +216,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* The Earnings row's problem (EarningsPanel.tsx): a link to the Stripe sheet. */
-.earningsProblem {
-  align-items: baseline;
-  text-align: left;
-  font-size: 0.9rem;
-  line-height: 1.35;
-}
-.panelActions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
 }

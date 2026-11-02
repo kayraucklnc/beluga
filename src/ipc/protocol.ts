@@ -11,7 +11,8 @@ import { decode, encode } from '../shared/codec.js';
 export const IPC_VERSION = 1;
 
 /** Capabilities a screen may offer: things only it can do (its clipboard, its notifications…). */
-export const CAPS = ['copyText', 'notify', 'openExternal', 'zoom', 'readClipboardImage'] as const;
+/** `raise`: bring the window to the front (the Mac app; Open on your Mac from the phone). */
+export const CAPS = ['copyText', 'notify', 'openExternal', 'zoom', 'readClipboardImage', 'raise'] as const;
 export type Cap = (typeof CAPS)[number];
 
 const id = z.string().min(1).max(200);
@@ -38,6 +39,10 @@ export const ClientFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('term_detach'), term }),
   z.object({ t: z.literal('term_input'), term, data: z.string().max(1_000_000), reply: z.boolean().optional() }),
   z.object({ t: z.literal('term_resize'), term, cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(500) }),
+  // Watch a phone's screen live (BLG-173): the daemon streams `phone_frame`s until unwatch or close;
+  // with `video` (this screen decodes H.264, BLG-184), `phone_video` pieces once the phone streams.
+  z.object({ t: z.literal('phone_watch'), device: id, fps: z.number().int().min(1).max(30).optional(), max: z.number().int().min(240).max(2000).optional(), video: z.boolean().optional() }),
+  z.object({ t: z.literal('phone_unwatch'), device: id }),
   z.object({ t: z.literal('resync') }),
   z.object({ t: z.literal('ping') }),
 ]);
@@ -53,9 +58,27 @@ export type DaemonFrame =
   | { readonly t: 'cap_call'; readonly id: string; readonly cap: Cap; readonly args: readonly unknown[] }
   | { readonly t: 'term_data'; readonly term: string; readonly data: string }
   | { readonly t: 'term_status'; readonly term: string; readonly running: boolean; readonly exited?: { readonly code: number | null; readonly signal?: number } }
+  // A live frame of a phone's screen (BLG-173): a base64 image of `mime`, and the device's logical size.
+  | { readonly t: 'phone_frame'; readonly device: string; readonly b64: string; readonly mime: string; readonly w: number; readonly h: number }
+  // A piece of the phone's screen as live video (BLG-184): H.264 Annex B, `w`×`h` of a `sw`×`sh` screen.
+  | { readonly t: 'phone_video'; readonly device: string; readonly b64: string; readonly key: boolean; readonly ts: number; readonly w: number; readonly h: number; readonly sw: number; readonly sh: number }
+  // Something Claude just did on the phone (BLG-186): where a tap landed, a swipe's path, a key; never what was typed.
+  | { readonly t: 'phone_touch'; readonly device: string; readonly touch: PhoneTouchData }
+  // How the mirror is doing: streaming (with its route, and whether video is asked for or flowing), or stopped with a reason.
+  | { readonly t: 'phone_mirror'; readonly device: string; readonly on: boolean; readonly route?: string; readonly error?: string; readonly video?: 'asking' | 'on'; readonly note?: string }
   | { readonly t: 'clients'; readonly count: number }
   | { readonly t: 'pong' }
   | { readonly t: 'bye'; readonly reason: string };
+
+/** A touch as the mirror draws it (src/companion/phone-control.ts PhoneTouch). */
+export interface PhoneTouchData {
+  readonly op: 'tap' | 'long_press' | 'swipe' | 'type' | 'key' | 'scroll' | 'open';
+  readonly x?: number;
+  readonly y?: number;
+  readonly x2?: number;
+  readonly y2?: number;
+  readonly what?: string;
+}
 
 export const encodeFrame = (frame: ClientFrame | DaemonFrame): string => encode(frame);
 

@@ -1,0 +1,211 @@
+/* Team boards (core/team): an offer to team up, the team badge on a project, "Ata is working on this". */
+
+.offer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--info) 7%, var(--bg-raised));
+  margin-bottom: 14px;
+}
+.offerText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.offerTitle {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+}
+.offerDetail {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Teammates on a project row: a small people icon, with a green dot when one of them is online. */
+.badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
+  margin-right: 2px;
+}
+.badgeOnline {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 1.5px var(--bg-sidebar, var(--bg));
+}
+
+/* "Ata is working on this": a quiet line with their avatar. */
+.working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+/* Knock to Join (BLG-416): a quiet button after "Ata is working on this", then how the knock stands. */
+.knock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+/* A soft pastel pill: plainly a button, never loud. */
+.knockButton {
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent) 35%, var(--hairline-strong));
+}
+.knockButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 17%, var(--bg-raised));
+}
+.knockButton:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+.knockWords {
+  color: var(--text-2);
+}
+/* Waiting for them: the words breathe softly (no glow), like a door you've knocked on. */
+.knockWaiting {
+  color: var(--text-2);
+  animation: knock-wait 2.4s ease-in-out infinite;
+}
+@keyframes knock-wait {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .knockWaiting {
+    animation: none;
+  }
+}
+
+/* Not every teammate has the latest yet (BLG-273): a quiet clock, gone once they do. */
+.waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: color-mix(in srgb, var(--warn) 70%, var(--text-3));
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.waitingCount {
+  font-weight: 600;
+}
+.waitingFor {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.waitingFor summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  color: color-mix(in srgb, var(--warn) 70%, var(--text-2));
+}
+.waitingFor summary::-webkit-details-marker {
+  display: none;
+}
+.waitingFor ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.waitingFor li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.waitingWho {
+  flex: 1;
+  min-width: 0;
+}
+.waitingSince {
+  color: var(--text-3);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Who's on a project's team (BLG-510): the badge's card, with Add Friend for the rest. */
+.badge {
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+.badge:hover {
+  color: var(--text-2);
+}
+.teamCard {
+  z-index: 50;
+  width: 280px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--hairline-strong),
+    0 10px 30px -10px rgba(0, 0, 0, 0.22);
+}
+.teamList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.teamHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.teamRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 4px;
+  border-radius: 8px;
+}
+.teamWho {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.teamName {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.teamSub {
+  font-size: 11.5px;
+  color: var(--text-3);
+}

@@ -35,11 +35,14 @@ export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuK
   const home = useApp((st) => st.home);
   const selfId = useApp((st) => st.selfId);
   const peers = useApp((st) => st.peers);
+  const friends = useApp((st) => st.network.friends);
   const projects = useApp((st) => st.projects);
   const mine = useApp((st) => st.myShares);
-  const people = peers.filter((p) => p.peerId !== selfId);
+  const inRoom = peers.filter((p) => p.peerId !== selfId);
+  // The room's people and your friends: friends get it over the network, with no room needed.
+  const people = [...inRoom.map((p) => ({ peerId: p.peerId, name: p.name, friend: friends.some((f) => f.peerId === p.peerId) })), ...friends.filter((f) => !inRoom.some((p) => p.peerId === f.peerId)).map((f) => ({ peerId: f.peerId, name: f.name, friend: true }))];
   const [path, setPath] = useState(() => (menu.kind === 'share_who' ? tilde(home, menu.dir) : ''));
-  const [who, setWho] = useState<Who>(() => (preset?.length ? 'some' : 'all'));
+  const [who, setWho] = useState<Who>(() => (preset?.length || !inRoom.length ? 'some' : 'all'));
   const [only, setOnly] = useState<ReadonlySet<string>>(() => {
     const picked = new Set(preset ?? []);
     preset = undefined;
@@ -56,7 +59,7 @@ export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuK
   const existing = mine.find((x) => norm(x.root) === norm(dir));
   const ready = dir.startsWith('/') && (who === 'all' || only.size > 0);
   const suggestions = projects.filter((p) => p.root && !mine.some((x) => norm(x.root) === norm(p.root))).slice(0, 8);
-  const nameOf = (id: string): string => peers.find((p) => p.peerId === id)?.name ?? 'someone who left';
+  const nameOf = (id: string): string => people.find((p) => p.peerId === id)?.name ?? 'someone who left';
 
   const choose = async (): Promise<void> => {
     const picked = await pickFolders('Choose a folder to share');
@@ -157,18 +160,20 @@ export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuK
                   <input type="checkbox" checked={only.has(p.peerId)} onChange={(e) => toggle(p.peerId, e.target.checked)} />
                   <Avatar name={p.name} id={p.peerId} size={18} />
                   <span>{p.name}</span>
+                  {p.friend ? <Tag tone="muted">friend</Tag> : null}
                 </label>
               ))}
             </div>
           ) : (
-            <span className={s.hint}>Nobody else is here yet. Invite someone first.</span>
+            <span className={s.hint}>No friends or room yet. Add a friend first.</span>
           )
         ) : (
-          <span className={s.hint}>{people.length ? `${people.map((p) => p.name).join(', ')} and anyone who joins later.` : 'Everyone who joins the room.'}</span>
+          <span className={s.hint}>{inRoom.length ? `${inRoom.map((p) => p.name).join(', ')} and anyone who joins later.` : 'Everyone who joins the room.'}</span>
         )}
+        {who === 'some' && people.some((p) => p.friend && only.has(p.peerId)) ? <span className={s.hint}>Friends find it in their Files, even when no room is open. Secrets never go.</span> : null}
       </Field>
-      <Field label="Claude">
-        <Check checked={writable} onChange={setWritable} label="Your Claude may edit files here" detail={writable ? 'When friends ask your Claude, it can change files in this folder.' : 'Read-only: nothing in it changes.'} />
+      <Field label="Your agent">
+        <Check checked={writable} onChange={setWritable} label="Your agent may edit files here" detail={writable ? 'When friends ask your agent, it can change files in this folder.' : 'Read-only: nothing in it changes.'} />
       </Field>
       <Section title="Shared now">
         <div className={s.list} role="list" aria-label="Shared folders">
@@ -178,7 +183,7 @@ export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuK
                 <Icon name="folder" size={15} className={f.folderIcon} />
                 <div className={s.itemText}>
                   <span className={s.itemTitle}>
-                    {x.name} {x.writable ? <Tag tone="claude">Claude may edit</Tag> : null}
+                    {x.name} {x.writable ? <Tag tone="claude">Agent may edit</Tag> : null}
                   </span>
                   <span className={s.itemDetail}>
                     {shortPath(tilde(home, x.root))} · {x.private ? `only ${(x.allowed ?? []).map(nameOf).join(', ') || 'nobody'}` : 'everyone'}

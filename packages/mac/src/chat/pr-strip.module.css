@@ -1,4 +1,4 @@
-/* A worktree's pull request above its chat: CI live, and merging it. */
+/* A worktree's open pull request above its chat: its CI, live. */
 .strip {
   display: flex;
   flex-direction: column;
@@ -90,16 +90,4 @@
   to {
     transform: rotate(360deg);
   }
-}
-.error {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  color: var(--error);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.error svg {
-  flex: none;
-  margin-top: 2px;
 }

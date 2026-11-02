@@ -31,7 +31,7 @@ const keepFocus = (e: Event): void => e.preventDefault();
 const stayInMenu = (e: MouseEvent): void => e.stopPropagation();
 
 /** A hint that is a shortcut (⌘J) sits at the right like a menu bar's; a description is a tooltip. */
-const isKeys = (hint: string | undefined): hint is string => !!hint && /^[⌘⌥⇧⌃↩⌫]+.{0,3}$/.test(hint);
+const isKeys = (hint: string | undefined): hint is string => !!hint && (/^[⌘⌥⇧⌃↩⌫]+.{0,3}$/.test(hint) || /^((Ctrl|Alt|Shift|Win|Super)\+)+.{1,5}$/.test(hint));
 
 const isDanger = (id: string): boolean => /delete|remove|leave|revoke|stop|hide/.test(id);
 
@@ -102,6 +102,8 @@ export interface ActionItem {
   readonly separate?: boolean;
   /** A checkmark in front (the group a project is in). */
   readonly checked?: boolean;
+  /** A colour dot before the name (a choice of colours: a tile's tint). */
+  readonly swatch?: string;
   /** A submenu ("Move to Group ▸"): picking the row itself does nothing. */
   readonly submenu?: readonly ActionItem[];
   readonly onSelect: () => void;
@@ -136,6 +138,7 @@ function ActionRows({ items, Item, Separator, kit = DROPDOWN_SUB }: { items: rea
                   <span className={s.label}>{it.label}</span>
                   <Icon name="chevronRight" size={10} className={s.subArrow} />
                 </span>
+                {it.hint ? <span className={`${s.hint} ${icons ? s.hintIndent : ''}`}>{it.hint}</span> : null}
               </kit.SubTrigger>
               <kit.Portal>
                 <kit.SubContent className={s.menu} sideOffset={2} alignOffset={-5} collisionPadding={8}>
@@ -148,6 +151,7 @@ function ActionRows({ items, Item, Separator, kit = DROPDOWN_SUB }: { items: rea
             <span className={s.line}>
               {/* A row with its own icon keeps it (a choice of icons); the check then goes after the name. */}
               {icons ? <span className={s.icon}>{it.icon ? <Icon name={it.icon} size={13} /> : it.checked ? <Icon name="check" size={12} /> : null}</span> : null}
+              {it.swatch ? <span className={s.swatch} style={{ background: it.swatch }} aria-hidden="true" /> : null}
               <span className={s.label}>{it.label}</span>
               {it.checked && it.icon ? <Icon name="check" size={12} className={s.trailingCheck} /> : null}
               {it.keys ? <kbd className={s.keys}>{it.keys}</kbd> : null}

@@ -171,7 +171,7 @@ function combiningStep(c: Combining): string {
   if (!c.conflict) return `Combining ${names} …`;
   if (c.conflict.stuck) return `Combining ${names}: fix the conflict in ${c.conflict.files.slice(0, 3).join(', ')} (in ${c.conflict.dir}): it starts once no markers are left`;
   const files = c.conflict.files.slice(0, 3).join(', ') + (c.conflict.files.length > 3 ? ` and ${c.conflict.files.length - 3} more` : '');
-  return `Combining ${names}: Claude is fixing a conflict in ${files}`;
+  return `Combining ${names}: the agent is fixing a conflict in ${files}`;
 }
 
 /** What a milestone merging into the plan's branch shows. */
@@ -239,7 +239,8 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
     for (const t of m.tasks) {
       const own = base.get(t.id)!;
       const waitsOn = t.blockedBy.filter((b) => !finished(b));
-      const forYou = t.assignee === 'me' || (own.issue?.assignee?.kind === 'person' && own.issue.assignee !== undefined);
+      // Yours in the plan, or given to someone on the board (Claude's tasks are no one's).
+      const forYou = t.assignee === 'me' || own.issue?.assignee !== undefined;
       let state = own.state;
       let why: string | undefined;
       let from: string | undefined;

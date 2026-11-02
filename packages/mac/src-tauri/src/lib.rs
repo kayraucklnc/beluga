@@ -1,18 +1,25 @@
-//! Beluga for macOS: the native shell around the web view.
+//! Beluga's native shell around the web view: macOS first, and Linux and Windows (what only a
+//! Mac has, such as vibrancy, the Dock, Focus and widgets, is left out there).
 //!
 //! The app owns only what the operating system is for: the window (vibrancy, traffic lights),
 //! the menu bar, the tray, notifications, `beluga://` (and the older `klaud://`) links, and
 //! keeping Beluga's daemon running. Everything Beluga does happens in the daemon.
 
 mod daemon;
+mod export;
 mod focus;
 mod menu;
 mod popup;
+#[cfg(target_os = "macos")]
+mod power;
+mod privacy;
 mod rename;
 mod requests;
 mod sounds;
+mod spout;
 mod update_rules;
 mod updater;
+mod widgets;
 
 use std::collections::HashMap;
 use std::process::Child;
@@ -57,6 +64,29 @@ fn take_pending_links(state: tauri::State<'_, AppState>) -> Vec<String> {
     std::mem::take(&mut *daemon::locked(&state.pending_links))
 }
 
+/// The window's blur behind the sidebar, on or off (Settings › Appearance › Reduce transparency, BLG-409).
+/// Off, the content is solid and macOS has no blur to keep redrawing. macOS's own Reduce transparency
+/// makes the blur solid by itself.
+#[cfg(target_os = "macos")]
+fn window_vibrancy(window: &tauri::WebviewWindow, on: bool) {
+    use window_vibrancy::{apply_vibrancy, clear_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+    if on {
+        let _ = apply_vibrancy(window, NSVisualEffectMaterial::Sidebar, Some(NSVisualEffectState::FollowsWindowActiveState), None);
+    } else {
+        let _ = clear_vibrancy(window);
+    }
+}
+
+#[tauri::command]
+fn set_vibrancy(app: tauri::AppHandle, on: bool) {
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = app.run_on_main_thread(move || window_vibrancy(&window, on));
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, on);
+}
+
 /// Grey out menu-bar items that can't run right now, check toggles, rename Run/Stop Running.
 #[tauri::command]
 fn set_menu_state(
@@ -77,17 +107,36 @@ fn set_menu_state(
     }
 }
 
-/// What the menu-bar icon and the Dock icon say: how many things are new for you (unread
-/// notifications and what waits on you), and how many Claudes are working.
+/// Give menu-bar items your keys (Settings › Keyboard): an accelerator each, or none.
 #[tauri::command]
-fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32, unread: Option<u32>) {
+fn set_menu_keys(app: tauri::AppHandle, keys: HashMap<String, Option<String>>) {
+    if let Some(m) = app.menu() {
+        menu::apply_keys(&m, &keys);
+    }
+}
+
+/// What the menu-bar icon and the Dock icon say: how many things are new for you (unread
+/// notifications and what waits on you), and how many Claudes are working. `title` is what the
+/// menu bar shows beside the whale (Settings › Menu Bar picks it; "" shows nothing); without
+/// one, the count of what's new.
+#[tauri::command]
+fn set_tray_status(
+    app: tauri::AppHandle,
+    waiting: u32,
+    working: u32,
+    unread: Option<u32>,
+    title: Option<String>,
+) {
     let unread = unread.unwrap_or(waiting);
     if let Some(tray) = app.tray_by_id("beluga") {
-        let _ = tray.set_title(if unread > 0 {
-            Some(unread.to_string())
-        } else {
-            None
+        let title = title.unwrap_or_else(|| {
+            if unread > 0 {
+                unread.to_string()
+            } else {
+                String::new()
+            }
         });
+        let _ = tray.set_title((!title.is_empty()).then_some(title));
         let _ = tray.set_tooltip(Some(tray_tip(waiting, working, unread)));
     }
     if let Some(window) = app.get_webview_window("main") {
@@ -143,12 +192,22 @@ fn tray_tip(waiting: u32, working: u32, unread: u32) -> String {
     parts.join(" · ")
 }
 
+/// Beluga to the front with its window: the app itself first (it may be hidden with ⌘H, and a
+/// hidden app's window can't take focus), then the window.
 fn focus_main(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
     }
+}
+
+/// The window to the front, asked by Beluga ("Open on your Mac" from the phone).
+#[tauri::command]
+fn focus_window(app: tauri::AppHandle) {
+    focus_main(&app);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -174,8 +233,10 @@ pub fn run() {
     } else {
         tauri_plugin_window_state::StateFlags::all()
     };
-    let app = tauri::Builder::default()
-        .activate_ignoring_other_apps(!background)
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.activate_ignoring_other_apps(!background);
+    let app = builder
         // A beluga:// link opened while Beluga runs is passed on to the link handler below.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             focus_main(app);
@@ -193,6 +254,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(updater::Updates::default())
         .manage(requests::TrayState::default())
         .manage(popup::PopupState::default())
@@ -206,9 +268,13 @@ pub fn run() {
             daemon_endpoint,
             restart_daemon,
             set_menu_state,
+            set_vibrancy,
+            set_menu_keys,
             set_tray_status,
             set_tray_presence,
             requests::set_tray_requests,
+            spout::set_tray_spout,
+            spout::play_tray_spout,
             popup::set_request_popup,
             popup::request_popup_state,
             popup::request_popup_resize,
@@ -216,12 +282,16 @@ pub fn run() {
             popup::request_popup_action,
             system_idle_seconds,
             take_pending_links,
+            focus_window,
+            export::save_export,
             sounds::sound_install,
             sounds::sound_prune,
             sounds::sound_play_system,
             sounds::notification_access,
             sounds::open_notification_settings,
             sounds::open_focus_settings,
+            privacy::privacy_access,
+            privacy::privacy_request,
             updater::update_state,
             updater::update_check,
             updater::update_set_mode,
@@ -236,21 +306,17 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle().clone();
+            #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
-                #[cfg(target_os = "macos")]
-                {
-                    use window_vibrancy::{
-                        apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState,
-                    };
-                    let _ = apply_vibrancy(
-                        &window,
-                        NSVisualEffectMaterial::Sidebar,
-                        Some(NSVisualEffectState::FollowsWindowActiveState),
-                        None,
-                    );
-                }
+                window_vibrancy(&window, true);
             }
             menu::tray(&handle)?;
+            spout::start(&handle);
+            // The desktop widgets redraw when the boards' tiles change (BLG-309).
+            widgets::start(&handle);
+            // About to sleep: the daemon mails what friends haven't taken first (BLG-277).
+            #[cfg(target_os = "macos")]
+            power::watch();
             // Banners (and their sound) even while Beluga is in front.
             sounds::present_in_front();
             // A friend's request on a notification: Review… / Approve / Always Allow / Decline.
@@ -307,6 +373,7 @@ pub fn run() {
 
     app.run(|app, event| match event {
         // Clicking the Dock icon brings the window back.
+        #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => focus_main(app),
         // Quitting leaves the room (unless this app didn't start Beluga; it's left running then),
         // then puts a downloaded update in place.

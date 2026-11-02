@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { joinArgs, shellName, splitArgs } from '@beluga/shared/shells.js';
 import { Segmented, cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
-import { type UiPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
-import { SCROLLBACK_CHOICES, fontChoices, fontStack } from '../lib/terminal-look.js';
+import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { SCROLLBACK_CHOICES, fontChoices } from '../lib/terminal-look.js';
+import { ImportGroup, TermPreview } from './TerminalImport.js';
+import { KeysGroup, ThemeGroup, ViewGroup } from './TerminalThemes.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import t from './terminal-settings.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const OTHER = '__other';
 
@@ -74,31 +77,13 @@ function ShellGroup() {
   );
 }
 
-/** A few lines drawn the way your terminal will draw them. */
-function Preview({ prefs }: { prefs: UiPrefs }) {
-  return (
-    <div className={t.preview} aria-hidden style={{ fontFamily: fontStack(prefs.termFont), fontSize: `${prefs.termFontSize}px`, lineHeight: prefs.termLineHeight }}>
-      <div>
-        <span className={t.dim}>~/Projects/</span>Beluga <span className={t.branch}>main</span>
-      </div>
-      <div>
-        <span className={t.prompt}>❯</span> npm run dev
-      </div>
-      <div className={t.dim}>  ready in 312 ms · http://localhost:5173</div>
-      <div>
-        <span className={t.prompt}>❯</span> <span className={cx(t.cursor, t[`cursor_${prefs.termCursor}`], prefs.termCursorBlink && t.blink)}>{prefs.termCursor === 'block' ? ' ' : ''}</span>
-      </div>
-    </div>
-  );
-}
-
 /** How the terminal looks in this window (kept on this Mac). */
 function LookGroup() {
   const prefs = usePrefs();
   return (
     <Group title="Appearance on this Mac">
       <div className={t.previewRow}>
-        <Preview prefs={prefs} />
+        <TermPreview prefs={prefs} />
       </div>
       <Row label="Font">
         <Select label="Terminal font" value={prefs.termFont} onChange={(v) => setPrefs({ termFont: v })} options={fontChoices(prefs.termFont)} />
@@ -127,6 +112,9 @@ function LookGroup() {
       <Row label="Scrollback" detail="Lines you can scroll back through, per terminal.">
         <Select label="Scrollback" value={String(prefs.termScrollback)} onChange={(v) => setPrefs({ termScrollback: Number(v) })} options={SCROLLBACK_CHOICES.map((n) => ({ value: String(n), label: `${n.toLocaleString()} lines` }))} />
       </Row>
+      <Row label="Option key as Meta" detail={prefs.termOptionMeta ? 'Option+B and Option+F move by word in the shell.' : 'Option types special characters (é, ©, …).'}>
+        <Switch label="Option key as Meta" on={prefs.termOptionMeta} onChange={(v) => setPrefs({ termOptionMeta: v })} />
+      </Row>
     </Group>
   );
 }
@@ -136,7 +124,7 @@ function PlaceGroup() {
   const prefs = usePrefs();
   return (
     <Group title="In this window">
-      <Row label="⌘J opens the terminal" detail={prefs.termIn === 'drawer' ? 'It slides up under the conversation, across the window.' : 'It shows as the right panel’s Terminal tab, beside the conversation.'}>
+      <Row label={`${shortcutKeys('toggle-dock') ?? 'Toggle Terminal'} opens the terminal`} detail={prefs.termIn === 'drawer' ? 'It slides up under the conversation, across the window.' : 'It shows as the right panel’s Terminal tab, beside the conversation.'}>
         <Segmented
           label="Where the terminal opens"
           value={prefs.termIn}
@@ -153,11 +141,16 @@ function PlaceGroup() {
 
 /** Settings › Terminal: the shell (for every screen), where it opens and how terminals look here. */
 export function TerminalSettings() {
+  const prefs = usePrefs();
   return (
     <>
       <PlaceGroup />
       <ShellGroup />
+      <ImportGroup />
+      <ThemeGroup />
       <LookGroup />
+      <ViewGroup />
+      {prefs.termView ? <KeysGroup /> : null}
       <p className={t.note}>The shell applies to new terminals; ones already open keep theirs. The look changes right away.</p>
     </>
   );

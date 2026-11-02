@@ -31,7 +31,7 @@ export const CompactDivider = memo(function CompactDivider({ item }: { item: Com
     <div className={cx(s.divider, running && s.running, failed && s.failed, open && s.open)} data-compact-divider={running ? 'running' : failed ? 'failed' : 'done'} role="separator" aria-label={text}>
       <div className={s.rule}>
         {m.state === 'done' ? (
-          <button type="button" className={s.label} aria-expanded={open} onClick={toggle} title={open ? 'Hide what Claude kept' : 'Show what Claude kept'}>
+          <button type="button" className={s.label} aria-expanded={open} onClick={toggle} title={open ? 'Hide what your agent kept' : 'Show what your agent kept'}>
             <Icon name="gauge" size={11} />
             {text}
             <Icon name="chevronRight" size={10} className={s.chev} />
@@ -45,10 +45,10 @@ export const CompactDivider = memo(function CompactDivider({ item }: { item: Com
       {open && m.state === 'done' ? (
         <div className={`${s.summary} selectable`}>
           <div className={s.summaryHead}>
-            <strong>What Claude kept</strong>
+            <strong>What your agent kept</strong>
             <span>It continues from this; everything above stays here for you.</span>
           </div>
-          {m.summary ? <Markdown text={m.summary} paths localImages /> : <div className={s.summaryEmpty}>Claude didn’t share its summary for this one.</div>}
+          {m.summary ? <Markdown text={m.summary} paths localImages tasks /> : <div className={s.summaryEmpty}>Your agent didn’t share its summary for this one.</div>}
         </div>
       ) : null}
     </div>

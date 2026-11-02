@@ -1,9 +1,10 @@
-import { runId, setupId, shellId, terminalLabel } from '@beluga/shared/terminal-keys.js';
+import { githubId, runId, setupId, shellId, terminalLabel } from '@beluga/shared/terminal-keys.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Empty, IconButton, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
+import { sameFields } from '../lib/stable.js';
 import { type GlobalShells, useGlobalShells } from '../lib/shells.js';
 import { extraShells, useShellOwners } from '../lib/ws-shells.js';
 import s from './terminal.module.css';
@@ -15,7 +16,7 @@ export function TerminalView() {
   const api = useApi();
   const actions = useActions();
   const { ui } = useBeluga();
-  const state = useApp((st) => st);
+  const state = useApp((st) => ({ view: st.view, projects: st.projects, terminals: st.terminals, termExits: st.termExits, termNames: st.termNames, termEnvStale: st.termEnvStale, home: st.home }), sameFields);
   const picked = useUi((u) => u.termKey);
   const shells = useGlobalShells();
   const owners = useShellOwners();
@@ -29,7 +30,7 @@ export function TerminalView() {
     const project = state.projects.find((p) => p.id === ws.projectId);
     // Its shell, setup and run, and the shells added with + in the panel (lib/ws-shells.ts).
     const extra = extraShells(owners, ws.id, terminals, undefined);
-    const keys = [shellId(ws.id), setupId(ws.id), runId(ws.id), ...extra];
+    const keys = [shellId(ws.id), setupId(ws.id), runId(ws.id), githubId(ws.id), ...extra];
     const key = picked && keys.includes(picked) && picked in terminals ? picked : shellId(ws.id);
     const tabs = keys.filter((k) => k in terminals || k === shellId(ws.id));
     return (

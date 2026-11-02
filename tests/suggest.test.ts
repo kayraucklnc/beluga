@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PeerInfo } from '../src/protocol.js';
-import { openTarget, suggest } from '../src/ui/suggest.js';
+import { openTarget, peopleSuggestions, suggest } from '../src/ui/suggest.js';
 import { COMMANDS } from '../src/core/commands.js';
 
 const peers: PeerInfo[] = [
@@ -66,5 +66,27 @@ describe('suggest', () => {
     expect(values('@claude')).toEqual(['@claude:bob ', '@claudes ']); // exact match is not re-suggested
     expect(values('email@x')).toEqual([]);
     expect(values('plain text')).toEqual([]);
+  });
+});
+
+describe('peopleSuggestions (New Task, BLG-342)', () => {
+  const people = [
+    { name: 'Ata Demir', hint: 'on bob-api' },
+    { name: 'Mia Chen', hint: 'a friend' },
+  ];
+  it('"@" offers only people, the team first; a typed name or surname narrows it', () => {
+    expect(peopleSuggestions('ask @', people).map((s) => [s.label, s.hint, s.value])).toEqual([
+      ['@AtaDemir', 'on bob-api', 'ask @AtaDemir '],
+      ['@MiaChen', 'a friend', 'ask @MiaChen '],
+    ]);
+    expect(peopleSuggestions('ask @mi', people).map((s) => s.label)).toEqual(['@MiaChen']);
+    expect(peopleSuggestions('ask @chen', people).map((s) => s.label)).toEqual(['@MiaChen']);
+  });
+  it('nothing for commands, paths, Claudes, a finished name or no "@"', () => {
+    expect(peopleSuggestions('/help', people)).toEqual([]);
+    expect(peopleSuggestions('@src/', people)).toEqual([]);
+    expect(peopleSuggestions('@claude:a', people)).toEqual([]);
+    expect(peopleSuggestions('@MiaChen', people)).toEqual([]);
+    expect(peopleSuggestions('mia', people)).toEqual([]);
   });
 });

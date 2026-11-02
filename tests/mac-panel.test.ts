@@ -22,7 +22,7 @@ import {
   pickPanelTab,
   rememberTab,
 } from '../packages/mac/src/lib/panel-model.js';
-import { ancestorsOf, filterLoads, treeRows, type Entry } from '../packages/mac/src/layout/panel/tree.js';
+import { ancestorsOf, foundRows, nameRanges, treeRows, type Entry } from '../packages/mac/src/layout/panel/tree.js';
 
 const ws: View = { kind: 'workspace', id: 'w1', tab: 'chat' };
 const room: View = { kind: 'room' };
@@ -34,23 +34,23 @@ describe('the right panel’s two panes', () => {
     expect(paneTabs(DEFAULT_LAYOUT, 'bottom', all)).toEqual(['terminal', 'background']);
     expect(viewsOf('changes', all)).toEqual(['changes', 'history']);
     expect(viewsOf('history', all)).toEqual(['changes', 'history']);
-    // A project's home has History where Changes would be; a chat has no Changes at all.
-    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor({ kind: 'project', id: 'p' }))).toEqual(['history', 'info']);
+    // A project's home has History where Changes would be (and its main folder's Files); a chat has no Changes at all.
+    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor({ kind: 'project', id: 'p' }))).toEqual(['history', 'files', 'info']);
     expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor(ws, 'chat'))).toEqual(['files', 'scratch', 'info']);
   });
 
   it('a tab dragged across stays there, before the tab it was dropped on', () => {
     const moved = moveTab(DEFAULT_LAYOUT, 'info', 'bottom', 'background');
-    expect(moved).toEqual({ top: ['changes', 'files', 'scratch'], bottom: ['terminal', 'info', 'background'] });
+    expect(moved).toEqual({ top: ['changes', 'files', 'scratch', 'phone'], bottom: ['terminal', 'info', 'background'] });
     expect(paneOf(moved, 'info')).toBe('bottom');
     // History moves with Changes.
     expect(moveTab(DEFAULT_LAYOUT, 'history', 'bottom').bottom).toEqual(['terminal', 'background', 'changes']);
-    expect(moveTab(DEFAULT_LAYOUT, 'files', 'top')).toEqual({ top: ['changes', 'scratch', 'info', 'files'], bottom: ['terminal', 'background'] });
+    expect(moveTab(DEFAULT_LAYOUT, 'files', 'top')).toEqual({ top: ['changes', 'scratch', 'info', 'phone', 'files'], bottom: ['terminal', 'background'] });
   });
 
   it('a saved layout is made whole: every tab once, nothing unknown', () => {
     expect(normalizeLayout(undefined)).toEqual(DEFAULT_LAYOUT);
-    expect(normalizeLayout({ top: ['terminal', 'nope', 'terminal'], bottom: ['terminal', 'files'] })).toEqual({ top: ['terminal', 'changes', 'scratch', 'info'], bottom: ['files', 'background'] });
+    expect(normalizeLayout({ top: ['terminal', 'nope', 'terminal'], bottom: ['terminal', 'files'] })).toEqual({ top: ['terminal', 'changes', 'scratch', 'info', 'phone'], bottom: ['files', 'background'] });
     expect(paneKey(ws, 'bottom')).toBe('ws:w1|bottom');
   });
 });
@@ -60,15 +60,31 @@ describe('the right panel’s tabs', () => {
     expect(panelFits({ kind: 'plan', id: 'p1' })).toBe(false);
     expect(panelTabsFor({ kind: 'plan', id: 'p1' })).toEqual([]);
     expect(panelFits(ws)).toBe(true);
-    expect(panelFits({ kind: 'plans' })).toBe(true);
   });
-  it('a workspace has every tab; a chat has no Changes; a friend’s workspace and the Terminal view only Info', () => {
+  it('the Tasks board, a task’s page and the plans have the whole window', () => {
+    expect(panelFits({ kind: 'task', id: 't1' })).toBe(false);
+    expect(panelFits({ kind: 'plans' })).toBe(false);
+    expect(panelTabsFor({ kind: 'task', id: 't1' })).toEqual([]);
+    expect(panelFits({ kind: 'tasks' })).toBe(false);
+    expect(panelTabsFor({ kind: 'tasks' })).toEqual([]);
+  });
+  it('a workspace has every tab; a chat has no Changes; a friend’s workspace Info and its Scratch; the Terminal view only Info', () => {
     expect(panelTabsFor(ws, 'worktree')).toEqual(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background']);
-    expect(panelTabsFor({ kind: 'project', id: 'p' })).toEqual(['terminal', 'info', 'history']);
+    expect(panelTabsFor({ kind: 'project', id: 'p' })).toEqual(['files', 'terminal', 'info', 'history']);
     expect(panelTabsFor(ws, 'chat')).toEqual(['files', 'terminal', 'info', 'scratch', 'background']);
-    expect(panelTabsFor({ kind: 'shared', owner: 'o', id: 'x', tab: 'chat' })).toEqual(['info']);
+    expect(panelTabsFor({ kind: 'shared', owner: 'o', id: 'x', tab: 'chat' })).toEqual(['info', 'scratch']);
     expect(panelTabsFor({ kind: 'terminal' })).toEqual(['info']);
     expect(panelTabsFor(room)).toEqual(['terminal', 'info']);
+  });
+  it('with a phone paired, its mirror is a tab beside Your Mac only, never a project’s chat, the Phone page or a plan', () => {
+    expect(panelTabsFor(ws, 'worktree', true)).not.toContain('phone');
+    expect(panelTabsFor(ws, 'chat', true)).not.toContain('phone');
+    expect(panelTabsFor(room, undefined, true)).not.toContain('phone');
+    expect(panelTabsFor({ kind: 'assistant' }, undefined, true)).toEqual(['terminal', 'info', 'phone']);
+    expect(panelTabsFor({ kind: 'assistant' })).toEqual(['terminal', 'info']);
+    expect(panelTabsFor({ kind: 'phone' }, undefined, true)).toEqual(['terminal', 'info']);
+    expect(panelTabsFor({ kind: 'plan', id: 'p1' }, undefined, true)).toEqual([]);
+    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor({ kind: 'assistant' }, undefined, true))).toEqual(['info', 'phone']);
   });
 
   it('opens on the tab you last picked there, else Changes when there are changes, else Info', () => {
@@ -94,9 +110,13 @@ describe('the right panel’s tabs', () => {
     expect(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background'].map((t) => panelDigit(t as 'changes'))).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
-  it('is never narrower than the minimum nor wider than 60% of the window', () => {
+  it('is never narrower than the minimum nor wider than 60% of the window, and leaves the center its room', () => {
     expect(clampPanelWidth(100, 1440)).toBe(PANEL_MIN);
-    expect(clampPanelWidth(2000, 1440)).toBe(864);
+    // A wide window: 60% of it.
+    expect(clampPanelWidth(4000, 2560)).toBe(1536);
+    // Narrower: the center keeps its 690 (CENTER_MIN) first, beside the sidebar too.
+    expect(clampPanelWidth(2000, 1440)).toBe(750);
+    expect(clampPanelWidth(2000, 1440, 240)).toBe(510);
     expect(clampPanelWidth(400, 1440)).toBe(400);
     // A tiny window still gets the minimum.
     expect(clampPanelWidth(400, 400)).toBe(PANEL_MIN);
@@ -141,33 +161,28 @@ describe('the Files tab’s tree', () => {
     'src/lib': [{ name: 'auth.ts', dir: false }],
     node_modules: [{ name: 'server-thing', dir: true }],
   };
-  const entriesOf = (p: string): Entry[] | undefined => fs[p];
-
   it('shows opened folders under their parent, with a loading row for one on its way', () => {
-    const rows = treeRows((p) => (p === 'src/lib' ? undefined : fs[p]), new Set(['src', 'src/lib']), '');
+    const rows = treeRows((p) => (p === 'src/lib' ? undefined : fs[p]), new Set(['src', 'src/lib']));
     expect(rows.map((r) => `${'  '.repeat(r.depth)}${r.kind === 'loading' ? '…' : r.name}`)).toEqual(['src', '  lib', '    …', '  server.ts', 'node_modules', 'README.md']);
     expect(rows[0]).toMatchObject({ dir: true, open: true });
   });
 
-  it('filters by name, keeping the folders above a match (and never looking into node_modules)', () => {
-    const rows = treeRows(entriesOf, new Set(), 'auth');
-    expect(rows.map((r) => r.path)).toEqual(['src', 'src/lib', 'src/lib/auth.ts']);
-    expect(treeRows(entriesOf, new Set(), 'server').map((r) => r.path)).toEqual(['src', 'src/server.ts']);
-    // A folder whose own name matches shows closed.
-    expect(treeRows(entriesOf, new Set(), 'lib').map((r) => [r.path, r.open])).toEqual([
-      ['src', true],
-      ['src/lib', false],
+  it('lays the files a name search found out as a tree, folders first, with the match marked in the name', () => {
+    const rows = foundRows([
+      { path: 'src/server.ts', ranges: [[4, 7]] },
+      { path: 'README.md', ranges: [[0, 3]] },
+      { path: 'src/lib/auth.ts', ranges: [[0, 3]] },
     ]);
-    // …and opening it shows everything in it.
-    expect(treeRows(entriesOf, new Set(['src/lib']), 'lib').map((r) => r.path)).toEqual(['src', 'src/lib', 'src/lib/auth.ts']);
-    expect(treeRows(entriesOf, new Set(), 'zzz')).toEqual([]);
+    expect(rows.map((r) => `${'  '.repeat(r.depth)}${r.name}`)).toEqual(['src', '  lib', '    auth.ts', '  server.ts', 'README.md']);
+    expect(rows.every((r) => !r.dir || r.open)).toBe(true);
+    expect(rows.find((r) => r.name === 'server.ts')?.marks).toEqual([[0, 3]]);
+    // A match only in the folders above: nothing to mark in the name.
+    expect(rows.find((r) => r.name === 'auth.ts')?.marks).toEqual([]);
   });
 
-  it('while filtering, loads the folders not looked at yet (skipping dependencies and ones asked for)', () => {
-    const partial = (p: string): Entry[] | undefined => (p === '' ? fs[''] : undefined);
-    expect(filterLoads(partial, new Set())).toEqual(['src']);
-    expect(filterLoads(partial, new Set(['src']))).toEqual([]);
-    expect(filterLoads(entriesOf, new Set())).toEqual([]);
+  it('clips a path’s matches to its name', () => {
+    expect(nameRanges('a/bc/def.ts', [[2, 8]])).toEqual([[0, 3]]);
+    expect(nameRanges('top.ts', [[1, 2]])).toEqual([[1, 2]]);
   });
 
   it('knows the folders above a path', () => {

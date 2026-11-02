@@ -1,14 +1,16 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { CcOutput, CcOutputFile, CcOutputs } from '@beluga/core/claude-code/model.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon, type IconName } from '../components/Icon.js';
+import { VideoPlayer, useBlobUrl } from '../components/VideoPlayer.js';
 import { Button, Empty, EmptyActions, IconButton, Segmented, cx } from '../components/ui.js';
 import { useApi, useBeluga } from '../lib/beluga.js';
 import { openWithDefaultApp, revealInFinder } from '../lib/files.js';
 import { followed, isFresh, timeAgo } from '../layout/panel/scratch-model.js';
 import { type Places, howLabel, outputsKey, placeOf } from './outputs-model.js';
 import s from './agent-outputs.module.css';
+import { everyWhileShown } from '../lib/window-active.js';
 
 /**
  * A sub-agent's Outputs: what it made or looked at while it worked (screenshots, test output,
@@ -41,10 +43,10 @@ export function useAgentOutputs(sessionId: string, agentId: string, live: boolea
       );
     };
     look();
-    const timer = setInterval(look, live ? POLL_LIVE_MS : POLL_MS);
+    const stop = everyWhileShown(look, live ? POLL_LIVE_MS : POLL_MS);
     return () => {
       alive = false;
-      clearInterval(timer);
+      stop();
     };
   }, [sessionId, agentId, live]);
   return list;
@@ -53,10 +55,8 @@ export function useAgentOutputs(sessionId: string, agentId: string, live: boolea
 /** "now", "12s", "3m": kept current without a new listing. */
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 5000);
-    return () => clearInterval(t);
-  }, []);
+  // Resting only while the page can't be seen; on time again the moment it can.
+  useEffect(() => everyWhileShown(() => setNow(Date.now()), 5000), []);
   return now;
 }
 
@@ -68,7 +68,14 @@ const pretty = (text: string): string => {
   }
 };
 
-function Contents({ file }: { file: CcOutputFile }) {
+/** A video the agent made (a screen recording, a demo), playing inline. */
+function VideoContents({ file, fallback }: { file: CcOutputFile; fallback: ReactNode }) {
+  const url = useBlobUrl(file.data, file.mime);
+  return url ? <VideoPlayer url={url} name={placeOf(file.path, {}).name} fallback={fallback} /> : null;
+}
+
+function Contents({ file, fallback }: { file: CcOutputFile; fallback: ReactNode }) {
+  if (file.kind === 'video') return file.data && file.mime ? <VideoContents file={file} fallback={fallback} /> : null;
   if (file.data && file.mime) return <img className={s.image} src={`data:${file.mime};base64,${file.data}`} alt={placeOf(file.path, {}).name} />;
   if (file.text !== undefined) {
     if (file.kind === 'markdown') return <div className={s.doc}><Markdown text={file.text} /></div>;
@@ -94,7 +101,12 @@ function Preview({ sessionId, agentId, item, places, onClose }: { sessionId: str
     };
   }, [sessionId, agentId, item.path, item.mtime]);
   const { name, dir } = placeOf(item.path, places);
-  const shown = file ? <Contents file={file} /> : null;
+  const openIt = (
+    <Button icon="external" onClick={() => void openWithDefaultApp(client, item.path)}>
+      Open With Its App
+    </Button>
+  );
+  const shown = file && (file.data || file.text !== undefined) ? <Contents file={file} fallback={openIt} /> : null;
   return (
     <section className={s.preview} aria-label={name}>
       <div className={s.previewHead}>
@@ -122,7 +134,7 @@ function Preview({ sessionId, agentId, item, places, onClose }: { sessionId: str
         ) : (
           <Empty
             icon={ICONS[item.kind]}
-            title={item.kind === 'image' ? 'Too big to show here' : 'Not shown here'}
+            title={item.kind === 'image' || item.kind === 'video' ? 'Too big to show here' : 'Not shown here'}
             detail={`${formatBytes(item.size)}. Open it with its app to look at it.`}
             action={
               <EmptyActions>

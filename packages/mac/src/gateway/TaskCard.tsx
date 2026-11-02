@@ -1,6 +1,8 @@
 import { memo, useEffect, useState } from 'react';
 import { type TaskView, approvalTitle, isFinal, stateLabel, stateTone, targetLabel } from '@beluga/core/gateway/model.js';
 import { formatDuration } from '@beluga/shared/text.js';
+import { agentLabel } from '@beluga/shared/agent-label.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { Markdown } from '../chat/Markdown.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
@@ -115,7 +117,7 @@ function Result({ task }: { task: TaskView }) {
         <button type="button" className={s.reveal} aria-expanded={open} onClick={() => setOpen(!open)}>
           <Icon name={open ? 'chevronDown' : 'chevronRight'} size={10} />
           {open ? `Hide ${task.peerName}’s reply` : `Show ${task.peerName}’s reply`}
-          <span className={s.via}>your Claude passes it on below</span>
+          <span className={s.via}>your agent passes it on below</span>
         </button>
       ) : null}
       {r.summary && !folded ? <Markdown text={r.summary} /> : null}
@@ -155,24 +157,45 @@ function Result({ task }: { task: TaskView }) {
           </div>
         </>
       ) : null}
+      {r.secret && r.status === 'done' ? (
+        <div className={s.hint}>
+          <Icon name="lock" size={11} /> A secret ({r.secret}): {task.direction === 'sent' ? `${task.peerName} approved sending it to you` : 'you approved sending it'}, this once.
+        </div>
+      ) : null}
+      {r.agent && task.direction === 'sent' ? (
+        <div className={s.hint}>
+          <Icon name={agentMark(r.agent)} size={11} /> Answered by {agentLabel(r.agent, task.peerName, false, { model: true })}
+        </div>
+      ) : null}
       {r.problems?.length ? <div className={s.problems}>{r.valid === false ? 'The data doesn’t match what was asked for: ' : ''}{r.problems.join(' · ')}</div> : null}
     </div>
   );
 }
 
 /** A friend's request waiting for you: Approve, Always (a rule for requests like it), Decline, or the full sheet. */
-function Approve({ task }: { task: TaskView }) {
+function Approve({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   const api = useApi();
   const call = useCall();
   const waiting = useApp((st) => st.approvals.some((x) => x.task === task.id || x.title === approvalTitle(task)));
   const answer = (decision: 'yes' | 'always' | 'no'): Promise<unknown> => api.gateway.decide(task.id, { answer: decision, scope: 'this', command: 'this', expiry: 'never' });
+  // In a friends' chat the card is where you answer: there's no approval above the message box there.
+  if (!waiting && inChat)
+    return (
+      <div className={s.actions}>
+        <span className={s.hint}>Waiting for your answer.</span>
+        <Button variant="quiet" icon="eye" onClick={() => openRequest(task.id)}>
+          Review…
+        </Button>
+      </div>
+    );
   if (!waiting) return <div className={s.hint}>Waiting for your answer above the message box.</div>;
   return (
     <div className={s.actions}>
       <Button variant="primary" onClick={() => call('approve it', answer('yes'))}>
-        Approve
+        {task.secret ? 'Allow Once' : 'Approve'}
       </Button>
-      <Button onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>
+      {/* A secret is asked about each time: nothing to make "Always". */}
+      {task.secret ? null : <Button onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>}
       <Button variant="quiet" onClick={() => call('decline it', answer('no'))}>
         Decline
       </Button>
@@ -198,11 +221,11 @@ function Question({ task }: { task: TaskView }) {
   // Your Claude's answer waits for you: shown to edit and send.
   const single = !draft && q.questions.length === 1 && q.questions[0]!.options.length > 0 && !q.questions[0]!.multiSelect;
   return (
-    <div className={a.question} role="group" aria-label={`${task.peerName}’s Claude asks`}>
+    <div className={a.question} role="group" aria-label={`${task.peerName}’s agent asks`}>
       {q.questions.map((item, i) => (
         <div key={i}>
           <div className={a.questionText}>
-            {task.peerName}’s Claude asks: {item.question}
+            {task.peerName}’s agent asks: {item.question}
           </div>
           {single ? (
             <div className={a.answers}>
@@ -234,7 +257,7 @@ function Question({ task }: { task: TaskView }) {
         <Button size="small" variant="quiet" onClick={() => send('skip')}>
           Let Them Decide
         </Button>
-        <span className={s.via}>{draft ? 'Your Claude’s answer: you hadn’t seen this request, so it waits for you' : task.by === 'agent' ? 'Your Claude was asked first' : ''}</span>
+        <span className={s.via}>{draft ? 'Your agent’s answer: you hadn’t seen this request, so it waits for you' : task.by === 'agent' ? 'Your agent was asked first' : ''}</span>
       </div>
     </div>
   );
@@ -249,11 +272,12 @@ function Confirm({ task }: { task: TaskView }) {
   return (
     <>
       {editing ? <textarea className={s.edit} aria-label="What to ask" value={text} onChange={(e) => setText(e.target.value)} autoFocus /> : <div className={`${s.ask} selectable`}>{task.ask}</div>}
-      <div className={s.hint}>Your Claude wants to send this. You haven’t marked {task.peerName} as trusted, so it asks you first.</div>
+      <div className={s.hint}>Your agent wants to send this, so it asks you first. Always lets it ask {task.peerName} without checking from now on (it doesn’t change what they may do on your Mac).</div>
       <div className={s.actions}>
         <Button variant="primary" onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined))}>
           Ask {task.peerName}
         </Button>
+        <Button onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined, true))}>Always</Button>
         {editing ? null : (
           <Button icon="pencil" onClick={() => setEditing(true)}>
             Edit
@@ -268,15 +292,16 @@ function Confirm({ task }: { task: TaskView }) {
 }
 
 /** A task card placed in a conversation, lined up with the messages. */
-export function LogTaskCard({ task }: { task: TaskView }) {
+export function LogTaskCard({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   return (
     <div className={s.inLog}>
-      <TaskCard task={task} />
+      <TaskCard task={task} {...(inChat ? { inChat } : {})} />
     </div>
   );
 }
 
-export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
+/** `inChat`: in a friends' chat (BLG-207), where the card itself is where you answer. */
+export const TaskCard = memo(function TaskCard({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   const api = useApi();
   const call = useCall();
   const live = !isFinal(task.state) && task.state !== 'confirm';
@@ -285,13 +310,20 @@ export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
   const sent = task.direction === 'sent';
   const working = task.incoming ? ` · ${kb(task.incoming.received)} of ${kb(task.incoming.total)}` : task.state === 'working' && task.startedAt ? ` · ${formatDuration(now - task.startedAt)}` : '';
   const done = isFinal(task.state) && task.endedAt ? ` · ${formatDuration(task.endedAt - task.createdAt)}` : '';
-  const title = task.state === 'confirm' ? `Ask ${targetLabel(task)}?` : sent ? `To ${targetLabel(task)}` : `From ${task.peerName}${task.by === 'agent' ? '’s Claude' : ''}`;
+  const title = task.state === 'confirm' ? `Ask ${targetLabel(task)}?` : sent ? `To ${targetLabel(task)}` : `From ${task.peerName}${task.by === 'agent' ? '’s agent' : ''}`;
   return (
-    <section className={`${s.card} ${task.state === 'confirm' ? s.confirm : ''}`} aria-label={`Task: ${title}`} data-task={task.id} data-state={task.state}>
+    <section className={`${s.card} ${task.state === 'confirm' ? s.confirm : ''} ${task.secret && !isFinal(task.state) ? s.secret : ''}`} aria-label={`Task: ${title}`} data-task={task.id} data-state={task.state}>
+      {/* A secret is its own approval, each time (BLG-209): the card says so before anything else. */}
+      {task.secret && !isFinal(task.state) ? (
+        <div className={s.secretLine}>
+          <Icon name="lock" size={12} />
+          {sent ? `A secret · only ${task.peerName} can allow it, each time` : 'A secret · only you can allow it, each time'}
+        </div>
+      ) : null}
       <div className={s.head}>
-        <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} size={20} />
+        <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} agent={task.kind === 'ask' ? task.result?.agent : undefined} size={20} />
         <span className={s.who}>{title}</span>
-        {sent && task.by === 'agent' && task.state !== 'confirm' ? <span className={s.via}>asked by your Claude</span> : null}
+        {sent && task.by === 'agent' && task.state !== 'confirm' ? <span className={s.via}>asked by your agent</span> : null}
         {!sent && task.where ? <span className={s.via}>{task.where}</span> : null}
         <span className={`${s.status} ${s[`tone_${tone}`]}`} role="status">
           {task.state === 'confirm' ? null : <Dot tone={tone === 'claude' ? 'claude' : tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : tone === 'error' ? 'error' : 'muted'} live={live} />}
@@ -316,7 +348,7 @@ export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
           ) : null}
           {sent && task.question ? <Question task={task} /> : null}
           <Result task={task} />
-          {!sent && task.state === 'awaiting_approval' ? <Approve task={task} /> : null}
+          {!sent && task.state === 'awaiting_approval' ? <Approve task={task} {...(inChat ? { inChat } : {})} /> : null}
           {live && !(!sent && task.state === 'awaiting_approval') ? (
             <div className={s.actions}>
               <Button size="small" variant="quiet" icon="stop" onClick={() => call(sent ? 'cancel it' : 'stop it', api.gateway.cancel(task.id))}>

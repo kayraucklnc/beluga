@@ -274,13 +274,13 @@ describe('Claude Code agent worktrees', () => {
   it('removes the finished ones and keeps those with uncommitted work', async () => {
     const mgr = demo; // the only test that removes worktrees; no other test looks at agent worktrees
     const api = mgr.list.find((p) => p.name === 'bob-api')!;
-    const agents = api.workspaces.filter((w) => w.path.includes('/.claude/worktrees/'));
+    const agents = api.workspaces.filter((w) => /[\\/]\.claude[\\/]worktrees[\\/]/.test(w.path));
     expect(agents).toHaveLength(2);
     (await import('node:fs')).writeFileSync(path.join(agents[0]!.path, 'wip.txt'), 'not committed');
     await mgr.refresh();
     const res = await mgr.cleanAgentWorktrees(api.id);
     expect(res).toEqual({ removed: 1, kept: 1 });
-    const left = mgr.list.find((p) => p.id === api.id)!.workspaces.filter((w) => w.path.includes('/.claude/worktrees/'));
+    const left = mgr.list.find((p) => p.id === api.id)!.workspaces.filter((w) => /[\\/]\.claude[\\/]worktrees[\\/]/.test(w.path));
     expect(left.map((w) => w.id)).toEqual([agents[0]!.id]);
   });
 });
@@ -335,7 +335,7 @@ describe('on your own', () => {
     kay.session.submit('@add-auth add a test');
     await waitFor(() => kay.runs.some((r) => r.prompt === 'add a test'));
     expect(kay.runs.find((r) => r.prompt === 'add a test')?.place?.cwd).toBe(ws.path);
-    expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Sent to the Claude in add-auth'))).toBe(true);
+    expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Sent to the agent in add-auth'))).toBe(true);
   });
 
   it("opening a workspace Beluga hasn't used shows its Claude Code conversation and continues it", async () => {

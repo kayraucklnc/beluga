@@ -1,9 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { openOnMac } from '../../lib/mac';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Infinity as Always, MessageSquare, Monitor, Workflow } from 'lucide-react-native';
+import { Infinity as Always, EyeOff, MessageSquare, Monitor, Shield, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
 import { Platform, ScrollView, TextInput, View } from 'react-native';
-import { convHref } from '../../components/Conv';
+import { chatHref, convHref } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace, plainOf, sendOwn } from '../../components/Needs';
 import { Sheet } from '../../components/Sheet';
 import { Card, Hairline, Press, Row, T } from '../../components/ui';
@@ -47,16 +48,17 @@ export default function Need() {
               {n.topic ? (
                 <Row
                   first={!always}
-                  Icon={n.topic.startsWith('plan:') ? Workflow : MessageSquare}
+                  Icon={n.topic.startsWith('plan:') ? Workflow : n.topic.startsWith('sentinel:') ? Shield : MessageSquare}
                   tone="sky"
-                  label={n.topic.startsWith('plan:') ? 'Open the plan' : 'Open the conversation'}
+                  label={n.topic.startsWith('plan:') ? 'Open the plan' : n.topic.startsWith('sentinel:') ? 'Open the sentinel' : 'Open the conversation'}
                   onPress={() => {
                     const t = n.topic!;
-                    close(() => router.push(t.startsWith('plan:') ? `/plan/${t.slice(5)}` : convHref(t)));
+                    close(() => router.push(t.startsWith('plan:') ? `/plan/${t.slice(5)}` : t.startsWith('sentinel:') ? `/sentinel/${encodeURIComponent(t.slice(9))}` : t.startsWith('chat:') ? chatHref(t) : convHref(t)));
                   }}
                 />
               ) : null}
-              <Row first={!always && !n.topic} Icon={Monitor} tone="plain" label="Open on your Mac" onPress={() => (store.toast({ text: 'It is waiting in Beluga on your Mac.', tone: 'info' }), close())} chevron={false} />
+              <Row first={!always && !n.topic} Icon={Monitor} tone="plain" label="Open on your Mac" onPress={() => (void openOnMac(n.topic ? { topic: n.topic } : { need: n.id }), close())} chevron={false} />
+              <Row Icon={EyeOff} tone="plain" label="Dismiss" sub="Off your lists, here and on your Mac, without answering" onPress={() => (store.dismiss(n), close())} chevron={false} />
             </Card>
             {n.answer?.text ? (
               <View style={{ gap: 8 }}>

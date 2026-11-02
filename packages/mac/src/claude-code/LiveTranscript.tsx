@@ -78,7 +78,7 @@ const MessageStep = memo(function MessageStep({ step, open }: { step: CcStep; op
       </button>
       {isOpen ? (
         <div className={s.messageBody}>
-          <Markdown text={step.text} localImages />
+          <Markdown text={step.text} localImages tasks />
         </div>
       ) : null}
     </div>
@@ -98,11 +98,12 @@ const StepView = memo(function StepView({ step, who }: { step: CcStep; who: 'ses
   return (
     <div className={cx(s.turn, user && s.turnUser)}>
       <div className={s.turnHead}>
+        {/* agent-wording: claude */}
         {user ? <span className={s.who}>{who === 'agent' ? 'Task' : 'You'}</span> : <span className={cx(s.who, s.whoClaude)}>Claude</span>}
         <span className={s.when}>{time(step.ts)}</span>
       </div>
       <div className={s.turnBody}>
-        <Markdown text={step.text} localImages />
+        <Markdown text={step.text} localImages tasks />
       </div>
     </div>
   );
@@ -199,6 +200,7 @@ export function LiveTranscript({ sessionId, agentId, version, live, label }: { s
           )}
           {live ? (
             <div className={s.workingRow}>
+              {/* agent-wording: claude */}
               <Avatar name="Claude" id="claude-code" claude size={18} />
               <Working />
             </div>

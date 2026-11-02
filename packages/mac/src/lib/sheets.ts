@@ -12,6 +12,8 @@ export type NativeSheet =
   | { readonly kind: 'fork'; readonly wsId: string }
   /** Carry a conversation (an ask chat in a main folder) into a new worktree and go on there. */
   | { readonly kind: 'continue_worktree'; readonly wsId: string }
+  /** Fork a friend's shared worktree to this Mac: its changes, Scratch and conversation (BLG-312). */
+  | { readonly kind: 'fork_to_mac'; readonly owner: string; readonly wsId: string }
   /** A command to run on a friend's computer (`peerId` unset: pick who). */
   | { readonly kind: 'peer_run'; readonly peerId?: string }
   /** A new template (Name, Prompt, Plan first). */
@@ -26,18 +28,43 @@ export type NativeSheet =
   | { readonly kind: 'work'; readonly wsId: string; readonly action: AskedWork }
   /** A project's worktrees made outside Beluga that can go, ticked, before removing them. */
   | { readonly kind: 'clean_up_worktrees'; readonly projectId: string }
+  /** Import from Claude Code…: one had outside Beluga, continued in a new worktree (BLG-321). */
+  | { readonly kind: 'import_conversation'; readonly projectId: string }
+  /** Share with…: a project with friends over the network (pick who, and whether they work there or follow). */
+  | { readonly kind: 'share_project'; readonly projectId: string }
   /** Delete Project…: out of Beluga with the worktrees it made (archived); the project's folder is never touched. */
   | { readonly kind: 'delete_project'; readonly projectId: string }
   /** A new task (in a project, a status, under a parent). */
-  | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('../../../../src/core/board/model.js').IssueStatus; readonly parent?: string }
+  /** boardId: the board it goes on; projectId: the repo it runs in (both: the sheet's first pick). */
+  | { readonly kind: 'new_task'; readonly boardId?: string; readonly projectId?: string; readonly status?: import('../../../../src/core/board/model.js').IssueStatus; readonly parent?: string }
+  /** New Board (no boardId; repos ticked to start with), or a board's settings. */
+  | { readonly kind: 'task_board'; readonly boardId?: string; readonly repos?: readonly string[] }
+  /** A new label in a project's set (a name, an icon, a color), put on a task too when it's opened from one; and its own labels, to remove. */
+  | { readonly kind: 'new_label'; readonly projectId: string; readonly issueId?: string }
+  /** Sync a project's tasks with Linear: connect a key and a team, or see how it syncs. */
+  | { readonly kind: 'task_sync'; readonly projectId: string }
+  /** About This Project: what Claude reads when it writes a task there, shared with teammates (BLG-298). */
+  | { readonly kind: 'project_context'; readonly projectId: string }
+  /** Environment…: a project's variables beside its main folder's .env (BLG-369). */
+  | { readonly kind: 'project_env'; readonly projectId: string }
   /** A new plan with Claude: what it's for, the project (unset: pick one), how far it runs on its own. */
   | { readonly kind: 'new_plan'; readonly projectId?: string }
+  /** A new sentinel (docs/sentinel.md §3): from a recipe, or built yourself; `projectId` 'mac' is Your Mac. */
+  | { readonly kind: 'new_sentinel'; readonly projectId?: string; readonly way?: 'describe' | 'recipe' | 'build' }
+  /** Add a Tile to a dashboard (docs/sentinel.md §10). */
+  | { readonly kind: 'add_tile'; readonly dashboardId: string }
+  /** A kept table's document or storage object, or a run's file, in Beluga's viewer (BLG-381); `name` is the storage cell for one from Storage; for a run's file (BLG-392), `metric` is the run and `name` its file. */
+  | { readonly kind: 'sentinel_document'; readonly source: 'kept' | 'storage' | 'run'; readonly sentinelId: string; readonly metric: string; readonly column: string; readonly name: string }
+  /** A sentinel's kept metric, its whole history, with Export and Show in Finder (BLG-392). */
+  | { readonly kind: 'sentinel_data'; readonly sentinelId: string; readonly metric: string }
   /** Your planning style (how you like plans cut). */
   | { readonly kind: 'plan_style' }
   /** Not yet: what a milestone still needs, for the plan's head Claude. */
   | { readonly kind: 'plan_send_back'; readonly planId: string; readonly milestone: string }
   /** How a running plan runs (its mode), with what a change means from now on. */
-  | { readonly kind: 'plan_mode'; readonly planId: string };
+  | { readonly kind: 'plan_mode'; readonly planId: string }
+  /** A GitHub step couldn't reach GitHub: why, in plain words, and its fixes (see git-trouble.ts). */
+  | { readonly kind: 'git_trouble'; readonly wsId: string; readonly trouble: import('../../../../src/shared/git-trouble.js').GitTrouble; readonly retry: import('./git-trouble.js').GitRetry };
 
 type Listener = () => void;
 

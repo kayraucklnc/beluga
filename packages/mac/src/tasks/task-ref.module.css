@@ -11,24 +11,45 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  max-width: min(24em, 100%);
-  height: 1.5em;
-  padding: 0 7px 0 5px;
+  max-width: min(26em, 100%);
+  height: 1.6em;
+  margin: 0 1px;
+  padding: 0 8px 0 5px;
   border: 0;
-  border-radius: 6px;
-  vertical-align: -0.25em;
+  border-radius: 999px;
+  /* Its baseline is the bottom of the status ring: this puts the key on the line's baseline, so the
+     pill sits centered on the words (measured in WebKit) and doesn't make the line taller. */
+  vertical-align: -0.09em;
   font: inherit;
   color: var(--text);
-  background: var(--code-bg);
-  box-shadow: inset 0 0 0 1px var(--hairline);
-  cursor: default;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent), 0 1px 1.5px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast),
+    box-shadow var(--dur-fast);
 }
 .chip:hover {
-  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  background: color-mix(in srgb, var(--accent) 17%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent), 0 1px 2px rgba(0, 0, 0, 0.07);
+}
+.chip:active {
+  background: color-mix(in srgb, var(--accent) 23%, var(--bg-raised));
 }
 .chip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+.chip .key {
+  font-weight: 650;
+  color: var(--accent);
+}
+/* A bare key in the words: just the ring and the key, so the sentence reads as written. */
+.keyChip {
+  gap: 4px;
+  height: 1.5em;
+  padding: 0 6px 0 4px;
+  vertical-align: -0.08em;
 }
 .chipTitle {
   min-width: 0;
@@ -38,6 +59,19 @@
   font-size: 0.92em;
   font-weight: 500;
 }
+/* Says it goes somewhere; nudges along on hover. */
+.chipGo {
+  flex: none;
+  color: var(--accent);
+  opacity: 0.6;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast);
+}
+.chip:hover .chipGo {
+  opacity: 1;
+  transform: translateX(1.5px);
+}
 
 .missing {
   display: inline-flex;
@@ -46,7 +80,8 @@
   height: 1.5em;
   padding: 0 7px;
   border-radius: 6px;
-  vertical-align: -0.25em;
+  /* The key comes first, so its baseline is the line's. */
+  vertical-align: baseline;
   font-size: 0.92em;
   color: var(--text-3);
   box-shadow: inset 0 0 0 1px var(--hairline);

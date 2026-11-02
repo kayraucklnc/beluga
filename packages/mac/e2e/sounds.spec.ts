@@ -86,22 +86,22 @@ test('a different sound for each kind of notification', async ({ page }) => {
   const s = await openSoundSettings(page);
   await s.getByRole('tab', { name: 'Per kind' }).click();
   const kinds = s.getByRole('radiogroup', { name: 'Kind of notification' });
-  for (const kind of ['Claude needs you', 'Claude finished', 'Messages and mentions', 'People come and go', 'Background tasks']) {
+  for (const kind of ['Your agent needs you', 'Your agent finished', 'Messages and mentions', 'People come and go', 'Background tasks']) {
     await expect(kinds.getByRole('radio', { name: new RegExp(`^${kind}`) })).toBeVisible();
   }
-  await kinds.getByRole('radio', { name: /^Claude needs you/ }).click();
+  await kinds.getByRole('radio', { name: /^Your agent needs you/ }).click();
   await s.getByRole('tab', { name: '8-bit' }).click();
   await picker(page).getByRole('radio', { name: 'Two-note ping' }).click();
-  await expect(kinds.getByRole('radio', { name: /^Claude needs you/ })).toContainText('8-bit · Two-note ping');
-  await expect(kinds.getByRole('radio', { name: /^Claude finished/ })).toContainText('Glass');
-  await expect(kinds.getByRole('button', { name: 'Play Claude needs you: 8-bit · Two-note ping' })).toBeVisible();
+  await expect(kinds.getByRole('radio', { name: /^Your agent needs you/ })).toContainText('8-bit · Two-note ping');
+  await expect(kinds.getByRole('radio', { name: /^Your agent finished/ })).toContainText('Glass');
+  await expect(kinds.getByRole('button', { name: 'Play Your agent needs you: 8-bit · Two-note ping' })).toBeVisible();
 
   await kinds.getByRole('radio', { name: /^Background tasks/ }).click();
   await expect(kinds.getByRole('radio', { name: /^Background tasks/ })).toHaveAttribute('aria-checked', 'true');
   await s.getByRole('tab', { name: 'None' }).click();
   await picker(page).getByRole('radio', { name: 'None' }).click();
   await expect(kinds.getByRole('radio', { name: /^Background tasks/ })).toContainText('None');
-  await expect(kinds.getByRole('radio', { name: /^Claude needs you/ })).toContainText('8-bit · Two-note ping');
+  await expect(kinds.getByRole('radio', { name: /^Your agent needs you/ })).toContainText('8-bit · Two-note ping');
 
   await s.getByRole('tab', { name: 'Same for all' }).click();
   await expect(kinds).toBeHidden();

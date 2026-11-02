@@ -3,7 +3,7 @@ import { inApp } from './boot.js';
 import type { Actions } from './actions.js';
 import type { UiStore } from './beluga.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
-import { setPrefs, getPrefs, zoom } from './prefs.js';
+import { setPrefs, getPrefs, subscribePrefs, zoom } from './prefs.js';
 import { byMenu, showPanelTab, togglePanel, toggleTerminal } from './panel.js';
 import { PANEL_LABELS, PANEL_TABS, type PanelTab } from './panel-model.js';
 import { dockCount, workingCount } from '../layout/attention-model.js';
@@ -15,7 +15,12 @@ import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
 import { pastePlain } from '../chat/paste-paths.js';
 import type { PlaceKind } from './go.js';
 import { throttle } from './throttle.js';
+import { fromMenu } from './shortcuts.js';
 import { windowActive } from './window-active.js';
+import { newChatProject } from './project-home.js';
+import { type MenuBarCounts, SPOUT_EVERY_MS, spoutStep, trayTitle } from '../menubar/menubar-look.js';
+import { shownState } from '../network/net-model.js';
+import { SHOW_TILE, boardLinkOf } from './widget-links.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
@@ -35,6 +40,13 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
   const state = client.store.getState();
   const project = state.view.kind === 'workspace' ? state.projects.find((p) => p.workspaces.some((w) => w.id === (state.view as { id: string }).id)) : state.projects.find((p) => p.root);
   if (GO[id]) return actions.run({ type: 'view', view: { kind: GO[id]! } });
+  // Go › Issues: the GitHub issues of the project you're in.
+  if (id === 'go-issues') return actions.run({ type: 'view', view: { kind: 'issues' } });
+  // Go › Actions: its GitHub Actions.
+  if (id === 'go-actions') return actions.run({ type: 'view', view: { kind: 'actions' } });
+  // Go › Sentinel: every watcher.
+  if (id === 'go-sentinel') return actions.run({ type: 'view', view: { kind: 'sentinel' } });
+  if (id === 'go-dashboard') return actions.run({ type: 'view', view: { kind: 'dashboard' } });
   // Friends, groups and your status (Add a Friend…, the menu bar's status items).
   if (runNetworkMenuItem(id, client)) return;
   // A friend's request in the menu-bar menu: Approve / Always / Decline / Review….
@@ -48,12 +60,12 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'paste-plain':
       return void pastePlain();
     case 'help-keys':
-      return ui.patch({ palette: true });
+      return ui.patch({ settings: 'keyboard' });
     case 'help-welcome':
     case 'onboarding':
       return void document.dispatchEvent(new CustomEvent(SHOW_WELCOME));
     case 'new-chat':
-      return actions.run({ type: 'new_chat', projectId: 'chats' });
+      return actions.run({ type: 'new_chat', projectId: newChatProject(state) });
     case 'new-worktree':
       if (project?.root) actions.run({ type: 'new_worktree', projectId: project.id });
       else client.store.dispatch({ type: 'toast', text: 'Add a project first (File › Add Project…)', level: 'warn' });
@@ -82,7 +94,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'panel-info':
     case 'panel-history':
     case 'panel-scratch':
-    case 'panel-background': {
+    case 'panel-background':
+    case 'panel-phone': {
       const tab = id.slice('panel-'.length) as PanelTab;
       if (!PANEL_TABS.includes(tab)) return;
       return byMenu(`panel-${tab}`, () => {
@@ -120,10 +133,21 @@ export function useNative(client: SocketClient, ui: UiStore, actions: Actions, o
     let off: Array<() => void> = [];
     let alive = true;
     void import('@tauri-apps/api/event').then(async ({ listen }) => {
-      const a = await listen<string>('menu', (e) => runMenuItem(e.payload, client, ui, actions));
+      // The same key press can reach the window too (lib/shortcuts.ts): it runs once.
+      const a = await listen<string>('menu', (e) => fromMenu(e.payload, () => runMenuItem(e.payload, client, ui, actions)));
       // The same link can come both ways (live and from the launch buffer): handle it once.
       const handled = new Set<string>();
+      let lastBoard: { url: string; at: number } | undefined;
       const open = (url: string): void => {
+        // A widget's link, clicked as often as you like (the same one twice in a second is one click).
+        const board = boardLinkOf(url);
+        if (board) {
+          if (lastBoard?.url === url && Date.now() - lastBoard.at < 1000) return;
+          lastBoard = { url, at: Date.now() };
+          actions.run({ type: 'view', view: board.board ? { kind: 'dashboard', id: board.board } : { kind: 'sentinel' } });
+          if (board.tile) setTimeout(() => document.dispatchEvent(new CustomEvent(SHOW_TILE, { detail: board.tile })), 300);
+          return;
+        }
         if (handled.has(url)) return;
         // beluga://add… and beluga://join#…: a friend's or a group's invitation (the Beluga network).
         if (openNetworkLink(url)) return void handled.add(url);
@@ -164,31 +188,105 @@ export async function joinRoom(invite: string): Promise<void> {
 export const TRAY_GAP_MS = 1000;
 export const TRAY_GAP_AWAY_MS = 5000;
 
+/** Everything the menu-bar number can count (Settings › Menu Bar picks one). */
+export function menuBarCounts(st: ReturnType<SocketClient['store']['getState']>): MenuBarCounts {
+  return {
+    new: dockCount(st),
+    waiting: st.approvals.length + st.questions.length + st.knocks.length,
+    working: workingCount(st),
+    room: st.peers.filter((p) => p.peerId !== st.selfId).length,
+    friends: st.network.friends.filter((f) => shownState(f) !== 'offline').length,
+  };
+}
+
+const invokeTray = (cmd: string, args: Record<string, unknown>): void => {
+  void import('@tauri-apps/api/core').then(({ invoke }) => invoke(cmd, args)).catch(() => undefined);
+};
+
+/** Spout once in the real menu bar now (Settings' "Try It"). */
+export function playTraySpout(): void {
+  if (inApp()) invokeTray('play_tray_spout', {});
+}
+
 export function useTrayStatus(client: SocketClient): void {
   useEffect(() => {
     if (!inApp()) return;
     let last = '';
     let seen: unknown;
+    let seenLook: unknown;
+    let working: number | undefined;
+    let repeating = false;
     const update = (): void => {
       const st = client.store.getState();
-      if (st === seen) return;
+      const prefs = getPrefs();
+      if (st === seen && prefs.menuBar === seenLook) return;
       seen = st;
-      const waiting = st.approvals.length + st.questions.length + st.knocks.length;
-      const working = workingCount(st);
-      const unread = dockCount(st);
-      const key = `${waiting}:${working}:${unread}`;
+      seenLook = prefs.menuBar;
+      const counts = menuBarCounts(st);
+      const look = prefs.menuBar;
+      // The whale spouts: once as a Claude finishes, or on and off while one works.
+      const step = spoutStep(prefs.reduceMotion ? 'off' : look.spout, working, counts.working);
+      working = counts.working;
+      if (step === 'once') invokeTray('play_tray_spout', {});
+      const repeat = step === 'repeat';
+      if (repeat !== repeating) {
+        repeating = repeat;
+        invokeTray('play_tray_spout', { everyMs: repeat ? SPOUT_EVERY_MS : 0 });
+      }
+      const title = trayTitle(look, counts);
+      const key = `${counts.waiting}:${counts.working}:${counts.new}:${title}`;
       if (key === last) return;
       last = key;
-      void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_tray_status', { waiting, working, unread })).catch(() => undefined);
+      invokeTray('set_tray_status', { waiting: counts.waiting, working: counts.working, unread: counts.new, title });
     };
     const tick = throttle(update, () => (windowActive() ? TRAY_GAP_MS : TRAY_GAP_AWAY_MS));
     tick.request();
     const off = client.store.subscribe(tick.request);
+    const offPrefs = subscribePrefs(tick.request);
     return () => {
       off();
+      offPrefs();
       tick.stop();
     };
   }, [client]);
+}
+
+/**
+ * Hand the menu bar the spout's frames, drawn here from the same drawing Settings previews, each
+ * time its look changes (none while it's off, or Reduce Motion is on).
+ */
+export function useTraySpout(): void {
+  useEffect(() => {
+    if (!inApp()) return;
+    let key = '';
+    let alive = true;
+    const send = (): void => {
+      const { menuBar, reduceMotion } = getPrefs();
+      const off = reduceMotion || menuBar.spout === 'off';
+      const next = off ? 'off' : `${menuBar.splash}:${menuBar.speed}`;
+      if (next === key) return;
+      key = next;
+      if (off) return invokeTray('set_tray_spout', { frames: [], frameMs: 33 });
+      void import('../menubar/raster.js')
+        .then(({ spoutPngs }) => spoutPngs(menuBar))
+        .then(({ frames, frameMs }) => {
+          if (alive && key === next) invokeTray('set_tray_spout', { frames, frameMs });
+        })
+        .catch(() => undefined);
+    };
+    // Sliders move many times a second: draw once they rest.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    send();
+    const offPrefs = subscribePrefs(() => {
+      clearTimeout(timer);
+      timer = setTimeout(send, 250);
+    });
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      offPrefs();
+    };
+  }, []);
 }
 
 /**

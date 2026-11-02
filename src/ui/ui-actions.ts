@@ -119,7 +119,8 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
       // An empty chat opens right away; it's only created when you send the first message.
       const latest = store.getState();
       const back = latest.view.kind === 'draft' ? latest.view.back : latest.view;
-      const dir = action.projectId === 'chats' ? client.launchDir : undefined;
+      // The Mac app has no launch folder (''): its chats get their own scratch folder.
+      const dir = action.projectId === 'chats' && client.launchDir ? client.launchDir : undefined;
       store.dispatch({ type: 'view', view: { kind: 'draft', projectId: action.projectId, dir, back } });
       patchUi({ focus: 'chat' });
       return;

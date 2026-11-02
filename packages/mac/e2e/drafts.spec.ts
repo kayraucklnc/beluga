@@ -77,7 +77,7 @@ test('a new worktree page keeps its words, branch, name and images while you’r
     data.items.add(new File([bytes], 'shot.png', { type: 'image/png' }));
     el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
   }, PNG);
-  await expect(box).toHaveValue(/^fix the header on the settings page \[image \d+\] $/);
+  await expect(box).toHaveValue(/^fix the header on the settings page \[(?:image \d+|\d+\u2007[^\]\n]+)\] $/);
   await expect(images(page).locator('img')).toHaveCount(1);
 
   // Another chat's box is empty: nothing to send there by mistake.
@@ -94,7 +94,7 @@ test('a new worktree page keeps its words, branch, name and images while you’r
 
   // Back: all of it is there.
   await newWorktree(page, 'keep-drafts');
-  await expect(composer(page)).toHaveValue(/^fix the header on the settings page \[image \d+\] $/);
+  await expect(composer(page)).toHaveValue(/^fix the header on the settings page \[(?:image \d+|\d+\u2007[^\]\n]+)\] $/);
   await expect(page.getByLabel('Worktree name')).toHaveValue('kept-name');
   await expectPicked(page.getByRole('combobox', { name: 'Based on' }), 'feature/drafts');
   await expect(images(page).locator('img')).toHaveCount(1);

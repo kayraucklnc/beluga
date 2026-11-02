@@ -3,6 +3,7 @@ import { type EnvVar, envProblems, importEnv, parseEnvText } from '@beluga/share
 import { Icon } from '../components/Icon.js';
 import { Button, Tip, cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
+import { useMyAgentName } from '../lib/agent-words.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import e from './env-settings.module.css';
@@ -39,21 +40,29 @@ function ImportBox({ onImport, onClose }: { onImport: (vars: EnvVar[]) => void; 
   );
 }
 
-/** The key/value editor for one place: yours, or a project's. Changes save as you leave a field. */
-function Editor({ projectId }: { projectId: string }) {
+/**
+ * The key/value editor for one place: yours, or a project's. Changes save as you leave a field.
+ * A project's main folder .env shows under its own variables (BLG-369): typing over one of its
+ * values sets it in Beluga, which wins; Use .env takes that back.
+ */
+export function EnvEditor({ projectId }: { projectId: string }) {
   const api = useApi();
   const project = useApp((st) => st.projects.find((p) => p.id === projectId));
   const keysHere = useApp((st) => (project ? st.envKeys.projects[project.root] : st.envKeys.global));
   const [rows, setRows] = useState<EnvRow[] | undefined>(undefined);
   const [dotenv, setDotenv] = useState(false);
-  const [dotenvKeys, setDotenvKeys] = useState<readonly string[]>([]);
+  const [dotenvVars, setDotenvVars] = useState<readonly EnvVar[]>([]);
+  const [dotenvFiles, setDotenvFiles] = useState<readonly string[]>([]);
+  const [copying, setCopying] = useState(false);
   const [claudeDotenv, setClaudeDotenv] = useState(false);
+  const [newKeysBack, setNewKeysBack] = useState(true);
   const [overridden, setOverridden] = useState<Readonly<Record<string, readonly string[]>>>({});
   const [shown, setShown] = useState<ReadonlySet<number>>(new Set());
+  const [shownFile, setShownFile] = useState<ReadonlySet<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [importing, setImporting] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
-  const [focusId, setFocusId] = useState<number | undefined>(undefined);
+  const [focusId, setFocusId] = useState<{ id: number; field: 'key' | 'value'; caret?: number } | undefined>(undefined);
   const saved = useRef('');
   const editing = useRef(false);
 
@@ -66,8 +75,10 @@ function Editor({ projectId }: { projectId: string }) {
       saved.current = JSON.stringify([filled(scope.vars), scope.dotenv]);
       setRows(withIds(scope.vars));
       setDotenv(scope.dotenv);
-      setDotenvKeys(scope.dotenvKeys);
+      setDotenvVars(scope.dotenvVars ?? []);
+      setDotenvFiles(scope.dotenvFiles ?? []);
       setClaudeDotenv(scope.claudeDotenv);
+      setNewKeysBack(scope.newKeysBack ?? true);
       setOverridden(scope.overridden ?? {});
     });
     return () => void (live = false);
@@ -95,7 +106,29 @@ function Editor({ projectId }: { projectId: string }) {
   const add = (): void => {
     const row = withIds([{ key: '', value: '' }])[0]!;
     setRows((rs) => [...(rs ?? []), row]);
-    setFocusId(row.id);
+    setFocusId({ id: row.id, field: 'key' });
+  };
+  // Typing over a .env value: it's set here from now on (and wins), the caret kept where you type.
+  const override = (key: string, value: string, caret: number | null): void => {
+    const row = withIds([{ key, value }])[0]!;
+    editing.current = true;
+    setStatus({ kind: 'idle' });
+    if (shownFile.has(key)) setShown((set) => new Set([...set, row.id]));
+    setRows((rs) => [...(rs ?? []), row]);
+    setFocusId({ id: row.id, field: 'value', ...(caret !== null ? { caret } : {}) });
+  };
+  const copyIn = (): void => {
+    setCopying(true);
+    api.env.importDotenv(projectId).then(
+      (n) => {
+        setCopying(false);
+        setStatus(n ? { kind: 'saved' } : { kind: 'error', text: 'They’re all in Beluga already' });
+      },
+      (err: unknown) => {
+        setCopying(false);
+        setStatus({ kind: 'error', text: errorText(err) });
+      },
+    );
   };
   const addAll = (vars: readonly EnvVar[]): void => {
     const next = importEnv(rows ?? [], vars);
@@ -120,9 +153,42 @@ function Editor({ projectId }: { projectId: string }) {
 
   if (!rows) return <div className={s.note}>Loading…</div>;
   const masked = (id: number): boolean => !showAll && !shown.has(id);
+  const fromFile = new Map(projectId && dotenv ? dotenvVars.map((v) => [v.key, v.value]) : []);
+  const own = new Set(rows.map((r) => r.key));
+  // The .env's own rows: only those not set here (a set one shows above, marked as winning over it).
+  const fileRows = [...fromFile].filter(([key]) => !own.has(key));
+  const notCopied = dotenvVars.filter((v) => !own.has(v.key)).length;
+  // One list, in the .env's order: a value changed here stays in its place (only its tag changes); ones set only here follow.
+  type Listed = { kind: 'file'; key: string; value: string } | { kind: 'own'; row: EnvRow; index: number };
+  const byKey = new Map(rows.map((row, index) => [row.key, { kind: 'own' as const, row, index }]));
+  const listed: Listed[] = [
+    ...[...fromFile].map(([key, value]): Listed => byKey.get(key) ?? { kind: 'file', key, value }),
+    ...rows.map((row, index): Listed => ({ kind: 'own', row, index })).filter((x) => !(x.kind === 'own' && fromFile.has(x.row.key))),
+  ];
+  const filesLabel = dotenvFiles.length ? dotenvFiles.join(' and ') : '.env';
+
   return (
     <>
       <Group>
+        {projectId ? (
+          <div className={e.sourceBar}>
+            <Icon name="file" size={12} className={e.sourceIcon} />
+            <span className={e.sourceText}>
+              Include the main folder’s {filesLabel}
+              <span className={e.muted}>
+                {dotenv ? (dotenvVars.length ? ` · ${dotenvVars.length} variable${dotenvVars.length === 1 ? '' : 's'}, read fresh each time something starts` : ' · none there yet') : ' · off: only the variables set here'}
+              </span>
+            </span>
+            <Switch
+              label="Use the main folder's .env"
+              on={dotenv}
+              onChange={(v) => {
+                setDotenv(v);
+                commit(rows, v);
+              }}
+            />
+          </div>
+        ) : null}
         <div className={e.head}>
           <span>Name</span>
           <span>Value</span>
@@ -133,52 +199,105 @@ function Editor({ projectId }: { projectId: string }) {
           </Tip>
           <span />
         </div>
-        {rows.length ? null : <div className={e.empty}>No variables yet. Add one, or paste a few KEY=value lines.</div>}
-        {rows.map((r, i) => (
-          <div key={r.id} className={cx(e.row, problems.has(i) && e.bad)}>
-            <input
-              className={e.key}
-              aria-label="Name"
-              aria-invalid={problems.has(i)}
-              value={r.key}
-              placeholder="NAME"
-              spellCheck={false}
-              autoComplete="off"
-              autoFocus={r.id === focusId}
-              onChange={(ev) => change(r.id, { key: ev.target.value.trim() })}
-              onBlur={() => commit(rows)}
-              onPaste={(ev) => {
-                const text = ev.clipboardData.getData('text');
-                const pasted = /[=\n]/.test(text) ? parseEnvText(text).vars : [];
-                if (!pasted.length) return;
-                ev.preventDefault();
-                addAll(pasted);
-              }}
-            />
-            <input
-              className={cx(e.value, masked(r.id) && r.value && e.masked)}
-              aria-label={`Value of ${r.key || 'the new variable'}`}
-              value={r.value}
-              placeholder="value"
-              spellCheck={false}
-              autoComplete="off"
-              onChange={(ev) => change(r.id, { value: ev.target.value })}
-              onBlur={() => commit(rows)}
-            />
-            <button type="button" className={cx(e.eye, !masked(r.id) && e.eyeOn)} aria-label={masked(r.id) ? `Show ${r.key || 'value'}` : `Hide ${r.key || 'value'}`} aria-pressed={!masked(r.id)} disabled={showAll} onClick={() => setShown((set) => (set.has(r.id) ? new Set([...set].filter((x) => x !== r.id)) : new Set([...set, r.id])))}>
-              <Icon name="eye" size={13} />
-            </button>
-            <button type="button" className={e.remove} aria-label={`Remove ${r.key || 'this row'}`} onClick={() => remove(r.id)}>
-              <Icon name="x" size={10} />
-            </button>
-            {problems.has(i) ? <div className={e.problem}>{problems.get(i)}</div> : null}
-            {!problems.has(i) && overridden[r.key]?.length ? (
-              <div className={e.override}>
-                Not used in {overridden[r.key]!.join(', ')}: {overridden[r.key]!.length > 1 ? 'they set' : 'it sets'} {r.key} too, and that wins. Change it there.
+        {rows.length || fileRows.length ? null : <div className={e.empty}>{projectId ? 'No variables yet, and no .env in the main folder. Add one, or paste a few KEY=value lines.' : 'No variables yet. Add one, or paste a few KEY=value lines.'}</div>}
+        {listed.map((item) => {
+          if (item.kind === 'file') {
+            const { key, value } = item;
+            const hidden = !showAll && !shownFile.has(key);
+            return (
+              <div key={`file:${key}`} className={e.row}>
+                <input className={cx(e.key, e.fixedKey)} aria-label="Name" value={key} readOnly tabIndex={-1} />
+                <input
+                  className={cx(e.value, hidden && value && e.masked)}
+                  aria-label={`Value of ${key} (from ${filesLabel}; typing sets it in Beluga)`}
+                  value={value}
+                  spellCheck={false}
+                  autoComplete="off"
+                  onChange={(ev) => override(key, ev.target.value, ev.target.selectionStart)}
+                />
+                <button type="button" className={cx(e.eye, !hidden && e.eyeOn)} aria-label={hidden ? `Show ${key}` : `Hide ${key}`} aria-pressed={!hidden} disabled={showAll} onClick={() => setShownFile((set) => (set.has(key) ? new Set([...set].filter((x) => x !== key)) : new Set([...set, key])))}>
+                  <Icon name="eye" size={13} />
+                </button>
+                <Tip label={`From the main folder’s ${filesLabel}. Type over it to change it here; the file stays as it is.`}>
+                  <span className={e.sourceTag}>.env</span>
+                </Tip>
               </div>
-            ) : null}
-          </div>
-        ))}
+            );
+          }
+          const { row: r, index: i } = item;
+          const fileValue = fromFile.get(r.key);
+          const overrides = fileValue !== undefined;
+          return (
+            <div key={r.id} className={cx(e.row, problems.has(i) && e.bad)}>
+              <input
+                className={cx(e.key, overrides && e.fixedKey)}
+                aria-label="Name"
+                aria-invalid={problems.has(i)}
+                value={r.key}
+                placeholder="NAME"
+                spellCheck={false}
+                autoComplete="off"
+                readOnly={overrides}
+                tabIndex={overrides ? -1 : undefined}
+                autoFocus={focusId?.id === r.id && focusId.field === 'key'}
+                onChange={(ev) => change(r.id, { key: ev.target.value.trim() })}
+                onBlur={() => commit(rows)}
+                onPaste={(ev) => {
+                  const text = ev.clipboardData.getData('text');
+                  const pasted = /[=\n]/.test(text) ? parseEnvText(text).vars : [];
+                  if (!pasted.length) return;
+                  ev.preventDefault();
+                  addAll(pasted);
+                }}
+              />
+              <input
+                className={cx(e.value, masked(r.id) && r.value && e.masked)}
+                aria-label={`Value of ${r.key || 'the new variable'}`}
+                value={r.value}
+                placeholder="value"
+                spellCheck={false}
+                autoComplete="off"
+                autoFocus={focusId?.id === r.id && focusId.field === 'value'}
+                onFocus={(ev) => {
+                  if (focusId?.id !== r.id || focusId.field !== 'value') return;
+                  const at = focusId.caret ?? ev.currentTarget.value.length;
+                  ev.currentTarget.setSelectionRange(at, at);
+                  setFocusId(undefined);
+                }}
+                onChange={(ev) => change(r.id, { value: ev.target.value })}
+                onBlur={() => commit(rows)}
+              />
+              <button type="button" className={cx(e.eye, !masked(r.id) && e.eyeOn)} aria-label={masked(r.id) ? `Show ${r.key || 'value'}` : `Hide ${r.key || 'value'}`} aria-pressed={!masked(r.id)} disabled={showAll} onClick={() => setShown((set) => (set.has(r.id) ? new Set([...set].filter((x) => x !== r.id)) : new Set([...set, r.id])))}>
+                <Icon name="eye" size={13} />
+              </button>
+              {overrides ? (
+                <Tip label={`Changed here, over the main folder’s ${filesLabel}. Click to use the file’s value again.`}>
+                  <button type="button" className={cx(e.sourceTag, e.sourceEdited)} aria-label={`Use ${filesLabel} for ${r.key}`} onClick={() => remove(r.id)}>
+                    <Icon name="refresh" size={10} />
+                  </button>
+                </Tip>
+              ) : (
+                <button type="button" className={e.remove} aria-label={`Remove ${r.key || 'this row'}`} onClick={() => remove(r.id)}>
+                  <Icon name="x" size={10} />
+                </button>
+              )}
+              {problems.has(i) ? <div className={e.problem}>{problems.get(i)}</div> : null}
+              {!problems.has(i) && overrides ? (
+                <div className={e.override}>
+                  {fileValue === r.value ? `Set here, same as the ${filesLabel}.` : `Changed here. The ${filesLabel} file is left as it is.`}{' '}
+                  <button type="button" className={e.inlineLink} onClick={() => remove(r.id)}>
+                    Use {filesLabel}
+                  </button>
+                </div>
+              ) : null}
+              {!problems.has(i) && overridden[r.key]?.length ? (
+                <div className={e.override}>
+                  Not used in {overridden[r.key]!.join(', ')}: {overridden[r.key]!.length > 1 ? 'they set' : 'it sets'} {r.key} too, and that wins. Change it there.
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
         {importing ? <ImportBox onImport={addAll} onClose={() => setImporting(false)} /> : null}
         <div className={e.foot}>
           <Button size="small" variant="quiet" icon="plus" onClick={add}>
@@ -189,6 +308,13 @@ function Editor({ projectId }: { projectId: string }) {
               Paste lines…
             </Button>
           )}
+          {projectId && dotenv && notCopied ? (
+            <Tip label="Copies the .env values into Beluga, so they stay even if the file changes or goes">
+              <Button size="small" variant="quiet" icon="download" disabled={copying} onClick={copyIn}>
+                {copying ? 'Copying…' : 'Keep a Copy in Beluga'}
+              </Button>
+            </Tip>
+          ) : null}
           <span className={e.flex} />
           <span className={cx(e.status, status.kind === 'error' && e.statusError)} role="status">
             {status.kind === 'saved' ? (
@@ -202,31 +328,37 @@ function Editor({ projectId }: { projectId: string }) {
         </div>
       </Group>
       {projectId ? (
-        <Group title="From the project folder">
-          <Row label="Also load .env" detail={dotenvKeys.length ? `${dotenvKeys.slice(0, 6).join(', ')}${dotenvKeys.length > 6 ? ` and ${dotenvKeys.length - 6} more` : ''}. The variables above win over these.` : 'There’s no .env in the project folder yet.'}>
+        <Group title="Worktrees">
+          <Row label="New keys go to the main folder" detail="A key a worktree adds to its .env (one the main folder doesn’t have) is added there too, so the next worktree works. A changed value is asked about: copy it there, or save it in Beluga.">
             <Switch
-              label="Also load .env from the project folder"
-              on={dotenv}
+              label="New keys from worktrees go to the main folder's .env"
+              on={newKeysBack}
               onChange={(v) => {
-                setDotenv(v);
-                commit(rows, v);
+                setNewKeysBack(v);
+                api.env.newKeysBack(projectId, v).then(
+                  () => setStatus({ kind: 'saved' }),
+                  (err: unknown) => {
+                    setNewKeysBack(!v);
+                    setStatus({ kind: 'error', text: errorText(err) });
+                  },
+                );
               }}
             />
           </Row>
         </Group>
       ) : null}
       <DatabaseTest projectId={projectId} />
-      <Group title="Your Claude">
+      <Group title="Your agent">
         <Row
           label="Read .env files without asking"
           detail={
             projectId
-              ? 'In this project. Off: your Claude asks you each time it wants one. A friend’s request never gets them.'
-              : 'In every project. Off: your Claude asks you each time (or as each project says). A friend’s request never gets them.'
+              ? 'In this project, and it gets the .env values above too. Off: it asks you each time it wants one. A friend’s request never gets them.'
+              : 'In every project. Off: your agent asks you each time (or as each project says). A friend’s request never gets them.'
           }
         >
           <Switch
-            label="Your Claude reads .env files without asking"
+            label="Your agent reads .env files without asking"
             on={claudeDotenv}
             onChange={(v) => {
               setClaudeDotenv(v);
@@ -259,7 +391,7 @@ function DatabaseTest({ projectId }: { projectId: string }) {
   return (
     <Group title="Database">
       <Row
-        label="Postgres for your Claude’s views"
+        label="Postgres for your agent’s views"
         detail={
           result === undefined || result === 'testing'
             ? 'Uses DATABASE_URL (or POSTGRES_URL…), or a Supabase project’s URL and SUPABASE_DB_PASSWORD, from here or the project’s .env.'
@@ -278,20 +410,21 @@ function DatabaseTest({ projectId }: { projectId: string }) {
 
 /**
  * Settings › Environment: variables Beluga gives your shells, setup and run commands, and your
- * Claude. Yours apply everywhere; a project's apply in its workspaces, over yours.
+ * agent. Yours apply everywhere; a project's apply in its workspaces, over yours.
  */
 export function EnvironmentSettings() {
   const projects = useApp((st) => st.projects).filter((p) => p.root);
   const envKeys = useApp((st) => st.envKeys);
   const [scope, setScope] = useState('');
   const count = (n: number): string => (n ? ` · ${n}` : '');
+  const agent = useMyAgentName();
   return (
     <>
       <p className={e.intro}>
-        Given to your shells, setup and run commands, and your Claude, never to a friend’s request. They stay on this Mac. Changes apply right away to your Claude’s next message and to new shells; a shell or dev server already running offers to restart with them.
+        Given to your shells, setup and run commands, and your {agent}, never to a friend’s request. They stay on this Mac. Changes apply right away to your {agent}’s next message and to new shells; a shell or dev server already running offers to restart with them.
       </p>
       <Group>
-        <Row label="Variables for" detail={scope ? 'This project’s workspaces. They win over yours.' : 'Every shell, script and Claude run.'}>
+        <Row label="Variables for" detail={scope ? 'This project’s workspaces. They win over yours.' : 'Every shell, script and agent run.'}>
           <Select
             label="Variables for"
             value={scope}
@@ -303,7 +436,7 @@ export function EnvironmentSettings() {
           />
         </Row>
       </Group>
-      <Editor key={scope} projectId={scope} />
+      <EnvEditor key={scope} projectId={scope} />
     </>
   );
 }

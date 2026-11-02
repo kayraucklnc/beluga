@@ -89,6 +89,9 @@ export async function startDemo({ home, claude, port }: { home: string; claude: 
   mkdirSync(claude, { recursive: true });
   const tmp = path.join(home, 'tmp');
   mkdirSync(tmp);
+  // The demo's friends (bob, mia) are on the Beluga network, which is off until you turn it on: on
+  // here as a saved setting (never $BELUGA_NETWORK, which would keep it on), so a test can turn it off.
+  writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({ network: true })}\n`);
 
   const log = path.join(home, 'e2e-daemon.log');
   const out = openSync(log, 'a');
@@ -104,7 +107,7 @@ export async function startDemo({ home, claude, port }: { home: string; claude: 
     env: {
       ...process.env,
       TMPDIR: `${tmp}/`,
-      ...both({ HOME: home, CLAUDE_HOME: claude, GH: path.join(import.meta.dirname, 'fake-gh.mjs'), FAKE_GH: path.join(home, 'fake-gh.json'), DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', ALLOW_ORIGINS: `http://localhost:${port}` }),
+      ...both({ HOME: home, CLAUDE_HOME: claude, GH: path.join(import.meta.dirname, 'fake-gh.mjs'), FAKE_GH: path.join(home, 'fake-gh.json'), DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', ALLOW_ORIGINS: `http://localhost:${port}`, NETWORK: '' }),
     },
     stdio: ['ignore', out, out],
   });

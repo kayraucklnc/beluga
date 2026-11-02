@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import setup, { type TestRun, releaseSlot, slotCount, trySlot, waitForSlot, waitingLine, workerCount } from '../scripts/test-lock.mjs';
 import { worktreeOf } from '../scripts/e2e-lock.mjs';
-import { niceForWorktree } from '../src/agent/claude-process.js';
+import { niceForWorktree } from '../src/agent/runtime/claude/claude-process.js';
 
 const tmp = (): string => mkdtempSync(path.join(os.tmpdir(), 'klaud-tests-'));
 const run = (over: Partial<TestRun> = {}): TestRun => ({ pid: process.pid, name: 'KLD-49', worktree: '/w/kld-49', startedAt: Date.now(), ...over });
@@ -17,7 +17,9 @@ async function deadPid(): Promise<number> {
   return child.pid!;
 }
 
-describe('how many workers and runs', () => {
+// Not on Windows: nice and ps.
+
+describe.skipIf(process.platform === 'win32')('how many workers and runs', () => {
   it('gives each run half the cores, at least 2, unless KLAUD_TEST_WORKERS says otherwise', () => {
     expect(workerCount({}, 14)).toBe(7);
     expect(workerCount({}, 2)).toBe(2);
@@ -34,7 +36,9 @@ describe('how many workers and runs', () => {
   });
 });
 
-describe('the slots', () => {
+// Not on Windows: nice and ps.
+
+describe.skipIf(process.platform === 'win32')('the slots', () => {
   it('lets N runs in and tells the next one who it waits for', () => {
     const dir = tmp();
     const parent = process.ppid;
@@ -87,7 +91,9 @@ describe('the slots', () => {
   });
 });
 
-describe("vitest's global setup", () => {
+// Not on Windows: nice and ps.
+
+describe.skipIf(process.platform === 'win32')("vitest's global setup", () => {
   const saved = { dir: process.env.KLAUD_TEST_DIR, slot: process.env.KLAUD_TEST_SLOT, slots: process.env.KLAUD_TEST_SLOTS };
   afterEach(() => {
     for (const [key, value] of [['KLAUD_TEST_DIR', saved.dir], ['KLAUD_TEST_SLOT', saved.slot], ['KLAUD_TEST_SLOTS', saved.slots]] as const) {
@@ -124,7 +130,9 @@ describe("vitest's global setup", () => {
   });
 });
 
-describe("a worktree's Claude Code runs at lower priority", () => {
+// Not on Windows: nice and ps.
+
+describe.skipIf(process.platform === 'win32')("a worktree's Claude Code runs at lower priority", () => {
   it('nices a run that carries KLAUD_WORKTREE, and what it starts inherits it', async () => {
     const child = spawn('/bin/sh', ['-c', "sleep 0.3; /bin/sh -c 'ps -o nice= -p $$'"], { stdio: ['ignore', 'pipe', 'ignore'] });
     expect(niceForWorktree(child.pid!, { KLAUD_WORKTREE: '/w/kld-49' })).toBe(true);

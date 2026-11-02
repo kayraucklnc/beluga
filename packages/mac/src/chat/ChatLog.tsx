@@ -6,15 +6,19 @@ import { type TaskView, tasksIn } from '@beluga/core/gateway/model.js';
 import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Empty, Working } from '../components/ui.js';
-import { useApp } from '../lib/beluga.js';
+import { useApi, useApp } from '../lib/beluga.js';
+import { agentName, useMyAgent } from '../lib/agent-words.js';
 import { keepSameLists, sameItems } from '../lib/stable.js';
 import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
 import { CompactDivider } from './CompactDivider.js';
 import { isCompactItem } from './context-model.js';
+import { ShippedDivider, isShippedItem } from './ShippedDivider.js';
+import { DialogueCard, isDialogueItem } from './DialogueCard.js';
 import { useClaudeStarting } from './flight.js';
 import { withLiveTails } from './live-tail.js';
-import { steeredMessages } from '@beluga/shared/claude-notices.js';
+import { asSent, steeredMessages } from '@beluga/shared/claude-notices.js';
+import { inYourQueue } from '@beluga/ui/compose.js';
 import s from './chat.module.css';
 import f from './flight.module.css';
 
@@ -70,15 +74,58 @@ export function latestCard(items: readonly LogItem[]): string | undefined {
  * A conversation: virtualized (a long one stays fast), anchored to the bottom while you're at
  * the bottom, and left alone while you read further up (with a way back down).
  */
+/** Near the top of the list: time to bring the page before it. */
+const EARLIER_PX = 400;
+
+/**
+ * A friend's worktree shared with you: its whole conversation comes a page at a time as you
+ * scroll back (BLG-259). Near the top, the page before it is asked for; when it lands above,
+ * the list stays where you were reading instead of jumping.
+ */
+function useEarlier(channel: string, parent: React.RefObject<HTMLDivElement | null>, firstId: string | undefined) {
+  const api = useApi();
+  const ws = useApp((st) => (channel.startsWith('ws:') ? st.shared.find((w) => w.id === channel.slice(3) && w.via === 'mesh') : undefined));
+  const asking = useRef<{ height: number; top: number; at: number } | undefined>(undefined);
+  const more = Boolean(ws?.earlier);
+  const ask = (): void => {
+    const el = parent.current;
+    if (!ws || !more || !el || el.scrollTop > EARLIER_PX) return;
+    if (asking.current && Date.now() - asking.current.at < 5000) return;
+    asking.current = { height: el.scrollHeight, top: el.scrollTop, at: Date.now() };
+    void api.sharing.earlier(ws.owner, ws.id).catch(() => undefined);
+  };
+  // The page landed above: keep what you were reading in the same place.
+  useLayoutEffect(() => {
+    const el = parent.current;
+    const was = asking.current;
+    if (!el || !was) return;
+    asking.current = undefined;
+    el.scrollTop = el.scrollHeight - was.height + was.top;
+  }, [firstId]);
+  // A short conversation doesn't scroll: bring the next page while the top is in sight.
+  useEffect(ask, [more, firstId]);
+  return ask;
+}
+
 export function ChatLog({ channel, empty }: { channel: string; empty?: React.ReactNode }) {
   // Only this conversation's items and tasks: another one streaming doesn't draw this one again (KLD-48).
   const mine = useApp((st) => st.log.filter((l) => l.channel === channel), sameItems);
   const selfId = useApp((st) => st.selfId);
+  // The agent this conversation runs on: a worktree's own pick, else yours.
+  const myAgent = useMyAgent();
+  const ownAgent = useApp(
+    (st) => (channel.startsWith('ws:') ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(3))?.agent : undefined),
+    (a, b) => a?.runtime === b?.runtime && a?.label === b?.label,
+  );
+  const agentRef = ownAgent ?? myAgent;
+  const agent = agentName(agentRef);
   // A shared workspace's earlier messages arrive as system lines; drawn here as normal messages.
   const items = useMemo(() => mine.map(chatRowOf), [mine]);
+  // What waits its turn is in the queue above the box; once it runs, it's drawn where it ran (BLG-317).
+  const sent = useMemo(() => asSent(items, (card) => inYourQueue(card, selfId)), [items, selfId]);
   // A message you steered in shows itself whether Claude has read it (BLG-54): its note card isn't drawn.
-  const steered = useMemo(() => steeredMessages(items), [items]);
-  const drawn = useMemo(() => (steered.notes.size ? items.filter((l) => !steered.notes.has(l.id)) : items), [items, steered]);
+  const steered = useMemo(() => steeredMessages(sent), [sent]);
+  const drawn = useMemo(() => (steered.notes.size ? sent.filter((l) => !steered.notes.has(l.id)) : sent), [sent, steered]);
   const tasks = useApp((st) => tasksIn(st, channel), sameItems);
   const placed = useMemo(() => placeTasks(drawn, tasks), [drawn, tasks]);
   // A card's tasks stay the same list while they're the same tasks, so its memo holds.
@@ -89,6 +136,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const rows = useMemo(() => shown.map((x) => x.row), [shown]);
   const latest = useMemo(() => latestCard(items), [items]);
   const parent = useRef<HTMLDivElement>(null);
+  const askEarlier = useEarlier(channel, parent, rows[0]?.id);
   const [atBottom, setAtBottom] = useState(true);
   const stick = useRef(true);
   const height = useRef(0);
@@ -149,6 +197,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const onScroll = (): void => {
     const el = parent.current;
     if (!el) return;
+    askEarlier();
     const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     if (!bottom && stick.current && Date.now() - youScrolled.current > 400) {
       el.scrollTop = el.scrollHeight;
@@ -193,13 +242,17 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
                 {item.type === 'task' ? (
                   <LogTaskCard task={item.task} />
                 ) : item.type === 'chat' ? (
-                  <ChatRow item={item} continued={continued(v.index)} mine={item.from === selfId} steer={steered.waiting.get(item.id)} />
+                  <ChatRow item={item} continued={continued(v.index)} ends={!continued(v.index + 1)} mine={item.from === selfId} steer={steered.waiting.get(item.id)} />
                 ) : item.type === 'agent' ? (
                   <AgentCard item={item} tasks={part?.side === 'head' || part?.side === 'live' ? undefined : inTurn.get(item.id)} latest={item.id === latest} part={part} working={shown[v.index]?.working} subs={shown[v.index]?.subs} />
                 ) : item.type === 'shell' ? (
                   <ShellCard item={item} />
                 ) : isCompactItem(item) ? (
                   <CompactDivider item={item} />
+                ) : isShippedItem(item) ? (
+                  <ShippedDivider item={item} />
+                ) : isDialogueItem(item) ? (
+                  <DialogueCard item={item} />
                 ) : (
                   <SystemRow item={item} />
                 )}
@@ -210,10 +263,10 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
         {starting ? (
           <div className={f.starting} data-claude-starting="true" role="status">
             <span className={f.startingAvatar}>
-              <Avatar name="Claude" id={selfId} claude size={22} />
+              <Avatar name={agent} id={selfId} agent={agentRef} size={22} />
             </span>
             <Working />
-            <span>Claude is starting…</span>
+            <span>{agent} is starting…</span>
           </div>
         ) : null}
       </div>

@@ -1,18 +1,29 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type ProcRow, isTestRunner, lockTargets, stopTestProcesses, testProcessesIn } from '../src/workspaces/test-procs.js';
+import { type ProcRow, isTestRunner, keptBashInput, lockTargets, stopTestProcesses, testProcessesIn } from '../src/workspaces/test-procs.js';
 
 const W = '/w/kld-5-playwright-fix';
 const row = (pid: number, ppid: number, line: string): ProcRow => ({ pid, ppid, line });
 
-describe('which processes are a worktree’s test runs', () => {
+// Not on Windows: reads ps, which Windows doesn’t have.
+
+describe.skipIf(process.platform === 'win32')('which processes are a worktree’s test runs', () => {
   it('judges the command, not the worktree’s name', () => {
     expect(isTestRunner(`node ${W}/node_modules/.bin/vitest run`, W)).toBe(true);
     expect(isTestRunner(`node ${W}/node_modules/@playwright/test/cli.js test`, W)).toBe(true);
     expect(isTestRunner(`node ${W}/src/server.js`, W)).toBe(false);
+  });
+
+  it('knows the demo daemon, however it was started; never the real one', () => {
+    const tsx = `node --require ${W}/node_modules/tsx/dist/preflight.cjs --import file://${W}/node_modules/tsx/dist/loader.mjs`;
+    expect(isTestRunner(`${tsx} src/cli.ts daemon --keep-alive demo`, W)).toBe(true);
+    expect(isTestRunner(`node ${W}/dist/cli.js daemon demo`, W)).toBe(true);
+    expect(isTestRunner('/Applications/Beluga.app/Contents/MacOS/node /Applications/Beluga.app/Contents/Resources/daemon/dist/cli.js daemon --keep-alive', W)).toBe(false);
+    // Started from a terminal in a worktree that's now going away: it goes too.
+    expect(testProcessesIn([row(30, 1, `${tsx} src/cli.ts daemon --keep-alive demo PWD=${W}`)], W, true)).toEqual([30]);
   });
 
   it("stops what this worktree's Claude started, and what's under it; not the rest", () => {
@@ -86,7 +97,9 @@ afterEach(() => {
   for (const c of children.splice(0)) c.kill('SIGKILL');
 });
 
-describe('a stale e2e lock never stops someone else’s process', () => {
+// Not on Windows: reads ps, which Windows doesn’t have.
+
+describe.skipIf(process.platform === 'win32')('a stale e2e lock never stops someone else’s process', () => {
   const run = { pid: 4100, worktree: '/w/kld-39', id: 'r9', groups: [4100, 4200], daemon: 4300, file: '/tmp/lock.json' };
   it('the lock holder verified (e2e-lock.mjs under its worktree): its groups, and its daemon when tagged', () => {
     const rows: ProcRow[] = [
@@ -193,6 +206,43 @@ describe.runIf(process.platform === 'darwin')('stopping them for real', () => {
       expect(alive()).toBe(false);
     } finally {
       if (alive()) process.kill(pid, 'SIGKILL');
+      delete process.env.KLAUD_E2E_DIR;
+    }
+  });
+
+  it('makes a kept Bash call outlive the turn: the mark exported, a background one detached', () => {
+    expect(keptBashInput('Bash', { command: 'npm run dev &' }, '/l.log')).toBeUndefined();
+    expect(keptBashInput('Read', { command: 'BELUGA_KEEP=1 x' }, '/l.log')).toBeUndefined();
+    expect(keptBashInput('Bash', { command: 'BELUGA_KEEP=1 cd app && npm run dev &' }, '/l.log')).toEqual({ command: 'export BELUGA_KEEP=1; BELUGA_KEEP=1 cd app && npm run dev &' });
+    const bg = keptBashInput('Bash', { command: 'BELUGA_KEEP=1 npm run dev', run_in_background: true, description: 'Dev' }, "/it's.log");
+    expect(bg).toMatchObject({ run_in_background: false, description: 'Dev' });
+    expect(String(bg?.command)).toContain(`nohup "\${SHELL:-/bin/sh}" -c 'BELUGA_KEEP=1 npm run dev' > '/it'\\''s.log' 2>&1 < /dev/null &`);
+    expect(String(bg?.command)).not.toContain('\n');
+  });
+
+  it('spares a kept background run whose mark came before a `cd` (`BELUGA_KEEP=1 cd x && node server.js`)', async () => {
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-procs-')));
+    writeFileSync(path.join(dir, 'server.js'), 'console.log("up"); setInterval(() => {}, 1000);\n');
+    const log = path.join(dir, 'scratch', 'kept.log');
+    const input = keptBashInput('Bash', { command: `BELUGA_KEEP=1 cd "${dir}" && "${process.execPath}" server.js`, run_in_background: true }, log)!;
+    const sh = spawn('/bin/sh', ['-c', String(input.command)], { env: { ...process.env, BELUGA_WORKTREE: dir }, stdio: 'ignore' });
+    await new Promise((r) => sh.on('exit', r));
+    const pids = () =>
+      new Promise<number[]>((resolve) => {
+        const ps = spawn('pgrep', ['-f', `${process.execPath} server.js`]);
+        let out = '';
+        ps.stdout.on('data', (d) => (out += d));
+        ps.on('exit', () => resolve(out.split('\n').filter(Boolean).map(Number)));
+      });
+    try {
+      for (let i = 0; i < 40 && !(existsSync(log) && readFileSync(log, 'utf8').includes('up')); i++) await new Promise((r) => setTimeout(r, 50));
+      expect(readFileSync(log, 'utf8')).toContain('up');
+      process.env.KLAUD_E2E_DIR = dir;
+      expect(await stopTestProcesses(dir, { graceMs: 300 })).toBe(0);
+      expect((await pids()).length).toBeGreaterThan(0);
+      expect(await stopTestProcesses(dir, { leaving: true, graceMs: 1000 })).toBeGreaterThanOrEqual(1);
+    } finally {
+      for (const pid of await pids()) process.kill(pid, 'SIGKILL');
       delete process.env.KLAUD_E2E_DIR;
     }
   });

@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Icon } from '../components/Icon.js';
 import s from './undo-toast.module.css';
+import { primaryKey } from '../lib/shortcuts-model.js';
 
 /**
  * "Hidden api — Undo": something you did that's easy to take back says so for a few
@@ -39,7 +40,7 @@ export function UndoToast() {
     if (!toast) return;
     const t = setTimeout(() => (current?.id === toast.id ? set(undefined) : undefined), SHOW_MS);
     const onKey = (e: KeyboardEvent): void => {
-      if (!e.metaKey || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z' || editing(document.activeElement)) return;
+      if (!primaryKey(e) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z' || editing(document.activeElement)) return;
       e.preventDefault();
       set(undefined);
       toast.undo();

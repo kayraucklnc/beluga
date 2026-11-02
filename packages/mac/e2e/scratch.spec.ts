@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { demoPdf } from '../../../src/demo-pdf.js';
 import { expect, test, type Page } from './fixtures.js';
 
 /**
@@ -15,7 +16,12 @@ const tab = (page: Page, name: string) => panel(page).getByRole('tablist', { nam
 
 // 2×2 PNGs, red and blue.
 const RED = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64');
+// A 16×16 WebM, a fifth of a second.
+const CLIP = Buffer.from('GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAIAEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggElTbuMU6uEHFO7a1OsggHq7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNjIuMTIuMTAxV0GNTGF2ZjYyLjEyLjEwMUSJiEBpAAAAAAAAFlSua8iuAQAAAAAAAD/XgQFzxYjuQWijPPoC35yBACK1nIN1bmSIgQCGhVZfVlA4g4EBI+ODhAvrwgDgkLCBELqBEJqBAlWwhFW5gQESVMNn/HNzoGPAgGfImkWjh0VOQ09ERVJEh41MYXZmNjIuMTIuMTAxc3PWY8CLY8WI7kFoozz6At9nyKFFo4dFTkNPREVSRIeUTGF2YzYyLjI4LjEwMSBsaWJ2cHhnyKFFo4hEVVJBVElPTkSHkzAwOjAwOjAwLjIwMDAwMDAwMAAfQ7Z1v+eBAKO6gQAAgPACAJ0BKhAAEAAARwiFhYiFhIgCAgJ1qgP4A/gCDU0YAP7+Rer/2Dpgy5/ivf+1oDg1X+jcABxTu2uRu4+zgQC3iveBAfGCAabwgQM=', 'base64');
 const BLUE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGNkYPjPwMDAxMAAAA0GAQOqgnhHAAAAAElFTkSuQmCC', 'base64');
+
+/** webhook-retries' scratch folder, as the first test found it (its Show in Finder names it only while the folder is empty). */
+let retriesDir: string | undefined;
 
 test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', async ({ page }) => {
   await page.goto('/');
@@ -32,6 +38,7 @@ test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', as
   await expect(finder).toBeVisible();
   const dir = (await finder.getAttribute('title'))!;
   expect(dir).toMatch(/\/\.beluga\/scratch$/);
+  retriesDir = dir;
 
   // Claude writes a JSON response: it shows up, laid out.
   writeFileSync(path.join(dir, 'api-response.json'), '{"ok":true,"items":[1,2]}');
@@ -88,6 +95,18 @@ test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', as
   await follow.click();
   await expect.poll(gap).toBeLessThan(10);
   await expect(follow).toHaveAttribute('aria-pressed', 'true');
+
+  // A PDF shows its pages, a video plays, and a file with no preview says so (BLG-96).
+  writeFileSync(path.join(dir, 'brief.pdf'), demoPdf());
+  await files.getByRole('option', { name: /brief\.pdf/ }).click();
+  await expect(panel(page).getByRole('region', { name: 'brief.pdf' }).getByRole('img', { name: 'Page 1' })).toBeVisible();
+  writeFileSync(path.join(dir, 'run.webm'), CLIP);
+  await files.getByRole('option', { name: /run\.webm/ }).click();
+  await expect(panel(page).getByRole('region', { name: 'run.webm' }).locator('video')).toBeVisible();
+  writeFileSync(path.join(dir, 'trace.bin'), Buffer.from([0, 1, 2, 0, 3]));
+  await files.getByRole('option', { name: /trace\.bin/ }).click();
+  await expect(panel(page).getByRole('region', { name: 'trace.bin' })).toContainText('No preview for this kind of file');
+  await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-no-preview.png') });
 });
 
 const SHOTS = path.resolve(import.meta.dirname, '../../../.context/shots');
@@ -102,16 +121,15 @@ test('Scratch: a calm empty state before anything lands, saying when Claude work
   await page.keyboard.press('Meta+Alt+6');
   await expect(tab(page, 'Scratch')).toHaveAttribute('aria-selected', 'true');
 
-  // Nothing yet, Claude idle: a calm empty state (not a loading outline), and both folders named.
+  // Nothing yet, Claude idle: a calm empty state (not a loading outline), no list of folder paths.
   await expect(panel(page).getByText('Nothing in scratch yet')).toBeVisible();
-  await expect(panel(page)).toContainText('.beluga/scratch/');
-  await expect(panel(page)).toContainText('.context/');
+  await expect(panel(page)).not.toContainText('.beluga/scratch/');
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-idle.png') });
 
   // Claude starts: the empty state says so.
   await composer(page).fill('Take a screenshot of the login page');
   await page.keyboard.press('Enter');
-  await expect(panel(page).getByRole('status').filter({ hasText: 'Claude is working' })).toBeVisible();
+  await expect(panel(page).getByRole('status').filter({ hasText: 'Your agent is working' })).toBeVisible();
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-working.png') });
 
   // A file lands in .context/ (another tool's folder Claude was told to use): it shows, tagged.
@@ -129,6 +147,61 @@ test('Scratch: a calm empty state before anything lands, saying when Claude work
   // Claude works again: a row on top of the list says so, where the next file will land.
   await composer(page).fill('And the signup page');
   await page.keyboard.press('Enter');
-  await expect(panel(page).getByRole('status').filter({ hasText: 'Claude is working' })).toBeVisible();
+  await expect(panel(page).getByRole('status').filter({ hasText: 'Your agent is working' })).toBeVisible();
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-list-working.png') });
+});
+
+test('Scratch: viewable files first, a web page drawn in a sandbox, and ← → through what can be looked at, full size (BLG-111)', async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page).getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
+  const row = sidebar(page).getByRole('button', { name: 'webhook-retries', exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
+  await row.click();
+  await page.keyboard.press('Meta+Alt+6');
+  test.skip(!retriesDir, 'needs the first test’s folder (run the whole file)');
+  const sub = path.join(retriesDir!, 'blg111');
+  mkdirSync(sub, { recursive: true });
+  // Newer than anything else here (the files above are in this folder too), oldest first: a picture, notes, a web page (whose script must not run), JSON, a picture, a log (the newest).
+  const files: [string, string | Buffer][] = [
+    ['b111-first.png', RED],
+    ['b111-notes.md', '# Notes'],
+    ['b111-report.html', '<!doctype html><h1 id="t">Report OK</h1><script>document.getElementById("t").textContent = "script ran"</script>'],
+    ['b111-data.json', '{"a":1}'],
+    ['b111-last.png', BLUE],
+    ['b111-run.log', 'hello'],
+  ];
+  const t0 = Date.now() / 1000 + 60;
+  files.forEach(([name, body], i) => {
+    writeFileSync(path.join(sub, name), body);
+    utimesSync(path.join(sub, name), t0 + i, t0 + i);
+  });
+  const list = panel(page).getByRole('listbox', { name: 'Scratch files' });
+  await expect(list.getByRole('option').first()).toContainText('b111-run.log');
+  const order = async () => (await list.getByRole('option').allTextContents()).map((t) => /^b111-([\w.]+?\.(?:png|md|html|json|log))/.exec(t)?.[1]).filter(Boolean);
+  expect(await order()).toEqual(['run.log', 'last.png', 'data.json', 'report.html', 'notes.md', 'first.png']);
+
+  // The sort menu: what can be looked at first, each part still newest first.
+  await panel(page).getByRole('button', { name: 'Sorted: newest first' }).click();
+  await page.getByRole('menuitem', { name: /Viewable First/ }).click();
+  await expect(panel(page).getByRole('button', { name: 'Sorted: viewable first' })).toBeVisible();
+  await expect(list.getByRole('option').first()).toContainText('b111-last.png');
+  expect(await order()).toEqual(['last.png', 'report.html', 'first.png', 'run.log', 'data.json', 'notes.md']);
+
+  // A web page is drawn, sandboxed with nothing allowed: its script didn't run.
+  await list.getByRole('option', { name: /b111-report\.html/ }).click();
+  const frame = panel(page).getByRole('region', { name: 'b111-report.html' }).locator('iframe');
+  await expect(frame).toHaveAttribute('sandbox', '');
+  await expect(frame.contentFrame().locator('h1')).toHaveText('Report OK');
+
+  // Full size from the newest picture (the top of the list): → goes down this order, ← back up, and
+  // stops at the top (no wrapping round to the bottom).
+  await list.getByRole('option', { name: /b111-last\.png/ }).click();
+  await panel(page).getByRole('region', { name: 'b111-last.png' }).getByRole('button', { name: 'Open in full' }).click();
+  const where = page.getByRole('main').getByRole('navigation', { name: 'Path' });
+  await expect(where).toContainText('b111-last.png');
+  for (const [key, name] of [['ArrowRight', 'b111-report.html'], ['ArrowRight', 'b111-first.png'], ['ArrowLeft', 'b111-report.html'], ['ArrowLeft', 'b111-last.png'], ['ArrowLeft', 'b111-last.png']] as const) {
+    await page.keyboard.press(key);
+    await expect(where).toContainText(name);
+    if (name === 'b111-report.html') await expect(page.getByRole('main').locator('iframe')).toBeVisible();
+  }
 });

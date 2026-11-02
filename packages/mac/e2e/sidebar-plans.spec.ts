@@ -21,7 +21,7 @@ const planRow = (page: Page) => block(page).locator('[data-plan-row]').and(page.
 
 async function unfold(page: Page): Promise<void> {
   await expect(projectRow(page)).toBeVisible();
-  const show = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+  const show = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
   if (await show.isVisible()) await show.click();
 }
 

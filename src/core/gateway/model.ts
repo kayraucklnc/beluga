@@ -1,5 +1,6 @@
+import type { AgentRef, ProviderUsage } from '../../protocol.js';
 import { type Capabilities, DEFAULT_CAPABILITIES, type Rule } from './access.js';
-import type { Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
+import type { DialogueEnvelope, Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
 
 /**
  * Tasks between Claudes in the shared state (the Mac app draws them): what you sent and what
@@ -45,7 +46,33 @@ export interface TaskOutcome {
   /** The data matches what was asked for (`expects`); problems say how it doesn't. */
   readonly valid?: boolean;
   readonly problems?: readonly string[];
+  /** The file is a secret its owner approved sending, that one time ("private SSH key id_ed25519"). */
+  readonly secret?: string;
+  /** An ask: the agent that answered on their Mac (their pick, never the asker's; BLG-448). */
+  readonly agent?: AgentRef;
 }
+
+/** What kind of secret a file is (core/shares.ts secretKindOf decides). */
+export type SecretKind = 'ssh-key' | 'dotenv' | 'cloud' | 'token' | 'secret';
+
+/** A secret, in the words its approval says: "your private SSH key id_ed25519". */
+export function secretLabel(kind: SecretKind, name: string): string {
+  switch (kind) {
+    case 'ssh-key':
+      return /^id_(rsa|ed25519|ecdsa|dsa)$/i.test(name) ? `your private SSH key ${name}` : `${name} from your SSH folder`;
+    case 'dotenv':
+      return `your .env file ${name}`;
+    case 'cloud':
+      return `your cloud credentials ${name}`;
+    case 'token':
+      return `your token file ${name}`;
+    default:
+      return /\.(pem|key|p12|pfx|keystore|jks)$/i.test(name) ? `your private key ${name}` : `your secret file ${name}`;
+  }
+}
+
+/** The label as the requester says it ("private SSH key id_ed25519"): without "your". */
+export const secretNoun = (label: string): string => label.replace(/^your /, '');
 
 export interface TaskView {
   readonly id: string;
@@ -70,6 +97,14 @@ export interface TaskView {
   readonly by: 'agent' | 'person';
   /** Sent: the conversation your Claude asked from (its answer continues there). */
   readonly conversation?: string;
+  /** The chat both people see its card in (BLG-208): your DM with them (`dm:<peerId>`), or the channel it was asked from. */
+  readonly chat?: string;
+  /** Sent: the friend's Claude's chat answer it came from (its message id): its card stays under that answer (BLG-353). */
+  readonly answer?: string;
+  /** A turn of a chaired dialogue (BLG-468): the chair waits for it, and nothing resumes a conversation with it. */
+  readonly dialogue?: DialogueEnvelope;
+  /** Sent: which of their agents it asks for (BLG-503); their Mac says so when another one does it. */
+  readonly onAgent?: AgentRef;
   readonly state: TaskState;
   /** The latest steps (short lines). */
   readonly steps: readonly string[];
@@ -90,6 +125,8 @@ export interface TaskView {
   readonly folder?: string;
   /** Received: how it was let in ("you trust them", "your rule", "you approved it"). */
   readonly allowedBy?: string;
+  /** A file request for a secret: you're asked each time (Allow once / Decline; trust, rules and Always never cover it). */
+  readonly secret?: { readonly kind: SecretKind; readonly label: string };
   /** Sent: you saw it before it left (you asked yourself, or said Ask on "Ask Alice's Claude?"). */
   readonly confirmed?: boolean;
   /** Sent: the questions their Claude asked so far (by id: each is taken once, a few at most). */
@@ -106,6 +143,8 @@ export interface PeerCard {
   readonly offers: readonly Need[];
   readonly projects: readonly string[];
   readonly claude: boolean;
+  /** Their plan usage, per provider, when they share it with you (BLG-597). */
+  readonly usages?: readonly ProviderUsage[];
   readonly at: number;
 }
 
@@ -121,6 +160,8 @@ export interface GatewayState {
   readonly rules: readonly Rule[];
   /** What friends' Claudes may do here, by trust level. */
   readonly capabilities: Capabilities;
+  /** Friends your Claude asks without the "Ask X's Claude?" card (you said Always), by peer id. */
+  readonly askFreely?: readonly string[];
 }
 
 export interface GatewaySlice {
@@ -137,10 +178,13 @@ export type GatewayAction =
   | { type: 'gw_init'; state: GatewayState }
   /** One task changed (same id: replaced). */
   | { type: 'gw_task'; task: TaskView }
+  /** One task forgotten (Remove). */
+  | { type: 'gw_forget'; id: string }
   | { type: 'gw_card'; peerId: string; card: PeerCard }
   | { type: 'gw_note'; note: string }
   | { type: 'gw_rules'; rules: readonly Rule[] }
   | { type: 'gw_caps'; capabilities: Capabilities }
+  | { type: 'gw_freely'; peers: readonly string[] }
   | { type: 'gw_off' };
 
 function withTask(list: readonly TaskView[], task: TaskView): readonly TaskView[] {
@@ -155,6 +199,8 @@ export function reduceGateway(state: GatewaySlice, action: GatewayAction): Gatew
       return { gateway: action.state };
     case 'gw_task':
       return { gateway: { ...state.gateway, tasks: withTask(state.gateway.tasks, action.task) } };
+    case 'gw_forget':
+      return { gateway: { ...state.gateway, tasks: state.gateway.tasks.filter((t) => t.id !== action.id) } };
     case 'gw_card':
       return { gateway: { ...state.gateway, cards: { ...state.gateway.cards, [action.peerId]: action.card } } };
     case 'gw_note':
@@ -163,6 +209,8 @@ export function reduceGateway(state: GatewaySlice, action: GatewayAction): Gatew
       return { gateway: { ...state.gateway, rules: action.rules } };
     case 'gw_caps':
       return { gateway: { ...state.gateway, capabilities: action.capabilities } };
+    case 'gw_freely':
+      return { gateway: { ...state.gateway, askFreely: action.peers } };
     case 'gw_off':
       return { gateway: NO_GATEWAY };
     default:
@@ -179,8 +227,9 @@ export const oneLine = (text: string, max = 120): string => {
 };
 
 /** The approval card's title for a request that reached you (screens find the card by it). */
-export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary'>>): string => {
-  const who = `${t.peerName}${t.by === 'agent' ? "'s Claude" : ''}`;
+export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary' | 'secret'>>): string => {
+  const who = `${t.peerName}${t.by === 'agent' ? "'s agent" : ''}`;
+  if (t.kind === 'file' && t.secret) return `${who} wants ${t.secret.label}`;
   if (t.kind === 'run' && t.command) return `${who} wants to run on your Mac: ${oneLine(t.command)}`;
   if (t.kind === 'file' && t.path) return `${who} wants a file from your Mac: ${oneLine(t.path)}`;
   return `${who} wants to: ${requestGist(t)}`;
@@ -193,7 +242,7 @@ export const requestGist = (t: Pick<TaskView, 'ask'> & Partial<Pick<TaskView, 's
 export const tasksIn = (state: GatewaySlice, channel: string): readonly TaskView[] => state.gateway.tasks.filter((t) => t.direction === 'sent' && t.conversation === channel);
 
 /** "bob's Claude", or "bob's Mac" for a command or a file. */
-export const targetLabel = (t: Pick<TaskView, 'peerName' | 'kind'>): string => (t.kind === 'ask' ? `${t.peerName}’s Claude` : `${t.peerName}’s Mac`);
+export const targetLabel = (t: Pick<TaskView, 'peerName' | 'kind'>): string => (t.kind === 'ask' ? `${t.peerName}’s agent` : `${t.peerName}’s Mac`);
 
 /** A received request waiting for your answer. */
 export const awaitingYou = (t: Pick<TaskView, 'direction' | 'state'>): boolean => t.direction === 'received' && t.state === 'awaiting_approval';
@@ -211,7 +260,7 @@ export function stateLabel(t: TaskView): string {
       case 'awaiting_approval':
         return 'Waiting for you to approve';
       case 'working':
-        return t.kind === 'run' ? 'Running' : t.kind === 'file' ? 'Sending the file' : 'Your Claude is working';
+        return t.kind === 'run' ? 'Running' : t.kind === 'file' ? 'Sending the file' : 'Your agent is working';
       case 'done':
         return 'Done';
       case 'declined':
@@ -234,9 +283,9 @@ export function stateLabel(t: TaskView): string {
     case 'awaiting_approval':
       return `Waiting for ${them} to approve`;
     case 'working':
-      if (t.question) return `${them}’s Claude has a question`;
+      if (t.question) return `${them}’s agent has a question`;
       if (t.incoming) return `Receiving files from ${them}`;
-      return t.kind === 'run' ? `Running on ${them}’s Mac` : t.kind === 'file' ? `Getting the file from ${them}’s Mac` : `${them}’s Claude is working`;
+      return t.kind === 'run' ? `Running on ${them}’s Mac` : t.kind === 'file' ? `Getting the file from ${them}’s Mac` : `${them}’s agent is working`;
     case 'done':
       return 'Done';
     case 'declined':

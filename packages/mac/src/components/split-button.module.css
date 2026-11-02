@@ -1,0 +1,22 @@
+/* A main button and its ▾ as one piece: square where they meet, a hairline of space between. */
+.split {
+  display: inline-flex;
+  align-items: stretch;
+  flex: none;
+}
+.split > :first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split .caret {
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  padding: 0 6px;
+  margin-left: 1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.split .caret[data-state='open'] {
+  filter: brightness(0.94);
+}

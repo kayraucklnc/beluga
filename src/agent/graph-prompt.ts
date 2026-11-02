@@ -4,16 +4,21 @@ import { EDGE_KINDS, GRAPH_FENCE, NODE_KINDS, STATUSES } from '../shared/graph-s
  * Teaching Claude to draw: the `beluga-graph` format (src/shared/graph-spec.ts) and when a graph
  * beats prose. The Mac app draws these blocks as interactive diagrams (docs/graphs.md).
  */
-export function buildGraphAppend(): string {
+export function buildGraphAppend(terminal = false): string {
+  // In the agent's own terminal (BLG-555) a fence would print as raw JSON: the graph goes through
+  // the show tool there, so no fenced example to copy.
+  const fence = (line: string): string[] => (terminal ? [] : [line]);
   return [
     '',
-    `Graphs: the Beluga app draws a fenced block tagged ${GRAPH_FENCE} (JSON) as an interactive diagram. Use one`,
+    terminal
+      ? 'Graphs: Beluga draws a graph as an interactive diagram: pass it to mcp__beluga_view__show as {"type": "graph", …the fields below} and write the token it returns. Use one'
+      : `Graphs: the Beluga app draws a fenced block tagged ${GRAPH_FENCE} (JSON) as an interactive diagram. Use one`,
     'whenever a picture explains better than prose: architecture, how parts talk, a request or data flow, a',
     'pipeline, a data model, dependencies, a plan, or what a change touched. When the user asks you to',
     'visualize, draw, diagram or map something, answer with a graph. The app lays it out (never give',
     'coordinates); people hover a node to see what it touches, click it for its details, and step through',
-    'your walkthrough. Shape:',
-    '```' + GRAPH_FENCE,
+    terminal ? 'your walkthrough. Its fields (the JSON you pass to show, never written into your answer):' : 'your walkthrough. Shape:',
+    ...fence('```' + GRAPH_FENCE),
     '{"title": "How login works", "summary": "one short line", "direction": "right",',
     ' "nodes": [{"id": "web", "type": "client", "label": "Web app", "sublabel": "React · src/web"},',
     '   {"id": "api", "type": "service", "label": "API", "sublabel": "Express", "group": "backend", "status": "done",',
@@ -22,9 +27,10 @@ export function buildGraphAppend(): string {
     '   {"id": "backend", "type": "group", "label": "Backend"}],',
     ' "edges": [{"from": "web", "to": "api", "label": "POST /login", "kind": "call"}, {"from": "api", "to": "db", "kind": "data"}],',
     ' "steps": [{"title": "1. The app asks", "text": "One or two sentences.", "focus": ["web", "api"]}]}',
-    '```',
+    ...fence('```'),
     `Node types: ${NODE_KINDS.join(', ')}. "group" is a box: other nodes set "group" to its id. A database can list`,
-    '"fields"; an image node shows a screenshot ("image": its absolute path); a metric shows "value" ("87%").',
+    '"fields"; any node can list its own steps in "items" ([{"label", "status"}], a pipeline stage\'s steps);',
+    'an image node shows a screenshot ("image": its absolute path); a metric shows "value" ("87%").',
     `Edge kinds: ${EDGE_KINDS.join(', ')} (async = events and messages). Status: ${STATUSES.join(', ')}. "emphasis": true marks what matters.`,
     'Good graphs: 4 to 25 nodes, labels of 2 to 4 words with the rest in sublabel or details, real names',
     'from the code, groups for boundaries, edge labels that say what moves, emphasis on one or two things,',

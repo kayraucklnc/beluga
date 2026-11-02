@@ -39,7 +39,7 @@ test('eight chats streaming: only the card an event is about draws again, and th
   expect(ids.filter(Boolean)).toHaveLength(8);
 
   // calm-1 gets two finished answers first.
-  const show = sidebar(page).getByRole('button', { name: /^Show what's in bob-api/ });
+  const show = sidebar(page).getByRole('button', { name: /^Show what's in bob-api/ }).first();
   if (await show.isVisible()) await show.click();
   const first = sidebar(page).getByRole('button', { name: NAMES[0], exact: true });
   await first.click();

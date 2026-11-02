@@ -7,12 +7,13 @@ import { type InboxView, type SettingsSection, inboxMenu, modelMenu, modelLabel,
 import { GRANT_INFO, TRUST_INFO, canRunOn, trustOf } from '../core/trust.js';
 import { TRUST_LEVELS } from '../shared/settings-schema.js';
 import { workMenuSpec, type WorkMenuKind } from './work-menus.js';
-import { describeWindow } from '../agent/usage.js';
-import type { Usage } from '../protocol.js';
+import { describeWindow } from '../agent/runtime/claude/usage.js';
+import { type Usage, defaultAgentOf } from '../protocol.js';
+import { agentLabel, agentName } from '../shared/agent-label.js';
 
 function usageLines(usage: Usage | undefined): string[] {
   if (!usage) return [];
-  return [`Claude usage${usage.plan ? ` (${usage.plan})` : ''}:  5-hour ${describeWindow(usage.fiveHour)}   ·   week ${describeWindow(usage.week)}`];
+  return [`Claude plan usage${usage.plan ? ` (${usage.plan})` : ''}:  5-hour ${describeWindow(usage.fiveHour)}   ·   week ${describeWindow(usage.week)}`];
 }
 
 export interface MenuOption {
@@ -59,8 +60,7 @@ export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
     intro: [p.root, group ? `In group: ${group.name}` : 'Not in a group'],
     options: [
       { id: 'p-worktree', label: 'New worktree', hint: 'from the latest origin' },
-      { id: 'p-chat', label: 'New Claude chat here', hint: "in the project's main folder" },
-      { id: 'p-main', label: 'Open the main folder', hint: 'chat with Claude in the original checkout' },
+      { id: 'p-chat', label: 'New chat', hint: "a new one each time, in the project's main folder" },
       ...(p.root ? [{ id: 'p-invite', label: 'Invite someone to this project…', hint: 'a link: they watch, prompt or edit here' }] : []),
       { id: 'p-scripts', label: 'Setup and run commands…', hint: p.scripts?.setup ? `setup: ${p.scripts.setup.command}` : 'none yet' },
       { id: 'p-finder', label: 'Open in Finder', hint: '' },
@@ -133,7 +133,7 @@ export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: s
       title: `Archive ${ws.name}?`,
       intro: [
         ws.kind === 'worktree'
-          ? 'The worktree folder is removed. Its branch and the Claude conversation are kept, so you can restore it later.'
+          ? 'The worktree folder is removed. Its branch and the agent conversation are kept, so you can restore it later.'
           : 'The chat is hidden from the sidebar. You can restore it from Overview.',
         ...(changed ? [`${changed} file(s) have uncommitted changes.`] : []),
         ...envLines,
@@ -171,15 +171,15 @@ export function welcomeMenu(state: AppState): MenuSpec {
     intro: [
       `You're ${state.self?.name ?? 'connected'}. ${who}`,
       '',
-      'Friends can ask your Claude to help. It runs on this computer with your Claude',
+      'Friends can ask your agent to help. It runs on this computer with your agent',
       "subscription, inside the folders you shared. You'll always see what they ask.",
       '',
-      'Can people in this room use your Claude?',
+      'Can people in this room use your agent?',
     ],
     options: [
       { id: 'share-ask', label: 'Ask me each time', hint: 'recommended: approve every request' },
       { id: 'share-auto', label: 'Yes, everyone can use it', hint: 'requests run without asking' },
-      { id: 'share-deny', label: 'No, keep my Claude private', hint: 'only you can use it' },
+      { id: 'share-deny', label: 'No, keep my agent private', hint: 'only you can use it' },
     ],
   };
 }
@@ -208,15 +208,15 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
       ];
   const options: MenuOption[] = isSelf
     ? [
-        { id: 'ask-self', label: 'Ask my Claude', hint: 'start a message with @claude' },
+        { id: 'ask-self', label: 'Ask my agent', hint: 'start a message with @claude' },
         { id: 'share-folder', label: 'Share a folder…', hint: 'with everyone, or just one person' },
         ...roomOptions,
         { id: 'sharing', label: 'People & permissions…', hint: 'how much you trust each person' },
-        { id: 'settings', label: 'Settings', hint: 'name, theme, notifications, Claude, workspaces' },
+        { id: 'settings', label: 'Settings', hint: 'name, theme, notifications, agents, workspaces' },
       ]
     : [
         ...TRUST_LEVELS.map((level) => ({ id: `trust:${level}`, label: `${trustOf(state, peer.peerId) === level ? '◉' : '○'} ${TRUST_INFO[level].label}`, hint: TRUST_INFO[level].detail })),
-        ...(peer.agent ? [{ id: 'ask', label: `Ask ${peer.name}'s Claude`, hint: `runs on ${peer.name}'s computer` }] : []),
+        ...(peer.agent ? [{ id: 'ask', label: `Ask ${agentLabel(defaultAgentOf(peer), peer.name, false)}`, hint: `runs on ${peer.name}'s computer` }] : []),
         ...(canRunOn(state.granted[peer.peerId]?.level)
           ? [{ id: 'person-run', label: `Run a command on ${peer.name}'s computer…`, hint: state.granted[peer.peerId]?.level === 'full' ? 'runs right away; the output shows in this chat' : `${peer.name} approves it; the output shows in this chat` }]
           : []),
@@ -225,13 +225,13 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
         { id: 'person-share', label: `Share a folder with ${peer.name}…`, hint: 'pick the folder, then "Only ' + peer.name + '"' },
         state.follow === peer.peerId
           ? { id: 'unfollow', label: `Stop following ${peer.name}` }
-          : { id: 'follow', label: `Follow ${peer.name}`, hint: 'see the files they and their Claude open' },
+          : { id: 'follow', label: `Follow ${peer.name}`, hint: 'see the files they and their agent open' },
         ...(share ? [{ id: 'browse', label: `Browse ${peer.name}'s files`, hint: `${share.name}${share.writable ? '' : ' (read-only)'}` }] : []),
         ...(host ? [{ id: 'person-remove', label: `Remove ${peer.name} from the room`, hint: 'they are disconnected; the invite link changes' }] : []),
       ];
-  const about = isSelf ? 'What would you like to do?' : `${peer.agent ? 'Claude is on' : 'No Claude'} · shares ${peer.shares.map((s) => s.name).join(', ') || 'nothing'}`;
+  const about = isSelf ? 'What would you like to do?' : `${peer.agent ? `${agentName(defaultAgentOf(peer))} is on` : 'No agent'} · shares ${peer.shares.map((s) => s.name).join(', ') || 'nothing'}`;
   const grant = isSelf ? undefined : state.granted[peer.peerId];
-  const lets = grant ? [`${peer.name} lets your Claude: ${GRANT_INFO[grant.level].short}`] : [];
+  const lets = grant ? [`${peer.name} lets your agent: ${GRANT_INFO[grant.level].short}`] : [];
   const access = isSelf ? [] : ['', `How much do you trust ${peer.name}? Now: ${TRUST_INFO[trustOf(state, peer.peerId)].label}.`];
   return { title: isSelf ? `${peer.name} (you)` : peer.name, intro: [about, ...lets, ...usageLines(peer.usage), ...access], options };
 }
@@ -248,7 +248,7 @@ export { modelLabel };
 export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined {
   if (menu.kind === 'welcome') return welcomeMenu(state);
   if (menu.kind === 'settings') return settingsMenu(state, menu.section, { prCustom: state.prCustom, remembered: state.remembered });
-  if (menu.kind === 'model') return modelMenu(state, menu.channel === undefined ? state.prefs.model : modelOf(state, menu.channel), menu.channel === undefined ? 'new conversations' : 'this conversation');
+  if (menu.kind === 'model') return modelMenu(state, menu.channel, menu.channel === undefined ? 'new conversations' : 'this conversation');
   if (menu.kind === 'inbox') return inboxMenu(state, menu);
   const work = workMenuSpec(state, menu);
   if (work !== null) return work;

@@ -1,16 +1,16 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { BrowserRow, ViewerState } from '@beluga/core/store.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../components/Icon.js';
-import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
+import { Avatar, Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { useActions } from '../lib/actions.js';
 import { copyText } from '../lib/copy.js';
 import { localPathOf, mentionOf, openWithDefaultApp, revealInFinder, saveFile } from '../lib/files.js';
 import { SCROLL_ROOT } from '../components/markdown/md-dom.js';
-import { type ReaderMode, initialMode, isMarkdownFile } from './reader/reader-model.js';
+import { type ReaderMode, hasRenderedLook, initialMode } from './reader/reader-model.js';
 import { SearchField, SearchResults } from './SharedSearch.js';
 import s from './files.module.css';
 
@@ -44,7 +44,7 @@ export function Viewer({ viewer }: { viewer: ViewerState }) {
     body.current?.scrollTo({ top: 0 });
   }, [viewer.path]);
   const name = viewer.path.split('/').pop() || viewer.path;
-  const markdown = isMarkdownFile(viewer.path) && !viewer.image;
+  const markdown = hasRenderedLook(viewer.path) && !viewer.image;
   const local = useApp((st) => localPathOf(st, viewer));
   return (
     <section className={s.viewer} aria-label={name}>
@@ -117,7 +117,8 @@ function Row({ row, selected, onOpen }: { row: BrowserRow; selected: boolean; on
     <ActionsContext items={() => items(row, onOpen)}>
     <div role="option" aria-selected={selected} tabIndex={-1} className={cx(s.row, selected && s.rowOn)} onClick={onOpen} title={row.label}>
       <Icon name={up ? 'up' : row.dir ? 'folder' : 'file'} size={14} className={row.dir ? s.dirIcon : s.fileIcon} />
-      <span className={s.rowName}>{up ? 'Back' : row.label}</span>
+      {/* Under its owner's name, a folder goes by its own name. */}
+      <span className={s.rowName}>{up ? 'Back' : row.group && row.label.startsWith(`${row.group} · `) ? row.label.slice(row.group.length + 3) : row.label}</span>
       {!row.dir && row.size !== undefined ? <span className={s.size}>{row.size < 1024 ? `${row.size} B` : formatBytes(row.size)}</span> : null}
       {row.dir && !up ? <Icon name="chevronRight" size={10} className={s.chev} /> : null}
     </div>
@@ -162,7 +163,7 @@ export function FilesView() {
     client.store.dispatch({ type: 'browser_cursor', delta: i - browser.cursor });
     void api.files.enter(i);
   };
-  const crumbs = browser.at ? [browser.at.share.startsWith('ws-') ? (shared.find((w) => w.share === browser.at!.share)?.name ?? 'This workspace') : browser.at.share, ...browser.at.path.split('/').filter(Boolean)] : ['Everything shared with you'];
+  const crumbs = browser.at ? [browser.at.share.startsWith('ws-') ? (shared.find((w) => w.share === browser.at!.share)?.name ?? 'This workspace') : browser.at.share, ...browser.at.path.split('/').filter(Boolean)] : ['Folders shared with you'];
 
   return (
     <div className={s.files}>
@@ -208,9 +209,20 @@ export function FilesView() {
         >
           {browser.error ? <div className={s.error}>{browser.error}</div> : null}
           {browser.rows.length ? (
-            browser.rows.map((r, i) => <Row key={`${r.label}:${i}`} row={r} selected={i === browser.cursor} onOpen={() => open(i)} />)
+            browser.rows.map((r, i) => (
+              <Fragment key={`${r.label}:${i}`}>
+                {/* The top of Files: each person's folders under their name. */}
+                {r.group && r.target !== 'up' && r.group !== browser.rows[i - 1]?.group ? (
+                  <div className={s.group} role="presentation">
+                    <Avatar name={r.group} id={r.target.owner} size={16} />
+                    <span>{r.group}</span>
+                  </div>
+                ) : null}
+                <Row row={r} selected={i === browser.cursor} onOpen={() => open(i)} />
+              </Fragment>
+            ))
           ) : browser.loading ? null : (
-            <Empty icon="folder" title={browser.at ? 'This folder is empty' : 'Nothing shared yet'} detail={browser.at ? undefined : 'When people in the room share folders, they show up here.'} action={browser.at ? undefined : <Button onClick={() => ui.openMenu({ kind: 'share_folder', launchDir: home, mine: myShares })}>Share a folder…</Button>} />
+            <Empty icon="folder" title={browser.at ? 'This folder is empty' : 'Nothing shared yet'} detail={browser.at ? undefined : 'When friends (or people in your room) share folders with you, they show up here.'} action={browser.at ? undefined : <Button onClick={() => ui.openMenu({ kind: 'share_folder', launchDir: home, mine: myShares })}>Share a folder…</Button>} />
           )}
         </div>
         )}

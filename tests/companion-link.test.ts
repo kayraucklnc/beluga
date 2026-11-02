@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { CompanionClient, pairDevice } from '../src/companion/client.js';
 import { deviceKeys, newSeed, parseDeviceTicket, verifyCert } from '../src/companion/device-crypto.js';
 import { DeviceBook } from '../src/companion/devices.js';
+import { Awake } from '../src/companion/awake.js';
 import { CompanionHost } from '../src/companion/host.js';
 import { HomeView } from '../src/companion/protocol.js';
 import { attachCompanion } from '../src/companion/registry.js';
@@ -32,12 +33,12 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 
-function mac(callLog: Array<{ client: string; method: string; args: readonly unknown[] }> = []) {
+function mac(callLog: Array<{ client: string; method: string; args: readonly unknown[] }> = [], awake?: Awake) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-companion-'));
   const identity = generateIdentity();
   const store = new Store(initialState('test room'));
   store.dispatch({ type: 'identity', selfId: identity.peerId, isHost: true });
-  store.dispatch({ type: 'welcome', self: { peerId: identity.peerId, name: 'kayra', shares: [], agent: true, usage: { plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 }, updatedAt: 1 } } });
+  store.dispatch({ type: 'welcome', self: { peerId: identity.peerId, name: 'kayra', shares: [], agent: true, usage: { plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 }, updatedAt: 1 }, usages: [{ agent: { runtime: 'claude', label: 'Claude' }, plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 }, updatedAt: 1 }, { agent: { runtime: 'codex', model: 'gpt-5', label: 'Codex' }, windows: [{ label: 'Weekly', pct: 24 }], updatedAt: 1 }] } });
   const devices = new DeviceBook(path.join(dir, 'devices.json'));
   const host = new CompanionHost({
     identity,
@@ -57,6 +58,7 @@ function mac(callLog: Array<{ client: string; method: string; args: readonly unk
       callLog.push({ client, method, args });
       // What the daemon's handlers would answer, as far as the host relies on it.
       if (method === 'workspaces.newChat') return { ok: true, value: 'w9' };
+      if (method === 'workspaces.startWorktree') return { ok: true, value: 'w10' };
       if (method === 'attachments.expand') return { ok: true, value: `expanded: ${String(args[0])}` };
       if (method === 'gateway.ask') return { ok: true, value: { id: 't_asked0000001', peerId: args[0] } };
       if (method === 'network.files.add') return { ok: true, value: (args[0] as string[]).map((p) => ({ sha: 'a'.repeat(64), name: path.basename(p), size: 3 })) };
@@ -68,8 +70,9 @@ function mac(callLog: Array<{ client: string; method: string; args: readonly unk
     uploadsDir: path.join(dir, 'uploads'),
     dht: { bootstrap: testnet.bootstrap, host: '127.0.0.1' },
     coalesceMs: 50,
+    ...(awake ? { awake } : {}),
   });
-  const session = {};
+  const session = { setPrefs: (prefs: object) => store.dispatch({ type: 'prefs', prefs }), store, selfId: identity.peerId };
   attachCompanion(session, host);
   cleanup.push(async () => {
     await host.stop();
@@ -118,7 +121,7 @@ describe('pairing a phone and its link', () => {
     // A certificate changed after signing doesn't verify.
     expect(verifyCert({ ...result.cert, name: 'Evil phone' })).toBe(false);
     expect(devices.size).toBe(1);
-    expect((statSync(path.join(dir, 'devices.json')).mode & 0o777).toString(8)).toBe('600');
+    if (process.platform !== 'win32') expect((statSync(path.join(dir, 'devices.json')).mode & 0o777).toString(8)).toBe('600');
     // Single use: the pairing is gone.
     await waitFor(() => !store.getState().companion.pairing, 5_000);
 
@@ -152,14 +155,80 @@ describe('pairing a phone and its link', () => {
     await expect(client.call('no.suchMethod', [])).rejects.toThrow(/only on your Mac/);
     expect(calls).toHaveLength(1);
 
+    // Back in front (BLG-105): the open link is checked with one ping, and the Mac answers it.
+    expect(await client.probe(3_000)).toBe(true);
+
     // Removing the phone drops its link at once, and its key is refused from then on.
     expect(host.removeDevice(id)).toBe(true);
     await waitFor(() => closes.length > 0, 5_000);
     expect(closes[0]).toBe(4010);
+    // A closed link fails the check at once, without waiting out the timeout.
+    expect(await client.probe(60_000)).toBe(false);
     expect(store.getState().companion.devices).toEqual([]);
-    await expect(client.connect()).rejects.toThrow();
     // No phone and no pairing: the node stops.
     await waitFor(() => !host.running, 5_000);
+    // Dialing again, it learns it was removed (the Mac's record names no phone), not "Mac offline" (BLG-126).
+    const err = await client.connect().then(() => undefined, (e: unknown) => e as { report?: { removed?: boolean } });
+    expect(err).toBeDefined();
+    expect(err?.report?.removed).toBe(true);
+  }, 60_000);
+
+  it('tells a phone that stays connected in the background what finished, and keeps the Mac awake when it asks (BLG-127, BLG-128)', async () => {
+    const started: string[][] = [];
+    const awake = new Awake({
+      platform: 'darwin',
+      spawn: (_cmd, args) => {
+        started.push([...args]);
+        return { kill: () => true, once: () => undefined } as never;
+      },
+    });
+    const { host, store } = mac([], awake);
+    await host.start();
+    const info = await host.pairStart();
+    const p = phone();
+    const paired = pairDevice(p.node, info.link, p.device, { timeoutMs: 20_000 });
+    await waitFor(() => store.getState().companion.pairing?.waiting, 15_000);
+    host.pairApprove();
+    const result = await paired;
+    const client = new CompanionClient({ node: p.node, address: result.address, link: p.keys.link, app: '1.0.0', platform: 'android', topics: [] });
+    const nudges: Array<{ kind: string; title: string }> = [];
+    client.on('nudge', (n) => nudges.push(n));
+    cleanup.push(() => client.close());
+    await client.connect();
+    await waitFor(() => store.getState().companion.devices[0]?.linked, 5_000);
+    const me = store.getState().selfId!;
+    const run = (event: 'started' | 'done', ts: number) => store.dispatch({ type: 'agent_event', owner: me, requestId: 'r1', requester: me, event, text: event === 'done' ? 'All tests pass' : '', ts, channel: 'ws:wt-1', itemId: 'i1' });
+
+    // In front: a run finishing on the Mac isn't news for the phone.
+    run('started', 1);
+    await new Promise((r) => setTimeout(r, 300));
+    run('done', 2);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(nudges).toEqual([]);
+
+    // Away with the link kept open: it is.
+    client.focus(false);
+    await new Promise((r) => setTimeout(r, 200));
+    store.dispatch({ type: 'agent_event', owner: me, requestId: 'r2', requester: me, event: 'started', text: '', ts: 3, channel: 'ws:wt-1', itemId: 'i2' });
+    await new Promise((r) => setTimeout(r, 300));
+    store.dispatch({ type: 'agent_event', owner: me, requestId: 'r2', requester: me, event: 'done', text: 'Merged', ts: 4, channel: 'ws:wt-1', itemId: 'i2' });
+    const n = await waitFor(() => nudges[0], 5_000);
+    expect(n.kind).toBe('done');
+    expect(n.title).toMatch(/finished/);
+
+    // Keep this Mac awake, from the phone: the Mac holds it while the phone is paired.
+    expect(started).toEqual([]);
+    await client.call('companion.keepAwake', ['power']);
+    await waitFor(() => started.length > 0, 5_000);
+    expect(started[0]![0]).toBe('-s');
+    expect(store.getState().prefs.keepAwake).toBe('power');
+
+    // Make Codex the default agent from the phone's usage cards: it reaches the Mac's settings (BLG-459).
+    await client.call('companion.defaultAgent', ['codex']);
+    expect(store.getState().prefs.defaultAgent).toEqual({ runtime: 'codex', model: 'gpt-5', label: 'Codex' });
+    await client.call('companion.defaultAgent', ['claude']);
+    expect(store.getState().prefs.defaultAgent).toBeUndefined();
+    await expect(client.call('companion.defaultAgent', ['local'])).rejects.toThrow(/No local agent/);
   }, 60_000);
 
   it('takes photos and files from the phone, asks in a new chat, asks a friend, and signs out only itself', async () => {
@@ -197,6 +266,15 @@ describe('pairing a phone and its link', () => {
     expect(sent[0]).toMatch(/^expanded: What is in this photo\?\n\n\[image \d+\]\n\nFiles from my phone:\n- .*notes\.pdf$/);
     // A ref that isn't this phone's is refused.
     await expect(client.call('companion.ask', [{ target: { project: 'p1' }, text: 'x', files: ['up:not-a-real-one'] }])).rejects.toThrow(/gone/);
+
+    // A new worktree with a photo (1.12): the photo is linked in its first message, plan mode goes along.
+    calls.length = 0;
+    await expect(client.call('companion.ask', [{ target: { project: 'p1', worktree: true, plan: true }, text: 'Fix this screen', files: [photo] }])).resolves.toEqual({ topic: 'conv:ws:w10' });
+    expect(calls.map((c) => c.method)).toEqual(['attachments.expand', 'workspaces.startWorktree']);
+    const started = calls[1]!.args as [string, string, unknown];
+    expect(started[0]).toBe('p1');
+    expect(started[1]).toMatch(/^expanded: Fix this screen\n\n\[image \d+\]$/);
+    expect(started[2]).toEqual({ quiet: true, plan: true });
 
     // A chat message with a file.
     calls.length = 0;

@@ -17,7 +17,7 @@ const planRow = (page: Page) => block(page).locator('[data-plan-row]').and(page.
 const row = (page: Page, name: string) => sidebar(page).getByRole('button', { name, exact: true });
 
 async function unfold(page: Page, project: string): Promise<void> {
-  const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` });
+  const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` }).first();
   if (await show.isVisible()) await show.click();
 }
 
@@ -32,7 +32,7 @@ async function taskChats(page: Page, on: boolean): Promise<void> {
 
 test.use({ viewport: { width: 1440, height: 1400 } });
 
-test('a running plan whose task chats get answers is one Unread row, not one per chat; inside, each task keeps its mark', async ({ page }) => {
+test('a running plan whose task chats get answers is one Unread row, not one per chat; opening the plan reads them all', async ({ page }) => {
   test.setTimeout(150_000);
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
@@ -68,16 +68,15 @@ test('a running plan whose task chats get answers is one Unread row, not one per
   await expect(unreadSection(page).getByRole('button', { name: /^Plan: / })).toHaveCount(0);
   if (process.env.SHOTS) await sidebar(page).screenshot({ path: `${process.env.SHOTS}/unread-plan-row.png` });
 
-  // Opening it opens the plan; inside, each task's chat has its own mark, a click away.
+  // Opening it opens the plan, and counts its conversation and its tasks' chats as seen (BLG-12):
+  // the plan leaves Unread, and no task in it is marked any more.
   await listed.click();
   await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue(PLAN);
   await page.locator('main').getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'List' }).click();
   const auth = page.getByRole('region', { name: 'Safe payments' }).locator('li').filter({ hasText: 'Add auth to the payment routes' }).first();
-  await expect(auth.locator('[data-task-chat="unread"]')).toBeVisible();
+  await expect(auth).toBeVisible();
+  await expect(auth.locator('[data-task-chat]')).toHaveCount(0);
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/plan-task-marks.png` });
-  await auth.getByText('Add auth to the payment routes', { exact: true }).click();
-  await page.getByRole('complementary', { name: 'Details' }).getByRole('button', { name: /Open Worktree/ }).click();
-  await expect(composer(page)).toHaveAttribute('placeholder', /checkout-auth/);
-  // Read there: the plan now has one update left.
-  await expect(unreadSection(page).getByRole('button', { name: new RegExp(`^${PLAN} · .*1 update`) }).or(unreadSection(page).getByRole('button', { name: `${PLAN} · read` }))).toBeVisible();
+  await sidebar(page).getByRole('button', { name: /^Overview/ }).click();
+  await expect(unreadSection(page).getByRole('button', { name: new RegExp(`^${PLAN} · .*update`) })).toHaveCount(0);
 });

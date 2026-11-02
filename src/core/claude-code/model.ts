@@ -8,6 +8,9 @@
 /** Sessions running outside Beluga (Activity's): Beluga's own are watched only for their sub-agents. */
 export const outsideSessions = (sessions: readonly CcSession[]): readonly CcSession[] => (sessions.some((s) => s.own) ? sessions.filter((s) => !s.own) : sessions);
 
+/** The app a session runs in, for people: "Codex", or "Claude Code". */
+export const sessionApp = (s: Pick<CcSession, 'agent'>): string => (s.agent === 'codex' ? 'Codex' : 'Claude Code');
+
 /** running: working now · finished · failed · stopped (killed or interrupted) · idle: no writes for a while and no final answer. */
 export type CcAgentStatus = 'running' | 'finished' | 'failed' | 'stopped' | 'idle';
 
@@ -77,6 +80,8 @@ export interface CcSession {
   readonly team?: CcTeam;
   /** Background commands and watches it or its agents started (running first, then the latest). */
   readonly tasks?: readonly CcTask[];
+  /** The agent running it: 'codex' (see codex-watch.ts); unset: Claude Code. */
+  readonly agent?: string;
 }
 
 /**
@@ -230,15 +235,23 @@ export interface AgentOrigin {
 }
 
 export interface ClaudeCodeSlice {
+  /** `sessions`: every outside session, Claude Code's and Codex's (each watcher publishes its own; they're merged here). */
   readonly claudeCode: { readonly sessions: readonly CcSession[]; readonly origins: readonly AgentOrigin[] };
 }
 
 export const initialClaudeCode: ClaudeCodeSlice = { claudeCode: { sessions: [], origins: [] } };
 
-export type ClaudeCodeAction = { type: 'claude_code'; sessions: readonly CcSession[] } | { type: 'agent_origins'; origins: readonly AgentOrigin[] };
+export type ClaudeCodeAction = { type: 'claude_code'; sessions: readonly CcSession[] } | { type: 'codex_sessions'; sessions: readonly CcSession[] } | { type: 'agent_origins'; origins: readonly AgentOrigin[] };
+
+const isCodex = (s: CcSession): boolean => s.agent === 'codex';
+const byLatest = (a: CcSession, b: CcSession): number => Number(sessionLive(b)) - Number(sessionLive(a)) || b.lastAt - a.lastAt;
 
 export function reduceClaudeCode(state: ClaudeCodeSlice, action: ClaudeCodeAction): ClaudeCodeSlice {
-  return action.type === 'claude_code' ? { claudeCode: { ...state.claudeCode, sessions: action.sessions } } : { claudeCode: { ...state.claudeCode, origins: action.origins } };
+  const cc = state.claudeCode;
+  if (action.type === 'agent_origins') return { claudeCode: { ...cc, origins: action.origins } };
+  // One watcher's list replaces its own sessions only, keeping the other's.
+  const kept = cc.sessions.filter((s) => (action.type === 'codex_sessions' ? !isCodex(s) : isCodex(s)));
+  return { claudeCode: { ...cc, sessions: kept.length ? [...kept, ...action.sessions].sort(byLatest) : action.sessions } };
 }
 
 const ENDED: ReadonlySet<CcAgentStatus> = new Set(['finished', 'failed', 'stopped']);

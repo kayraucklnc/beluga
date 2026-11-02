@@ -54,13 +54,20 @@
   /* Selecting text around it shouldn't select the graph's labels. */
   user-select: none;
 }
+/* One slim line: the glyph, the title, the summary (cut short when there's no room) and the count. */
 .blockHead {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px 10px 12px;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px 0 10px;
   border-bottom: 1px solid var(--hairline);
   background: var(--bg);
+}
+.blockGlyph {
+  flex: none;
+  display: grid;
+  color: var(--accent);
 }
 .blockIcon {
   flex: none;
@@ -75,33 +82,37 @@
 }
 .blockTitles {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
   flex: 1;
+  white-space: nowrap;
 }
 .blockTitle {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.3;
   letter-spacing: -0.005em;
   color: var(--text);
 }
 .blockSummary {
-  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
   font-size: 12px;
   line-height: 1.35;
 }
 .blockMeta {
   flex: none;
-  align-self: center;
   margin-left: auto;
-  padding: 2px 8px;
-  border-radius: 999px;
-  color: var(--text-2);
-  background: var(--bg-hover);
+  color: var(--text-3);
   font-size: 11px;
-  font-weight: 500;
   line-height: 16px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -368,6 +379,101 @@
   display: flex;
   margin-top: 9px;
   padding-left: 38px;
+}
+/* A node's own steps: a quiet list under its name, a status mark each; the running one stands out. */
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 8px 0 0;
+  padding: 7px 0 0 38px;
+  list-style: none;
+  border-top: 1px solid color-mix(in srgb, var(--graph-ring) 70%, transparent);
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 18px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.item .statusMark {
+  color: var(--text-3);
+}
+.item[data-status='done'] .statusMark {
+  color: var(--ok);
+}
+.item[data-status='failed'] .statusMark,
+.item[data-status='blocked'] .statusMark {
+  color: var(--error);
+}
+.item[data-status='active'] .statusMark,
+.item[data-status='review'] .statusMark {
+  color: var(--warn);
+  opacity: var(--pulse);
+  animation: pulse 1.8s var(--ease-out) infinite;
+}
+.item[data-status='active'] {
+  font-weight: 550;
+  color: var(--text);
+}
+.item[data-status='failed'] {
+  font-weight: 550;
+  color: color-mix(in srgb, var(--error) 70%, var(--text));
+}
+.item[data-status='todo'],
+.item[data-status='idle'] {
+  color: var(--text-3);
+}
+.itemDot {
+  flex: none;
+  width: 12px;
+  display: grid;
+  place-items: center;
+}
+.itemDot::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-3) 70%, transparent);
+}
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.itemNote {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.inspectorItems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inspectorItems .item {
+  height: 22px;
+  font-size: 12px;
+}
+.itemMore {
+  padding-left: 18px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .item[data-status='active'] .statusMark {
+    animation: none;
+  }
 }
 /* Kinds that look different. */
 .kind_external {

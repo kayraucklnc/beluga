@@ -56,6 +56,7 @@ describe('placeName', () => {
     const s = apply(base(), { type: 'shared_add', ws: sharedWs('view') });
     expect(placeName(s, 'ws:sw1')).toBe('api-fix');
     expect(placeName(base(), 'ws:nope')).toBe('a workspace');
+    expect(placeName(base(), 'mac:assistant')).toBe('Your Mac');
   });
 });
 
@@ -210,6 +211,15 @@ describe('enabled', () => {
     expect(enabled(prefs, 'pr')).toBe(false);
     expect(enabled(prefs, 'done')).toBe(true);
   });
+
+  it('quiets sentinels on their own, but not what one needs from you', () => {
+    const prefs = { ...initialState('room').prefs.notify, sentinels: false };
+    expect(enabled(prefs, 'done', 'sentinel')).toBe(false);
+    expect(enabled(prefs, 'problems', 'sentinel')).toBe(false);
+    expect(enabled(prefs, 'needsYou', 'sentinel')).toBe(true);
+    expect(enabled(prefs, 'done')).toBe(true);
+    expect(enabled({ ...prefs, sentinels: true, done: false }, 'done', 'sentinel')).toBe(false);
+  });
 });
 
 describe('Notifier', () => {
@@ -262,6 +272,47 @@ describe('Notifier', () => {
     vi.runAllTimers();
     expect(store.getState().inbox).toHaveLength(1);
     expect(desktop).toHaveBeenCalledTimes(1);
+  });
+
+  describe('a long run ending in the conversation you are looking at', () => {
+    const at = (requestId: string, event: 'queued' | 'started' | 'done', ts: number, text = 'ok'): void =>
+      store.dispatch({ type: 'agent_event', owner: 'me', requestId, requester: 'me', event, text, ts, channel: 'ws:w1' });
+    const watching = (state?: DomainState): void => {
+      start(state);
+      screen.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    };
+
+    it('reaches the desktop, not the bell', () => {
+      watching();
+      at('r1', 'started', 1_000);
+      at('r1', 'done', 1_000 + 25_000, 'shipped');
+      vi.runAllTimers();
+      expect(store.getState().inbox).toEqual([]);
+      expect(desktop).toHaveBeenCalledTimes(1);
+      expect(desktop.mock.calls[0]![0]).toMatchObject({ title: 'Claude finished in add-auth', body: 'shipped', channel: 'ws:w1' });
+    });
+
+    it('stays quiet for a quick one, while more waits its turn, and when switched off', () => {
+      watching();
+      at('r1', 'started', 1_000);
+      at('r1', 'done', 5_000);
+      at('r2', 'started', 10_000);
+      at('r3', 'queued', 11_000);
+      at('r2', 'done', 40_000);
+      vi.runAllTimers();
+      expect(desktop).not.toHaveBeenCalled();
+
+      at('r3', 'started', 41_000);
+      at('r3', 'done', 70_000);
+      vi.runAllTimers();
+      expect(desktop).toHaveBeenCalledTimes(1);
+
+      store.dispatch({ type: 'prefs', prefs: { notify: { ...store.getState().prefs.notify, doneHere: false } } });
+      at('r4', 'started', 80_000);
+      at('r4', 'done', 120_000);
+      vi.runAllTimers();
+      expect(desktop).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('respects per-kind toggles and the desktop switch', () => {
@@ -396,6 +447,31 @@ describe('the Beluga network: messages from friends and groups', () => {
       vi.useRealTimers();
     }
   });
+
+  it('shows in the window, with its sound, while Beluga is in front (even set to notify only when away)', () => {
+    vi.useFakeTimers({ now: 1_000_000 });
+    try {
+      const state = on();
+      const store = new Store({ ...state, attention: { ...state.attention, front: true }, prefs: { ...state.prefs, notify: { ...state.prefs.notify, onlyAway: true } } });
+      const desktop = vi.fn();
+      const notifier = new Notifier({ store, desktop });
+      store.dispatch({ type: 'net_message', message: msg('1', 'dm:b', 'lunch?') });
+      vi.runAllTimers();
+      expect(store.getState().inbox).toMatchObject([{ title: 'bob', channel: 'dm:b', read: false }]);
+      expect(desktop).toHaveBeenCalledTimes(1);
+      expect(desktop.mock.calls[0]![0]).toMatchObject({ title: 'bob', body: 'lunch?', channel: 'dm:b', sound: true, banner: true });
+
+      // A burst is one banner.
+      store.dispatch({ type: 'net_message', message: msg('2', 'dm:b', 'one') });
+      store.dispatch({ type: 'net_message', message: msg('3', 'group:g1', 'two', { conversation: 'group:g1' }) });
+      vi.runAllTimers();
+      expect(desktop).toHaveBeenCalledTimes(2);
+      expect(desktop.mock.calls[1]![0]).toMatchObject({ title: '2 new messages', banner: true });
+      notifier.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('plans: you hear from the plan, not each task', () => {
@@ -500,6 +576,25 @@ describe('plans: you hear from the plan, not each task', () => {
     expect(detectNotices(failed, finished)).toEqual([{ kind: 'done', tag: 'milestone', title: 'Auth is done', body: 'Its pull request is ready to merge', channel: 'ws:home', plan: 'pl1', key: 'plan:pl1:done:9' }]);
   });
 
+  it('a task stopping again after Beluga woke it, or a milestone past every rescue step, is yours: it says why', () => {
+    const before = inPlan();
+    const woken = apply(before, { type: 'plan_put', plan: plan({ watch: { t1: { at: 3, reason: 'it ended its turn without handing off', line: 'KLD-12 stopped', wokeAt: 2 } } }) });
+    expect(detectNotices(before, woken)).toEqual([]);
+    const twice = apply(woken, { type: 'plan_put', plan: plan({ watch: { t1: { at: 4, reason: 'it ended its turn without handing off', line: 'KLD-12 stopped', wokeAt: 2, needsYou: true } } }) });
+    expect(detectNotices(woken, twice)).toEqual([
+      { kind: 'needsYou', tag: 'milestone', title: 'Auth: “Login form” stopped twice', body: 'it ended its turn without handing off. Resume it, or open its chat', channel: 'ws:home', plan: 'pl1', need: 'plan:pl1:stalled:t1', key: 'plan:pl1:t1:stalled:4' },
+    ]);
+    const rescued = apply(before, { type: 'plan_put', plan: plan({ rescue: { m1: { sig: 's', tries: 3, at: 7, tried: ['woke KLD-12', 'restarted it'], yours: true } } }) });
+    expect(detectNotices(before, rescued)).toMatchObject([{ kind: 'needsYou', title: 'Auth: stuck on “API”', body: 'Beluga tried: woke KLD-12; restarted it', need: 'plan:pl1:rescue:m1' }]);
+    const conflict = { at: 8, dir: '/wt/merge', merging: 'klaud/a', key: 'KLD-12', files: ['src/a.ts'] };
+    const merging = apply(before, { type: 'plan_put', plan: plan({ merging: { m1: { at: 7, by: { kind: 'beluga' }, conflict } } }) });
+    expect(detectNotices(before, merging)).toEqual([]);
+    const stuckMerge = apply(merging, { type: 'plan_put', plan: plan({ merging: { m1: { at: 7, by: { kind: 'beluga' }, conflict: { ...conflict, stuck: true } } } }) });
+    expect(detectNotices(merging, stuckMerge)).toMatchObject([{ kind: 'needsYou', tag: 'conflict', title: 'Auth: merging “API” hit a conflict Claude couldn’t fix', body: 'KLD-12 conflicts in src/a.ts: fix it in /wt/merge and it passes' }]);
+    // Still stuck is not news again.
+    expect(detectNotices(rescued, apply(rescued, { type: 'plan_put', plan: plan({ rescue: { m1: { sig: 's', tries: 3, at: 7, tried: ['woke KLD-12', 'restarted it'], yours: true } } }) }))).toEqual([]);
+  });
+
   it('plans already there when you start are not news', () => {
     const s = base();
     expect(detectNotices(s, inPlan(plan({ runs: { m1: { passedAt: 5 } } })))).toEqual([]);
@@ -546,5 +641,70 @@ describe('plans: you hear from the plan, not each task', () => {
       expect(desktop.mock.calls[0]?.[0]).toMatchObject({ title: 'Auth · KLD-12 asks: Which db?', channel: 'ws:w1' });
       notifier.stop();
     });
+  });
+});
+
+describe('a notice about something that waits for you (BLG-255)', () => {
+  it('is read once that request is answered, wherever it was answered', () => {
+    const store = new Store(base());
+    const notifier = new Notifier({ store, desktop: vi.fn() });
+    store.dispatch({ type: 'net_offer', offer: { peerId: 'rae', name: 'rae', dir: 'in', at: 5, expiresAt: Date.now() + 60_000 } });
+    notifier.notify({ kind: 'needsYou', tag: 'invited', title: 'rae wants to add you as a friend', body: '', need: 'friend:rae' });
+    expect(store.getState().inbox).toMatchObject([{ need: 'friend:rae', read: false }]);
+    // Something else changes: still waiting, still unread.
+    store.dispatch({ type: 'net_offer', offer: { peerId: 'zed', name: 'zed', dir: 'in', at: 6, expiresAt: Date.now() + 60_000 } });
+    expect(store.getState().inbox[0]!.read).toBe(false);
+    store.dispatch({ type: 'net_offer_gone', peerId: 'rae', dir: 'in' });
+    expect(store.getState().inbox[0]!.read).toBe(true);
+    notifier.stop();
+  });
+});
+
+describe('a task comment that mentions you (BLG-419)', () => {
+  const NOW = 10_000_000;
+  const task: Issue = {
+    id: 'i7',
+    key: 'KLD-7',
+    number: 7,
+    projectId: 'p1',
+    title: 'Login form',
+    status: 'todo',
+    priority: 'none',
+    labels: [],
+    blockedBy: [],
+    related: [],
+    rank: 0,
+    brief: {},
+    revisions: [],
+    worktrees: [],
+    proof: [],
+    activity: [],
+    createdAt: 0,
+    updatedAt: 0,
+    createdBy: { kind: 'beluga' },
+    origin: 'manual',
+  };
+  const comment = (id: string, body: string, by: Issue['activity'][number]['by'] = { kind: 'person', id: 'b', name: 'bob' }, at = NOW) => ({ id, at, by, kind: 'comment' as const, text: 'commented', body });
+  const board = (s: DomainState, i: Issue): DomainState => apply(s, { type: 'board_issue', issue: i });
+  const start = (): DomainState => apply(base(), { type: 'identity', selfId: 'me', isHost: false }, { type: 'board_init', state: { enabled: true, issues: [task], projects: {}, autoTasks: false } });
+
+  it('tells you who mentioned you, on which task, and opens the task', () => {
+    const prev = start();
+    const next = board(prev, { ...task, activity: [comment('a1', '@kay can you look at this?'), comment('a2', 'no mention here')] });
+    expect(detectNotices(prev, next, NOW)).toEqual([{ kind: 'mentions', tag: 'mention', title: 'bob mentioned you on KLD-7', body: '@kay can you look at this?', channel: 'task:i7', key: 'task-mention:a1' }]);
+  });
+
+  it('stays quiet for your own comments, Claude’s notes, someone else’s name and old comments', () => {
+    const prev = start();
+    const next = board(prev, {
+      ...task,
+      activity: [
+        comment('a1', '@kay note to self', { kind: 'person', id: 'me', name: 'kay' }),
+        { ...comment('a2', '@kay done'), kind: 'note' as const },
+        comment('a3', '@kayla look'),
+        comment('a4', '@kay old', undefined, NOW - 13 * 60 * 60_000),
+      ],
+    });
+    expect(detectNotices(prev, next, NOW)).toEqual([]);
   });
 });

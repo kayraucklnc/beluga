@@ -4,7 +4,7 @@ import { type Action, type DomainState, reduceDomain } from '../core/store.js';
 import type { PtyExit } from '../terminal/pty-host.js';
 import type { PtyLink } from '../terminal/emulator.js';
 import type { Args, Method } from './api.js';
-import { type ApiProxy, type ClientKind, type BelugaClient, apiProxy } from './client.js';
+import { type ApiProxy, type ClientKind, type BelugaClient, type PhoneMirror, type PhoneMirrorStatus, type PhoneTouchData, type PhoneVideoPiece, apiProxy } from './client.js';
 import type { Result } from './handlers.js';
 import { type Cap, type ClientFrame, type DaemonFrame, IPC_VERSION, encodeFrame, parseDaemonFrame } from './protocol.js';
 
@@ -129,6 +129,55 @@ class SocketTerm implements PtyLink {
   }
 }
 
+/** One phone's live screen as this screen sees it (BLG-173): frames in, keys out via the API. */
+class SocketPhoneMirror implements PhoneMirror {
+  private readonly frameListeners = new Set<(f: PhoneFrameData) => void>();
+  private readonly statusListeners = new Set<(s: PhoneMirrorStatus) => void>();
+  private readonly videoListeners = new Set<(p: PhoneVideoPiece) => void>();
+  private readonly touchListeners = new Set<(t: PhoneTouchData) => void>();
+
+  constructor(
+    private readonly device: string,
+    private readonly sendFrame: (frame: ClientFrame) => void,
+    private readonly forget: () => void,
+  ) {}
+
+  onFrame(listener: (f: PhoneFrameData) => void): () => void {
+    this.frameListeners.add(listener);
+    return () => void this.frameListeners.delete(listener);
+  }
+  onVideo(listener: (p: PhoneVideoPiece) => void): () => void {
+    this.videoListeners.add(listener);
+    return () => void this.videoListeners.delete(listener);
+  }
+  onTouch(listener: (t: PhoneTouchData) => void): () => void {
+    this.touchListeners.add(listener);
+    return () => void this.touchListeners.delete(listener);
+  }
+  onStatus(listener: (s: PhoneMirrorStatus) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => void this.statusListeners.delete(listener);
+  }
+  close(): void {
+    this.sendFrame({ t: 'phone_unwatch', device: this.device });
+    this.forget();
+  }
+  frame(f: PhoneFrameData): void {
+    for (const l of [...this.frameListeners]) l(f);
+  }
+  video(p: PhoneVideoPiece): void {
+    for (const l of [...this.videoListeners]) l(p);
+  }
+  touch(t: PhoneTouchData): void {
+    for (const l of [...this.touchListeners]) l(t);
+  }
+  status(s: PhoneMirrorStatus): void {
+    for (const l of [...this.statusListeners]) l(s);
+  }
+}
+
+type PhoneFrameData = { b64: string; mime: string; w: number; h: number };
+
 /**
  * A screen attached to the beluga daemon over its local WebSocket (the Mac app).
  * Browser-safe.
@@ -145,6 +194,7 @@ export class SocketClient implements BelugaClient {
   private readonly intentListeners = new Set<(intent: Intent) => void>();
   private readonly closeListeners = new Set<(reason: string) => void>();
   private readonly terms = new Map<string, SocketTerm>();
+  private readonly phones = new Map<string, SocketPhoneMirror>();
   private closed = false;
   // A snapshot was asked for and hasn't come yet.
   private resyncing = false;
@@ -240,6 +290,16 @@ export class SocketClient implements BelugaClient {
     return term;
   }
 
+  watchPhone(device: string, opts: { fps?: number; max?: number; video?: boolean } = {}): PhoneMirror {
+    this.phones.get(device)?.close();
+    const mirror = new SocketPhoneMirror(device, (f) => this.send(f), () => {
+      if (this.phones.get(device) === mirror) this.phones.delete(device);
+    });
+    this.phones.set(device, mirror);
+    this.send({ t: 'phone_watch', device, ...(opts.fps ? { fps: opts.fps } : {}), ...(opts.max ? { max: opts.max } : {}), ...(opts.video ? { video: true } : {}) });
+    return mirror;
+  }
+
   close(): void {
     if (this.closed) return;
     this.socket.close(1000, 'bye');
@@ -284,6 +344,18 @@ export class SocketClient implements BelugaClient {
         return;
       case 'term_status':
         this.terms.get(frame.term)?.status(frame.running, frame.exited);
+        return;
+      case 'phone_frame':
+        this.phones.get(frame.device)?.frame({ b64: frame.b64, mime: frame.mime, w: frame.w, h: frame.h });
+        return;
+      case 'phone_video':
+        this.phones.get(frame.device)?.video({ b64: frame.b64, key: frame.key, ts: frame.ts, w: frame.w, h: frame.h, sw: frame.sw, sh: frame.sh });
+        return;
+      case 'phone_touch':
+        this.phones.get(frame.device)?.touch(frame.touch);
+        return;
+      case 'phone_mirror':
+        this.phones.get(frame.device)?.status({ on: frame.on, ...(frame.route ? { route: frame.route } : {}), ...(frame.error ? { error: frame.error } : {}), ...(frame.video ? { video: frame.video } : {}), ...(frame.note ? { note: frame.note } : {}) });
         return;
       case 'clients':
         this.clients = frame.count;

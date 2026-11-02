@@ -11,7 +11,8 @@ daemon or the Mac app, check the phone too, in the same change:
 
 - **A new or changed API method** (`src/ipc/*-api.ts`): classify it in `src/companion/coverage.ts`
   as `phone` or `mac` (the typecheck fails until you do). `phone` only for what fits the phone:
-  reading, answering, asking, chatting. Never code, diffs, git, terminals or settings.
+  reading, answering, asking, chatting, and (BLG-42) a worktree's Files and Terminal. Never
+  editing, diffs, git beyond Merge, or settings.
 - **A change to what a screen shows** (conversations, sub-agents, outputs, plans, approvals,
   questions, friends' requests, chats, usage): update its view in `src/companion/views.ts`, and the
   phone screen that draws it in `packages/companion/app/`. Run `npx vitest run tests/companion-*`.
@@ -21,8 +22,19 @@ daemon or the Mac app, check the phone too, in the same change:
 - **The link's frames or the views' shape** (`src/companion/protocol.ts`): additive changes only
   within `COMPANION_PROTO.major`. A breaking change bumps the major, keeps the old one answered for a
   release, and is written up in `docs/companion.md`.
-- Nothing that is source code goes to the phone: files only through `isArtifact` and never
-  `isSecretPath` (`src/companion/files.ts`), text through `stripCode`.
+- What goes to the phone, and how (BLG-42):
+  - **Source is read-only, and only in Files.** A worktree's own files go only through the
+    companion's file gate (`src/companion/worktree-files.ts`): inside that worktree (links followed
+    and checked again), never `isSecretPath`, read in 512 KB pages with secrets redacted. Nothing
+    on the phone can save, format or otherwise change a file.
+  - **Everywhere else, no code.** Outputs still go only through `isArtifact` and never
+    `isSecretPath` (`src/companion/files.ts`); Claude's answers still go through `stripCode`.
+  - **The terminal is interactive and shared with the Mac.** A worktree's terminals are the
+    daemon's own PTY sessions, the ones the Mac's dock shows (`src/companion/terminals.ts`): the
+    phone streams them and types into them, the session keeps the Mac's size, and who attached and
+    how much they typed is logged (never what). Only terminals of your worktrees; gated by
+    `SINCE.terminal`.
+  - **Still never:** editing, diffs, git writes beyond Merge, settings, or secrets.
 - The phone's look (`packages/companion/lib/theme.ts`): soft pastels and icons, never glows or
   neon. Headers and toolbars are solid with a hairline once scrolled, never a gradient fade. One main action on the surface; advanced options go behind the ••• / long-press sheet or
   Settings › Advanced, never as extra buttons.
@@ -33,6 +45,13 @@ daemon or the Mac app, check the phone too, in the same change:
   (`tests/parity.test.ts`).
 - The core stays free of UI code (`tests/boundaries.test.ts`); what the screens import stays
   browser-safe (`tests/browser-safe.test.ts`), and `src/companion/protocol.ts` too: zod only.
+
+## Releasing the phone app
+
+- Build the APKs only with `npm run apk` in `packages/companion`. It signs both with Beluga's own key (`~/.beluga-release/`, password in the Keychain), checks them against `signing.json`, and writes `dist/Beluga-<version>.apk` and `dist/Beluga-Link.apk`. Attach both to the release under exactly those names: phones update themselves from `releases/latest` by looking for `Beluga-<version>.apk`.
+- Never attach an APK from a plain `./gradlew assembleRelease`. It carries the debug key, so phones refuse it as an update and Beluga Link stops trusting the app.
+- Raise `android.versionCode` in `packages/companion/app.json` every release.
+- The first release with the new key (the one after 1.7.0) must tell phone users, once: uninstall Beluga and Beluga Link, install this version, pair again. More in `docs/updates.md` ("The phone app's signing key").
 
 ## Checks
 

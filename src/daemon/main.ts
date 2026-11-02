@@ -1,7 +1,10 @@
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import type { Config } from '../config.js';
 import { copyNative } from '../core/clipboard.js';
 import { currentClient } from '../core/client-context.js';
+import { belugaHome } from '../core/home.js';
 import { openWithSystem } from '../core/local.js';
 import { IPC_VERSION } from '../ipc/protocol.js';
 import { type Core, buildCore } from './core.js';
@@ -84,6 +87,8 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
     },
     desktopNotify: (n) => server.notify([n]),
     zoom: async (dir) => (await server.callCap('zoom', [dir], currentClient())) as { ok: boolean; message: string },
+    // The Mac app's window to the front (Open on your Mac, from the phone): the window that can.
+    raise: () => server.callCap('raise', []),
     open: (target) => openWithSystem(target),
     shutdown: () => void stop('Quit from a screen'),
   }, { network: true });
@@ -123,8 +128,26 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
 /** Run the daemon as this process: signals stop it, problems are logged and shown, never fatal. */
 export async function runDaemon(config: Config, opts: DaemonOptions): Promise<void> {
   const log = (line: string): void => void process.stderr.write(`${new Date().toISOString()} ${line}\n`);
+  // Once the terminal or pipe it was started from is gone (EIO, EPIPE), every write fails: drop those lines.
+  // Unheard, each failed write was an uncaught error whose log line failed again, spinning a core (BLG-365).
+  process.stderr.on('error', () => {});
   const daemon = await startDaemon(config, { ...opts, log });
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(signal, () => void daemon.stop(`Got ${signal}`));
+  // The Mac app's word that the Mac is about to sleep (BLG-277, src-tauri/src/power.rs): mail the
+  // outboxes, then say so in a file the app waits for before it lets the Mac sleep.
+  // Windows has no SIGUSR2 (listening for it throws there); its app has no sleep hook yet.
+  if (process.platform !== 'win32') process.on('SIGUSR2', () => {
+    void daemon.core
+      .sleeping()
+      .catch((err: unknown) => log(`before sleep: ${errorText(err)}`))
+      .finally(() => {
+        try {
+          writeFileSync(path.join(belugaHome(), 'slept.at'), `${Date.now()}\n`, { mode: 0o600 });
+        } catch {
+          // The app stops waiting after a few seconds anyway.
+        }
+      });
+  });
   process.on('unhandledRejection', (err) => {
     log(`unhandled: ${errorText(err)}`);
     daemon.core.session.toast(`Something went wrong: ${errorText(err)}`.slice(0, 200), 'error');

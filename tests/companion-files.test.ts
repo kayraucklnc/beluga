@@ -2,7 +2,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSyn
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FileServer, RefTable, allowed } from '../src/companion/files.js';
+import { FileServer, RefTable, allowed, mimeOf, quickLookPoster } from '../src/companion/files.js';
+import { cantPlay, isGif, mediaPath, videoFormat } from '../src/companion/media.js';
 import { COMPANION_PIECE, OutputView } from '../src/companion/protocol.js';
 
 const dirs: string[] = [];
@@ -88,12 +89,23 @@ describe('the file server', () => {
     await expect(server.piece('out:nothing-here', 'full', 0)).rejects.toThrow(/no longer offered/);
   });
 
+  it('never sends a text output raw: only redacted, as text', async () => {
+    const { project, scratch } = fixture();
+    const table = refs();
+    const server = new FileServer({ refs: table, thumbsDir: path.join(project, 'thumbs') });
+    writeFileSync(path.join(scratch, 'run.log'), 'token=ghp_abcdefghijklmnopqrstuvwxyz0123456789\n');
+    const ref = table.refFor(path.join(scratch, 'run.log'), project)!;
+    await expect(server.piece(ref, 'full', 0)).rejects.toThrow(/redacted/);
+    const text = Buffer.from((await server.piece(ref, 'text', 0)).b64, 'base64').toString('utf8');
+    expect(text).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+  });
+
   it('sends big files in pieces', async () => {
     const { project, scratch } = fixture();
     const table = refs();
     const server = new FileServer({ refs: table, thumbsDir: path.join(project, 'thumbs') });
-    writeFileSync(path.join(scratch, 'big.log'), 'x'.repeat(COMPANION_PIECE + 100));
-    const ref = table.refFor(path.join(scratch, 'big.log'), project)!;
+    writeFileSync(path.join(scratch, 'big.pdf'), 'x'.repeat(COMPANION_PIECE + 100));
+    const ref = table.refFor(path.join(scratch, 'big.pdf'), project)!;
     const first = await server.piece(ref, 'full', 0);
     expect(first.eof).toBe(false);
     expect(Buffer.from(first.b64, 'base64').length).toBe(COMPANION_PIECE);
@@ -112,5 +124,54 @@ describe('the file server', () => {
     rmSync(p);
     symlinkSync(path.join(project, '.env'), p);
     await expect(server.piece(ref, 'text', 0)).rejects.toThrow(/can't be opened/);
+  });
+});
+
+describe('videos (BLG-100, BLG-103)', () => {
+  it('are outputs anywhere, with their own mime and a poster thumbnail', async () => {
+    const { root, project, scratch } = fixture();
+    const table = refs();
+    for (const name of ['clip.mp4', 'clip.mov', 'clip.m4v', 'clip.webm']) {
+      writeFileSync(path.join(scratch, name), Buffer.alloc(300_000, 7));
+      expect(table.output(path.join(scratch, name), { cwd: project })?.kind).toBe('video');
+    }
+    // Inside the project too (media is never source).
+    expect(table.output(path.join(project, 'src', 'demo.mov'), { cwd: project })?.kind).toBe('video');
+    expect(mimeOf('a.MOV')).toBe('video/quicktime');
+    expect(mimeOf('a.m4v')).toBe('video/x-m4v');
+    expect(mimeOf('a.webm')).toBe('video/webm');
+    const posters: string[] = [];
+    const server = new FileServer({
+      refs: table,
+      thumbsDir: path.join(root, 'thumbs'),
+      thumbnail: async () => {
+        throw new Error('not a picture');
+      },
+      poster: async (src, dest) => {
+        posters.push(src);
+        writeFileSync(dest, 'jpeg');
+      },
+    });
+    const mov = table.refFor(path.join(scratch, 'clip.mov'), project)!;
+    expect(await server.piece(mov, 'thumb', 0)).toMatchObject({ mime: 'image/jpeg', eof: true });
+    expect(posters).toEqual([path.join(scratch, 'clip.mov')]);
+    // The bytes in pieces from any offset: what the phone's player streams from.
+    const mid = await server.piece(mov, 'full', COMPANION_PIECE);
+    expect(mid).toMatchObject({ off: COMPANION_PIECE, eof: true, size: 300_000, mime: 'video/quicktime' });
+    expect(Buffer.from(mid.b64, 'base64').length).toBe(300_000 - COMPANION_PIECE);
+    await expect(server.piece(mov, 'text', 0)).rejects.toThrow(/not text/);
+  });
+
+  it('says which play where, and never asks Quick Look for a WebM poster', async () => {
+    expect(videoFormat('Clip.MOV')).toMatchObject({ label: 'MOV', mime: 'video/quicktime' });
+    expect(videoFormat('notes.txt')).toBeUndefined();
+    expect(isGif('party.GIF')).toBe(true);
+    expect(cantPlay('a.mp4', 'android')).toBeUndefined();
+    expect(cantPlay('a.mov', 'ios')).toBeUndefined();
+    expect(cantPlay('a.webm', 'android')).toBeUndefined();
+    expect(cantPlay('a.webm', 'ios')).toMatch(/WebM/);
+    expect(cantPlay('a.avi', 'android')).toBeTruthy();
+    expect(mediaPath('out:x', 'a.webm')).toBe('/out%3Ax/media.webm');
+    await expect(quickLookPoster('/tmp/a.webm', '/tmp/a.jpg')).rejects.toThrow(/No poster/);
   });
 });

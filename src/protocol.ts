@@ -34,13 +34,65 @@ export const Usage = z.object({
 });
 export type Usage = z.infer<typeof Usage>;
 
+/** A plan window by its own name, for providers whose windows aren't Claude's 5-hour/week ("Daily", "Monthly"). */
+export const NamedUsageWindow = UsageWindow.extend({ label: z.string().min(1).max(32) });
+export type NamedUsageWindow = z.infer<typeof NamedUsageWindow>;
+
+/** Runtimes Beluga knows by name; others (a newer Mac's) still parse, as their id. */
+export const KNOWN_RUNTIMES = ['claude', 'codex', 'local'] as const;
+export type AgentRuntime = (typeof KNOWN_RUNTIMES)[number] | (string & {});
+
+/**
+ * Which agent it is: its runtime ("claude", "codex", "local", …), the model when it's known
+ * ("opus", "gpt-5", "qwen3"), and the name its owner gave it ("Claude", "Codex"). Screens say it
+ * with shared/agent-label.ts; nothing assumes the agent is Claude.
+ */
+export const AgentRef = z.object({
+  runtime: z.string().regex(/^[a-z][\w-]{0,31}$/) as z.ZodType<AgentRuntime>,
+  model: z.string().min(1).max(64).optional(),
+  label: z.string().min(1).max(64),
+});
+export type AgentRef = z.infer<typeof AgentRef>;
+
+/** Before a Mac said which agent it runs, it was always Claude. */
+export const CLAUDE_AGENT: AgentRef = { runtime: 'claude', label: 'Claude' };
+
+/**
+ * One provider's usage: quota windows where the plan has them (Claude's 5-hour/week, Codex's),
+ * tokens and speed where it doesn't (a local model). One per runtime in Profile.usages.
+ */
+export const ProviderUsage = Usage.extend({
+  agent: AgentRef,
+  /** Windows that aren't the 5-hour/week pair, by their own names. */
+  windows: z.array(NamedUsageWindow).max(6).optional(),
+  /** Tokens used since the Mac started (for providers without a plan). */
+  tokens: z.object({ input: z.number().min(0), output: z.number().min(0) }).optional(),
+  /** Output tokens per second over the last run. */
+  tokensPerSec: z.number().min(0).max(100_000).optional(),
+  /** False when the provider is installed but not signed in. */
+  signedIn: z.boolean().optional(),
+});
+export type ProviderUsage = z.infer<typeof ProviderUsage>;
+
+/** The agent someone's Mac answers with when nobody names one: an older Mac's is Claude. */
+export function defaultAgentOf(p: { readonly agents?: readonly AgentRef[]; readonly defaultAgent?: AgentRef } | undefined): AgentRef {
+  return p?.defaultAgent ?? p?.agents?.[0] ?? CLAUDE_AGENT;
+}
+
 export const Profile = z.object({
   name: z.string().regex(/^[\w.-]{1,32}$/),
   shares: z.array(ShareInfo).max(32),
   agent: z.boolean(),
+  /** Claude's usage, kept for older Macs that read only this; newer ones read `usages`. */
   usage: Usage.optional(),
+  /** Usage per provider, one per runtime (an older Mac sends none: its `usage` is Claude's). */
+  usages: z.array(ProviderUsage).max(8).optional(),
   /** Projects friends may ask to start a worktree in (names only; you approve each request). */
   projects: z.array(z.string().max(80)).max(60).optional(),
+  /** The agents this person runs (an older Mac sends none: it runs Claude). */
+  agents: z.array(AgentRef).max(8).optional(),
+  /** The one that answers when someone asks them without naming one. */
+  defaultAgent: AgentRef.optional(),
 });
 export type Profile = z.infer<typeof Profile>;
 
@@ -53,14 +105,22 @@ export type PeerInfo = z.infer<typeof PeerInfo>;
 // Application bodies (always end-to-end encrypted inside a frame "box")
 // ---------------------------------------------------------------------------
 
-/** Which conversation a message belongs to: the room, or a workspace ("ws:<id>"). */
-export const Channel = z.string().regex(/^(room|ws:[\w:.-]{1,80})$/).default('room');
+/**
+ * Which conversation a message belongs to: the room, a workspace ("ws:<id>"), or one of "Your
+ * Mac"'s chats ("mac:assistant", "mac:assistant:<id>", core/assistant). Your own messages to your Claude are parsed by this too
+ * (session's loopback), so a channel it refuses never reaches Claude.
+ */
+// `dm:`/`group:`: your own Claude acting in a friends' chat (BLG-207); its events only go to you.
+// `sentinel-chat:<id>`: the Sentinel chat (docs/sentinel.md §12), yours only; its events only go to you.
+export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|sentinel-chat:[a-z0-9]{1,24}|ws:[\w:.-]{1,80}|dm:[\w-]{8,64}|group:[\w-]{1,80})$/).default('room');
 
 export const ChatBody = z.object({
   kind: z.literal('chat'),
   text: z.string().min(1).max(MAX_TEXT),
   byAgent: z.boolean().default(false),
   channel: Channel,
+  /** With `byAgent`: which of their agents wrote it (an older Mac leaves it out: Claude). */
+  agent: AgentRef.optional(),
 });
 
 export const FocusBody = z.object({
@@ -83,6 +143,13 @@ export const AgentRequestBody = z.object({
   plan: z.boolean().default(false),
   /** Run in one of the owner's projects (by name) instead of their shared folder. */
   project: z.string().min(1).max(80).optional(),
+  /**
+   * BLG-520: the agent a room message named ("@codex", "@bob:codex"). Their Mac runs it when its
+   * card lists it and it runs there (your own: any that runs here), else its default, and says so
+   * (`AgentEventBody.fallback`). Only for the room; a place's pin (a worktree's agent) still wins
+   * there. An older Mac drops it and its default answers; a malformed one is dropped alone.
+   */
+  agent: AgentRef.optional().catch(undefined),
 });
 
 export const AgentEventKind = z.enum([
@@ -116,6 +183,12 @@ export const AgentEventBody = z.object({
   event: AgentEventKind,
   text: z.string().max(MAX_TEXT).default(''),
   channel: Channel,
+  /** With `queued`: it waits because its Claude works in as many conversations as it may at once (see shared/run-slots.ts). */
+  slotWait: z.object({ running: z.number().int().min(0).max(1000), limit: z.number().int().min(0).max(1000) }).optional(),
+  /** The agent doing the run (an older Mac leaves it out: Claude). */
+  agent: AgentRef.optional(),
+  /** BLG-520: the request named another agent, which doesn't run there: why `agent` answers instead (in words). */
+  fallback: z.string().max(300).optional(),
 });
 
 export const FsListBody = z.object({
@@ -123,9 +196,11 @@ export const FsListBody = z.object({
   reqId: shortStr,
   share: shortStr,
   path: relPath,
+  /** Say when each file last changed (`mtime`): a friend's Scratch tab, newest first (BLG-259). */
+  times: z.boolean().optional(),
 });
 
-export const FsEntry = z.object({ name: z.string(), dir: z.boolean(), size: z.number() });
+export const FsEntry = z.object({ name: z.string(), dir: z.boolean(), size: z.number(), mtime: z.number().optional() });
 export type FsEntry = z.infer<typeof FsEntry>;
 
 export const FsListResultBody = z.object({
@@ -188,6 +263,11 @@ export const ReportBody = z.object({
 export const RoomClearedBody = z.object({ kind: z.literal('room_cleared') });
 /** The gateway (tasks between Claudes, core/gateway) over a room: one frame, to one person; it checks the frame itself. */
 export const GatewayBody = z.object({ kind: z.literal('gateway'), frame: z.unknown() });
+/**
+ * Someone in the room wants to be friends on the Beluga network (BLG-202): a one-time friend
+ * invitation made only for you. Accepting it pairs your Macs over the network. Older Macs drop it.
+ */
+export const FriendOfferBody = z.object({ kind: z.literal('friend_offer'), link: z.string().regex(/^beluga:\/\/add#[\w-]{22}$/), expiresAt: z.number().int().positive() });
 
 // ---- Claude asking the person who asked it (questions, plans to approve) ----
 
@@ -231,7 +311,8 @@ export type GuestCan = z.infer<typeof GuestCan>;
 /** Owner → invitee: you're in. Carries what the workspace is, recent history, and its folder share. */
 export const WsInviteBody = z.object({
   kind: z.literal('ws_invite'),
-  ws: z.object({ id: z.string().regex(/^[\w:.-]{1,80}$/), name: z.string().max(80), project: z.string().max(80), branch: z.string().max(200).optional() }),
+  /** `agent`: the owner's agent that runs there (their pick for it, or their default; an older Mac leaves it out: Claude). */
+  ws: z.object({ id: z.string().regex(/^[\w:.-]{1,80}$/), name: z.string().max(80), project: z.string().max(80), branch: z.string().max(200).optional(), agent: AgentRef.optional() }),
   role: WsRole,
   /** Set for people invited by link: watch, prompt or edit (for showing what they can do). */
   can: GuestCan.optional(),
@@ -399,6 +480,7 @@ export const Body = z.discriminatedUnion('kind', [
   FileOfferBody,
   RoomClearedBody,
   GatewayBody,
+  FriendOfferBody,
   ShareOfferBody,
   AgentQuestionBody,
   AgentAnswerBody,

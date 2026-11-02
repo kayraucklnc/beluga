@@ -1,5 +1,6 @@
-import type { LucideIcon } from 'lucide-react-native';
+import type { ReactNode } from 'react';
 import { View } from 'react-native';
+import type { IconLike } from './AgentMark';
 import { Sheet } from './Sheet';
 import { haptic, IconBadge, Press, T, type Tone } from './ui';
 
@@ -8,7 +9,8 @@ import { haptic, IconBadge, Press, T, type Tone } from './ui';
  * a pastel circle, a word or two). The same sheet everywhere, so it's learned once.
  */
 export interface Option {
-  readonly Icon: LucideIcon;
+  /** A lucide icon, or an agent's mark (AgentMark.tsx markIcon). */
+  readonly Icon: IconLike;
   readonly label: string;
   readonly sub?: string;
   readonly tone?: Tone;
@@ -16,15 +18,16 @@ export interface Option {
   readonly hidden?: boolean;
 }
 
-export function Options({ visible, onClose, title, options }: { readonly visible: boolean; readonly onClose: () => void; readonly title?: string; readonly options: readonly Option[] }) {
+export function Options({ visible, onClose, title, options, head, window }: { readonly visible: boolean; readonly onClose: () => void; readonly title?: string; readonly options: readonly Option[]; /** A control that stays open while used (a stepper), above the rows. */ readonly head?: ReactNode; /** Opened from inside a band or a row, not the screen: in a window of its own, over everything (see Sheet). */ readonly window?: boolean }) {
   return (
-    <Sheet visible={visible} onDismiss={onClose}>
+    <Sheet visible={visible} onDismiss={onClose} window={window}>
       <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
         {title ? (
           <T v="eyebrow" numberOfLines={1} style={{ paddingHorizontal: 10, paddingBottom: 8 }}>
             {title}
           </T>
         ) : null}
+        {head}
         {options
           .filter((o) => !o.hidden)
           .map((o) => (

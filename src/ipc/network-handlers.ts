@@ -1,11 +1,12 @@
-import { spawn } from 'node:child_process';
 import { chatOf } from '../core/chat/launch.js';
+import { answerFriendOffer, sendFriendOffer } from '../core/friend-offers.js';
 import { networkEnabled, networkOf, networkStatus, networkSwitchOf } from '../core/network.js';
-import { systemOpen } from '../core/os-open.js';
-import type { ChatFile } from '../net/mesh/views.js';
+import { revealInFinder, systemOpen } from '../core/os-open.js';
+import type { ChatFile, MessageView } from '../net/mesh/views.js';
 import { saveSettings } from '../core/settings.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
+import { localMentions, portableMentions, sharedTasks } from '../core/team/mentions.js';
 
 /** What each `network.*` method does (see network-api.ts). Results are plain views: no keys, no secrets. */
 
@@ -26,6 +27,28 @@ async function setEnabled(s: Session, on: boolean): Promise<ReturnType<typeof ne
 }
 
 /** Write in a conversation: the files must be here (added first), so friends can get them from you. */
+/** The people a conversation is with (`dm:<peer>`, `group:<id>`), not you. */
+function peersOf(s: Session, conversation: string): string[] {
+  if (conversation.startsWith('dm:')) return [conversation.slice(3)];
+  const group = s.store.getState().network.groups.find((g) => `group:${g.id}` === conversation);
+  return group ? group.members.filter((m) => !m.self).map((m) => m.peerId) : [];
+}
+
+/** Your words as they go out: the tasks you share with them carry their ids (core/team/mentions.ts). */
+function outgoing(s: Session, conversation: string, text: string): string {
+  // A bare network (no board, no team: tests, the terminal's): the words as written.
+  if (!s.store) return text;
+  const st = s.store.getState();
+  return portableMentions(text, sharedTasks(st.board.issues, st.team, peersOf(s, conversation)));
+}
+
+/** Older messages as this Mac reads them: a team task by its own key. */
+function incoming(s: Session, list: readonly MessageView[]): MessageView[] {
+  if (!s.store) return [...list];
+  const issues = s.store.getState().board.issues;
+  return list.map((m) => ({ ...m, text: localMentions(m.text, issues) }));
+}
+
 function post(s: Session, conversation: string, body: { text: string; files?: readonly ChatFile[] | undefined; ask?: 'all' | readonly string[] | undefined }) {
   const chat = chatOf(s);
   const files = (body.files ?? []).map((f) => {
@@ -33,14 +56,9 @@ function post(s: Session, conversation: string, body: { text: string; files?: re
     return chat.files.info(f.sha) ?? f;
   });
   const extras = { ...(files.length ? { files } : {}), ...(body.ask ? { ask: { to: body.ask } } : {}) };
-  return chat.mesh.post(conversation, body.text, Object.keys(extras).length ? extras : undefined);
+  return chat.mesh.post(conversation, outgoing(s, conversation, body.text), Object.keys(extras).length ? extras : undefined);
 }
 
-/** Show a file in Finder, selected. */
-function reveal(file: string): void {
-  if (process.platform !== 'darwin') return systemOpen(file.replace(/\/[^/]*$/, ''));
-  spawn('open', ['-R', file], { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
-}
 
 export const NETWORK_HANDLERS = {
   'network.status': (s) => networkStatus(s),
@@ -50,12 +68,14 @@ export const NETWORK_HANDLERS = {
   'network.friends.accept': (s, text) => net(s).accept(text),
   'network.friends.cancelInvite': (s, id) => net(s).cancelInvite(id),
   'network.friends.remove': (s, peerId) => net(s).removeFriend(peerId),
-  'network.dm.send': (s, peerId, text) => net(s).sendDm(peerId, text),
-  'network.dm.history': (s, peerId, page) => net(s).dmHistory(peerId, { ...(page?.before !== undefined ? { before: page.before } : {}), ...(page?.limit !== undefined ? { limit: page.limit } : {}) }),
+  'network.friends.addFromRoom': (s, peerId) => sendFriendOffer(s, net(s), peerId),
+  'network.friends.answerOffer': (s, peerId, accept) => answerFriendOffer(s, accept ? net(s) : undefined, peerId, accept),
+  'network.dm.send': (s, peerId, text) => net(s).sendDm(peerId, outgoing(s, `dm:${peerId}`, text)),
+  'network.dm.history': (s, peerId, page) => incoming(s, net(s).dmHistory(peerId, { ...(page?.before !== undefined ? { before: page.before } : {}), ...(page?.limit !== undefined ? { limit: page.limit } : {}) })),
   'network.groups.list': (s) => net(s).summary().groups,
   'network.groups.create': (s, name, members) => net(s).createGroup(name, members ?? []),
-  'network.groups.send': (s, groupId, text) => net(s).sendGroup(groupId, text),
-  'network.groups.history': (s, groupId, page) => net(s).groupHistory(groupId, { ...(page?.before !== undefined ? { before: page.before } : {}), ...(page?.limit !== undefined ? { limit: page.limit } : {}) }),
+  'network.groups.send': (s, groupId, text) => net(s).sendGroup(groupId, outgoing(s, `group:${groupId}`, text)),
+  'network.groups.history': (s, groupId, page) => incoming(s, net(s).groupHistory(groupId, { ...(page?.before !== undefined ? { before: page.before } : {}), ...(page?.limit !== undefined ? { limit: page.limit } : {}) })),
   'network.groups.addMember': (s, groupId, peerId) => net(s).addMember(groupId, peerId),
   'network.groups.removeMember': (s, groupId, peerId) => net(s).removeMember(groupId, peerId),
   'network.groups.setAdmin': (s, groupId, peerId, admin) => net(s).setAdmin(groupId, peerId, admin),
@@ -68,14 +88,19 @@ export const NETWORK_HANDLERS = {
   'network.groups.decline': (s, groupId, peerId) => net(s).decline(groupId, peerId),
   'network.presence.set': (s, presence) => net(s).setPresence({ state: presence.state, ...(presence.note !== undefined ? { note: presence.note } : {}), ...(presence.until !== undefined ? { until: presence.until } : {}) }),
   'network.presence.get': (s) => net(s).getPresence(),
+  'network.avatar.set': (s, b64) => net(s).setAvatar(b64 === null ? undefined : Buffer.from(b64, 'base64')),
+  'network.avatar.get': (s, sha) => net(s).avatar(sha),
   'network.read': (s, conversation) => net(s).markRead(conversation),
+  'network.messages.delete': (s, conversation, id, opts) => net(s).deleteMessage(conversation, id, opts?.everyone ?? false),
+  'network.messages.edit': (s, conversation, id, text) => net(s).editMessage(conversation, id, text),
+  'network.clear': (s, conversation) => net(s).clearConversation(conversation),
   'network.post': (s, conversation, body) => post(s, conversation, body),
   'network.files.add': (s, paths) => chatOf(s).files.share(paths),
   'network.files.addData': (s, name, b64, part) => (part ? chatOf(s).files.sharePart(name, Buffer.from(b64, 'base64'), part) : chatOf(s).files.shareData(name, Buffer.from(b64, 'base64'))),
   'network.files.download': (s, sha, conversation) => chatOf(s).files.download(sha, conversation),
   'network.files.cancel': (s, sha) => chatOf(s).files.cancel(sha),
   'network.files.open': (s, sha) => systemOpen(chatOf(s).files.pathOf(sha)),
-  'network.files.reveal': (s, sha) => reveal(chatOf(s).files.pathOf(sha)),
+  'network.files.reveal': (s, sha) => revealInFinder(chatOf(s).files.pathOf(sha)),
   'network.files.saveTo': (s, sha, target) => chatOf(s).files.saveTo(sha, target),
   'network.files.preview': (s, sha) => chatOf(s).files.preview(sha),
   'network.channels.main': (s) => chatOf(s).main.ensure(),

@@ -2,7 +2,7 @@
 //   BELUGA_URL=http://localhost:1420 node scripts/gifs.mjs [scene…]   → assets/mac/<scene>.gif
 // Needs ffmpeg. Each scene is recorded as a video, then turned into a GIF with its own palette.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 
@@ -78,8 +78,7 @@ const SCENES = {
     viewport: { width: 1280, height: 760 },
     async run(page) {
       await networkOn(page);
-      await side(page).getByRole('button', { name: /^webhook-retries/ }).first().click();
-      await page.waitForTimeout(1200);
+      await openWorkspace(page, 'webhook-retries');
       const answers = page.getByText(/^bob's Claude says/);
       const before = await answers.count();
       await say(page, '@bob run the tests in bob-api and tell me how many pass');
@@ -131,19 +130,203 @@ const SCENES = {
   'worktree-per-task': {
     viewport: { width: 1280, height: 760 },
     async run(page) {
-      await side(page).getByRole('button', { name: /^add-auth/ }).first().click();
-      await page.waitForTimeout(1200);
+      await openWorkspace(page, 'add-auth');
       await say(page, 'Add rate limiting to the login endpoint and write tests');
       await page.waitForTimeout(9000);
     },
   },
+  /** "show me the payments dashboard": stats, a chart and a table, live in the answer (docs/views.md). */
+  views: {
+    viewport: { width: 1280, height: 800 },
+    async run(page) {
+      await openWorkspace(page, 'webhook-retries');
+      await say(page, 'show me the payments dashboard');
+      const chart = page.getByRole('figure', { name: 'Chart: Payments per day' }).last();
+      await chart.waitFor({ timeout: 60_000 });
+      await untilIdle(page);
+      await page.getByRole('figure', { name: 'Stats: Payments this week' }).last().evaluate((el) => el.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+      await page.waitForTimeout(2200);
+      // The legend turns a series off and on.
+      await chart.getByRole('button', { name: 'Wallet' }).click();
+      await page.waitForTimeout(1200);
+      await chart.getByRole('button', { name: 'Wallet' }).click();
+      await page.waitForTimeout(1000);
+      const orders = page.getByRole('figure', { name: 'Table: Latest orders' }).last();
+      await orders.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+      await page.waitForTimeout(1000);
+      const load = orders.getByRole('button', { name: 'Load' });
+      if (await load.isVisible().catch(() => false)) await load.click();
+      await page.waitForTimeout(3000);
+    },
+  },
+  /** "visualize how a payment flows": an interactive diagram Claude draws, with a walkthrough (docs/graphs.md). */
+  graph: {
+    viewport: { width: 1280, height: 800 },
+    // Lots of moving shapes: fewer frames and colors keep it under GitHub's 10 MB.
+    fps: 10,
+    colors: 96,
+    async run(page) {
+      await openWorkspace(page, 'webhook-retries');
+      await say(page, 'visualize how a payment flows through the code');
+      const graph = page.getByRole('figure', { name: /^Graph: / }).last();
+      await graph.waitFor({ timeout: 60_000 });
+      await untilIdle(page);
+      await graph.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+      await page.waitForTimeout(2200);
+      // Hover a node to see what it touches, then step through the walkthrough.
+      const box = await graph.locator('.react-flow__node').nth(2).boundingBox();
+      if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 12 });
+      await page.waitForTimeout(1800);
+      await graph.getByRole('button', { name: 'Walk Me Through It' }).click();
+      const walk = graph.getByRole('region', { name: 'Walkthrough' });
+      for (let i = 0; i < 3; i++) {
+        await page.waitForTimeout(1800);
+        await walk.getByRole('button', { name: 'Next' }).click();
+      }
+      await page.waitForTimeout(2200);
+    },
+  },
+  /** Tasks in the answer, live, then the project's board (docs/tasks-and-plans.md). */
+  tasks: {
+    viewport: { width: 1280, height: 800 },
+    async run(page) {
+      await openWorkspace(page, 'webhook-retries');
+      await say(page, 'where do my tasks stand?');
+      await page.getByRole('list', { name: '5 tasks' }).last().waitFor({ timeout: 60_000 });
+      await untilIdle(page);
+      await page.mouse.move(640, 400);
+      await page.mouse.wheel(0, 2000);
+      await page.waitForTimeout(2600);
+      await side(page).getByRole('button', { name: /^Tasks/ }).click();
+      await page.getByRole('tablist', { name: 'Show' }).waitFor();
+      await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+      await page.waitForTimeout(1800);
+      await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+      await page.waitForTimeout(2600);
+      await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'What Waits on What' }).click();
+      await page.waitForTimeout(3200);
+    },
+  },
+  /** Sentinel (docs/sentinel.md): the list, a recipe made and turned on, Run Now, a run's report, and a fix waiting for Merge. */
+  sentinel: {
+    viewport: { width: 1280, height: 800 },
+    async run(page) {
+      const main = page.locator('main');
+      const list = async () => {
+        await side(page).getByRole('button', { name: /^Sentinel/ }).click();
+        await main.locator('[data-sentinel]').first().waitFor({ timeout: 30_000 });
+      };
+      await list();
+      await page.waitForTimeout(2200);
+      // A recipe: Nightly tests in bob-api, then Turn On.
+      await main.getByRole('button', { name: 'New Sentinel' }).first().click();
+      const sheet = page.getByRole('dialog', { name: 'New Sentinel' });
+      await sheet.getByRole('tab', { name: /Recipe/ }).click();
+      await sheet.getByRole('combobox', { name: 'Where it works' }).click();
+      await page.getByRole('option', { name: 'bob-api' }).click();
+      await page.waitForTimeout(1200);
+      for (const id of ['morning-brief', 'fix-and-ship', 'nightly-tests']) {
+        await sheet.locator(`[data-recipe="${id}"]`).hover();
+        await page.waitForTimeout(600);
+      }
+      await sheet.locator('[data-recipe="nightly-tests"]').click();
+      await main.locator('[data-sentinel-page]').waitFor();
+      await page.waitForTimeout(1800);
+      await main.getByRole('button', { name: 'Turn On' }).first().click();
+      await page.waitForTimeout(1600);
+      // Morning brief: Run Now, and the run's report.
+      await list();
+      await main.getByRole('row', { name: /^Morning brief/ }).click();
+      await page.waitForTimeout(1400);
+      const history = main.getByRole('region', { name: 'History' });
+      const before = await history.locator('[data-run]').count();
+      await main.getByRole('button', { name: 'Run Now' }).click();
+      await history.locator('[data-run]').nth(before).waitFor({ timeout: 30_000 });
+      await history.locator('[data-run]').first().filter({ hasText: 'Done' }).waitFor({ timeout: 60_000 });
+      await page.waitForTimeout(1200);
+      await history.locator('[data-run]').first().click();
+      await main.getByRole('region', { name: 'Report' }).waitFor();
+      await page.waitForTimeout(2600);
+      // Fix what broke: the fix for #48 waits for your Merge.
+      await list();
+      await main.getByRole('row', { name: /^Fix what broke/ }).click();
+      await main.getByRole('region', { name: 'History' }).locator('[data-run]').filter({ hasText: 'Needs you' }).first().click();
+      const decide = main.getByTestId('sentinel-decide');
+      await decide.waitFor();
+      await page.waitForTimeout(2000);
+      await decide.getByRole('button', { name: 'Merge' }).hover();
+      await page.waitForTimeout(700);
+      await decide.getByRole('button', { name: 'Merge' }).click();
+      await main.getByRole('heading', { name: /^Merged #/ }).waitFor({ timeout: 30_000 });
+      await page.waitForTimeout(2400);
+    },
+  },
+  /** The Scratch tab: what Claude and its sub-agents save while they work (screenshots, test logs, JSON), live. */
+  scratch: {
+    viewport: { width: 1280, height: 800 },
+    async run(page) {
+      await openWorkspace(page, 'add-auth');
+      await page.keyboard.press('Meta+Alt+6');
+      const finder = page.getByRole('complementary', { name: 'Panel' }).getByRole('button', { name: 'Show in Finder' });
+      await finder.waitFor();
+      const dir = await finder.getAttribute('title');
+      for (const f of readdirSync(dir)) rmSync(path.join(dir, f), { recursive: true, force: true });
+      await page.waitForTimeout(800);
+      await say(page, 'review my changes, and screenshot the login page while you test it');
+      // What the reviewers save as they go: a test log that grows, the page they checked, the response they got.
+      const write = (name, data) => writeFileSync(path.join(dir, name), data);
+      await page.waitForTimeout(1600);
+      write('01-npm-test.log', '> bob-api@1.0.0 test\n> vitest run\n\n');
+      for (const t of ['auth.test.ts (6)', 'server.test.ts (9)', 'payments.test.ts (8)', 'webhooks.test.ts (4)']) {
+        await page.waitForTimeout(700);
+        appendFileSync(path.join(dir, '01-npm-test.log'), ` ✓ tests/${t}\n`);
+      }
+      appendFileSync(path.join(dir, '01-npm-test.log'), '\n Test Files  4 passed (4)\n      Tests  27 passed (27)\n');
+      await page.waitForTimeout(1400);
+      write('02-login-page.png', LOGIN_SHOT);
+      await page.waitForTimeout(2600);
+      write('03-session-response.json', JSON.stringify({ status: 401, error: 'no session', headers: { 'set-cookie': 'sid=…; HttpOnly; SameSite=Lax' } }));
+      await page.waitForTimeout(2400);
+      await page.getByRole('listbox', { name: 'Scratch files' }).getByRole('option', { name: /02-login-page\.png/ }).click();
+      await page.waitForTimeout(3000);
+    },
+  },
 };
+
+/** A login page for the scratch scene's "screenshot": drawn here so the GIF needs nothing from outside. */
+let LOGIN_SHOT;
+async function drawLogin(browser) {
+  const page = await browser.newPage({ viewport: { width: 640, height: 420 } });
+  await page.setContent(`<body style="margin:0;height:100vh;display:grid;place-items:center;background:#f4f1fb;font:15px -apple-system,sans-serif">
+    <form style="width:300px;padding:28px;border-radius:14px;background:#fff;box-shadow:0 8px 30px rgba(80,60,140,.12)">
+      <div style="font-size:20px;font-weight:600;margin-bottom:18px;color:#2b2540">Sign in to bob-api</div>
+      <div style="color:#6b6680;font-size:12px;margin-bottom:4px">Email</div><div style="border:1px solid #ddd8ec;border-radius:8px;padding:9px;margin-bottom:12px">kay@example.com</div>
+      <div style="color:#6b6680;font-size:12px;margin-bottom:4px">Password</div><div style="border:1px solid #ddd8ec;border-radius:8px;padding:9px;margin-bottom:18px">••••••••</div>
+      <div style="background:#9b8ce0;color:#fff;text-align:center;border-radius:8px;padding:10px;font-weight:600">Sign in</div>
+    </form></body>`);
+  LOGIN_SHOT = await page.screenshot();
+  await page.close();
+}
+
+async function openWorkspace(page, name) {
+  const row = side(page).getByRole('button', { name, exact: true });
+  if (!(await row.isVisible().catch(() => false))) await side(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
+  await side(page).getByRole('button', { name, exact: true }).click();
+  await untilIdle(page);
+  await page.waitForTimeout(800);
+}
+
+async function untilIdle(page) {
+  await page.getByRole('button', { name: 'Stop Claude' }).waitFor({ state: 'detached', timeout: 90_000 }).catch(() => {});
+}
 
 async function record(name, scene, browser) {
   rmSync(path.join(tmp, name), { recursive: true, force: true });
   const dir = path.join(tmp, name);
   mkdirSync(dir, { recursive: true });
   const context = await browser.newContext({ viewport: scene.viewport, colorScheme: 'light', recordVideo: { dir, size: scene.viewport } });
+  // Past the first-run welcome.
+  await context.addInitScript(() => localStorage.setItem('beluga.onboarding.v1', JSON.stringify({ version: 'gifs', at: 0, how: 'finished' })));
   const page = await context.newPage();
   await page.goto(`${url}${scene.path ?? '/'}`);
   if (!scene.path) await side(page).waitFor();
@@ -156,13 +339,14 @@ async function record(name, scene, browser) {
   const gif = path.join(out, `${name}.gif`);
   const width = Math.min(scene.viewport.width, 1100);
   // Trim the blank first frames, then a palette made for this scene.
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(scene.trim ?? 0.8), '-i', webm, '-vf', `fps=12,scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`, '-loop', '0', gif]);
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(scene.trim ?? 0.8), '-i', webm, '-vf', `fps=${scene.fps ?? 12},scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=${scene.colors ?? 160}:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`, '-loop', '0', gif]);
   console.log(`${name}: ${gif}`);
 }
 
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch();
 try {
+  await drawLogin(browser);
   for (const [name, scene] of Object.entries(SCENES)) if (!only.length || only.includes(name)) await record(name, scene, browser);
 } finally {
   await browser.close();

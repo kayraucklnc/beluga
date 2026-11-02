@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
-import type { Actor, Proof } from '../src/core/board/model.js';
+import { type Actor, KEEP_PROOF, type Proof, taskFiles, taskProof } from '../src/core/board/model.js';
+import { briefPrompt, describeIssue } from '../src/core/board/prompt.js';
 import { isKept, keepProofFile, keepProofFiles, proofFolder } from '../src/core/board/proof-files.js';
 import { Store, initialState } from '../src/core/store.js';
 
@@ -177,5 +178,31 @@ describe('archiving lets proof files go (BLG-28)', () => {
     // Deleting it for good leaves nothing behind.
     board.emptyArchive();
     expect(existsSync(proofFolder(home, t.id))).toBe(false);
+  });
+});
+
+describe('files added to a task for the work', () => {
+  it('are kept, listed apart from proof, never trimmed with it, and given to its Claude', () => {
+    const home = tmp('home');
+    const { board } = setup(home);
+    const t = board.create({ projectId: 'api', title: 'Checkout' }, claude);
+    const { dir } = worktree();
+    const spec = path.join(dir, 'spec.md');
+    writeFileSync(spec, '# Spec');
+    const me: Actor = { kind: 'person', id: 'p-me', name: 'Kay' };
+    board.addProof(t.key, { kind: 'file', title: 'spec.md', path: spec, context: true }, me);
+    for (let i = 0; i < KEEP_PROOF + 3; i++) board.addProof(t.key, { kind: 'text', title: `Run ${i}`, body: 'ok' }, claude);
+    const issue = board.need(t.key);
+    const [file] = taskFiles(issue);
+    expect(file).toMatchObject({ title: 'spec.md', from: spec, context: true });
+    expect(isKept(home, file!.path!)).toBe(true);
+    expect(taskProof(issue)).toHaveLength(KEEP_PROOF);
+    expect(issue.activity.some((a) => a.text === 'added a file: spec.md')).toBe(true);
+    const brief = briefPrompt(board.state(), issue);
+    expect(brief).toContain('Files people added to this task');
+    expect(brief).toContain(`- spec.md: ${file!.path}`);
+    const full = describeIssue(board.state(), issue, 'p-me');
+    expect(full).toContain(`## Files\n- spec.md: ${file!.path}`);
+    expect(full).not.toMatch(/Proof: [^\n]*spec\.md/);
   });
 });

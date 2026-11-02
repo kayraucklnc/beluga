@@ -1,11 +1,14 @@
 import { Platform } from 'react-native';
 
 /**
- * The phone's design tokens: soft pastels on the Mac app's neutral greys, light or dark (the
- * phone's choice by default). Color only means something, as on the Mac (packages/mac/src/styles/tokens.css): Claude is
- * peach, sub-agents lavender, done mint, needs-you butter, problems rose, links and info sky. Each
- * pastel is a tinted background (chips, icon circles, cards); its `ink` is the text and icon color
- * on it, dark enough for AA contrast. Nothing glows.
+ * The phone's design tokens: the Mac app's neutral greys, light or dark (the phone's choice by
+ * default), and color only where it means something. Icons are one ink (`color.text2`), never a
+ * hue each; a fill is a quiet neutral, never a pastel chip. What keeps a color of its own: needs-you
+ * and warnings (amber), problems (red), links and the one accent (blue), and online / done dots
+ * (green), each muted enough to sit on grey without shouting. Nothing glows.
+ *
+ * The six pastel names stay as the API (`tint.sky`, `ink.lavender`, a `Tone`): the decorative
+ * ones (sky, mint, peach, lavender) now draw neutral, butter and rose keep their meaning.
  *
  * `color`, `tint` and `ink` are live objects: `setScheme` swaps their values and the root remounts
  * (app/_layout.tsx), so components read them at render time and never cache them in a StyleSheet.
@@ -13,25 +16,30 @@ import { Platform } from 'react-native';
 
 export type Scheme = 'light' | 'dark';
 
-/** The six pastels: a tinted surface and the ink that reads on it. */
+/** Each tone: the fill behind it and its ink. Decorative tones are neutral; butter and rose mean something. */
 const PASTELS = {
   light: {
-    sky: ['#CFE3FA', '#2F5E8E'],
-    mint: ['#CDEFE0', '#2C6E52'],
-    peach: ['#FBDCCB', '#8A4B2A'],
-    lavender: ['#E3DCF7', '#5A4A8C'],
-    butter: ['#FBEFC4', '#7A6420'],
-    rose: ['#F7D6DC', '#8C3A4A'],
+    sky: ['rgba(0,0,0,0.045)', '#55555B'],
+    mint: ['rgba(0,0,0,0.045)', '#55555B'],
+    peach: ['rgba(0,0,0,0.045)', '#55555B'],
+    lavender: ['rgba(0,0,0,0.045)', '#55555B'],
+    butter: ['rgba(176,116,20,0.10)', '#94600F'],
+    rose: ['rgba(196,55,48,0.085)', '#B3352E'],
   },
-  // On the Mac's neutral dark grey: the pastel as a quiet low-opacity tint, its light tone as the ink.
   dark: {
-    sky: ['rgba(169,200,236,0.14)', '#A9C8EC'],
-    mint: ['rgba(159,214,189,0.14)', '#9FD6BD'],
-    peach: ['rgba(240,191,163,0.15)', '#F0BFA3'],
-    lavender: ['rgba(198,185,240,0.15)', '#C6B9F0'],
-    butter: ['rgba(233,213,143,0.13)', '#E9D58F'],
-    rose: ['rgba(239,176,188,0.14)', '#EFB0BC'],
+    sky: ['rgba(255,255,255,0.06)', '#B4B4BA'],
+    mint: ['rgba(255,255,255,0.06)', '#B4B4BA'],
+    peach: ['rgba(255,255,255,0.06)', '#B4B4BA'],
+    lavender: ['rgba(255,255,255,0.06)', '#B4B4BA'],
+    butter: ['rgba(224,176,80,0.13)', '#E2B45C'],
+    rose: ['rgba(240,131,122,0.13)', '#F08A80'],
   },
+} as const;
+
+/** The colors that carry meaning by themselves (text, dots, links), as inks. */
+const MEANINGS = {
+  light: { claude: '#1D1D1F', subagent: '#55555B', ok: '#2E8550', warn: '#94600F', error: '#B3352E', info: '#2F64D0' },
+  dark: { claude: '#ECECEE', subagent: '#B4B4BA', ok: '#6CC48F', warn: '#E2B45C', error: '#F08A80', info: '#86AAF2' },
 } as const;
 
 type Pastel = keyof (typeof PASTELS)['light'];
@@ -122,7 +130,7 @@ export function setScheme(s: Scheme): void {
     ink[name as Pastel] = fg;
   }
   for (const [meaning, pastel] of Object.entries(MEANING)) {
-    (color as Record<string, string>)[meaning] = PASTELS[s][pastel][1];
+    (color as Record<string, string>)[meaning] = MEANINGS[s][meaning as keyof (typeof MEANINGS)['light']];
     tint[meaning as keyof Tints] = PASTELS[s][pastel][0];
   }
 }
@@ -134,31 +142,41 @@ export const alpha = (hex: string, a: number): string => {
 };
 
 export const space = { 1: 2, 2: 4, 3: 8, 4: 12, 5: 16, 6: 24, 7: 32, 8: 48 } as const;
-export const radius = { s: 10, m: 16, l: 22, xl: 28, pill: 999 } as const;
+export const radius = { s: 8, m: 12, l: 14, xl: 20, pill: 999 } as const;
+
+/** Icons: one line weight everywhere (the root's LucideProvider), fine enough to read as drawn, not stamped. */
+export const stroke = 1.75;
 
 // Android: no family name, so Roboto's real weights apply (a named family drops to regular).
 const sans = Platform.select({ ios: 'System', android: undefined, default: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Roboto", "Helvetica Neue", sans-serif' });
 const mono = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'ui-monospace, "SF Mono", Menlo, monospace' });
 
-/** Type: friendly weights, the system font; colors come from `color` at render time. */
+/** The system font for text drawn in SVG (charts, graphs): SVG's own default is a serif on the web. */
+export const svgFont = Platform.select({ ios: 'System', android: 'sans-serif', default: sans }) as string;
+
+/** Type: the system font, calm weights (600 at most below titles); colors come from `color` at render time. */
 export const type = {
-  hero: { fontFamily: sans, fontSize: 30, lineHeight: 36, fontWeight: '700' as const, letterSpacing: -0.6 },
+  hero: { fontFamily: sans, fontSize: 28, lineHeight: 34, fontWeight: '600' as const, letterSpacing: -0.6 },
   title: { fontFamily: sans, fontSize: 24, lineHeight: 30, fontWeight: '700' as const, letterSpacing: -0.4 },
-  heading: { fontFamily: sans, fontSize: 16.5, lineHeight: 22, fontWeight: '600' as const, letterSpacing: -0.1 },
+  heading: { fontFamily: sans, fontSize: 16, lineHeight: 21, fontWeight: '600' as const, letterSpacing: -0.15 },
   body: { fontFamily: sans, fontSize: 15.5, lineHeight: 22, fontWeight: '400' as const },
   callout: { fontFamily: sans, fontSize: 14, lineHeight: 19, fontWeight: '400' as const },
-  caption: { fontFamily: sans, fontSize: 12.5, lineHeight: 16, fontWeight: '500' as const },
-  eyebrow: { fontFamily: sans, fontSize: 13, lineHeight: 17, fontWeight: '600' as const },
+  caption: { fontFamily: sans, fontSize: 12.5, lineHeight: 16, fontWeight: '400' as const },
+  // Section labels: small, tracked, quiet; they organise, they don't decorate.
+  eyebrow: { fontFamily: sans, fontSize: 12, lineHeight: 16, fontWeight: '600' as const, letterSpacing: 0.4, textTransform: 'uppercase' as const },
   mono: { fontFamily: mono, fontSize: 12.5, lineHeight: 18 },
 } as const;
 /** The default color of each text style. */
 export const typeColor = (v: keyof typeof type): string => (v === 'callout' || v === 'mono' ? color.text2 : v === 'caption' || v === 'eyebrow' ? color.text3 : color.text);
 
-/** Springs: snappy for presses, soft for things settling. Subtle, never bouncy for its own sake. */
+/**
+ * Springs: critically damped, so things arrive and stop; nothing overshoots or bounces. `bouncy`
+ * is kept as a name for its callers and settles like the others.
+ */
 export const spring = {
-  snappy: { stiffness: 380, damping: 34, mass: 0.9 },
-  soft: { stiffness: 180, damping: 26, mass: 1 },
-  bouncy: { stiffness: 300, damping: 24, mass: 0.9 },
+  snappy: { stiffness: 420, damping: 42, mass: 0.9 },
+  soft: { stiffness: 200, damping: 30, mass: 1 },
+  bouncy: { stiffness: 320, damping: 36, mass: 0.9 },
 } as const;
 
 export const TAB_BAR_H = 64;

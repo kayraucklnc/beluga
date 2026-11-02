@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
 import { type Issue, PRIORITY_INFO, STATUS_INFO, findIssue } from '@beluga/core/board/model.js';
 import { readTaskKeys } from '@beluga/shared/task-refs.js';
+import { Icon } from '../components/Icon.js';
 import { Tip } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { TonePill } from '../plans/marks.js';
 import { PriorityIcon, StatusIcon } from './marks.js';
 import { useTaskActions } from './use-tasks.js';
+import { useActions } from '../lib/actions.js';
+import { planTitle } from '@beluga/core/plans/model.js';
 import r from './task-ref.module.css';
 
 /**
@@ -19,9 +22,9 @@ const useIssue = (key: string): Issue | undefined => useApp((s) => findIssue(s.b
 
 const tipOf = (issue: Issue): string => `${issue.key} · ${STATUS_INFO[issue.status].label} · ${PRIORITY_INFO[issue.priority].label}. Click to open`;
 
-function Missing({ taskKey, block }: { taskKey: string; block?: boolean }) {
+function Missing({ taskKey, block, label }: { taskKey: string; block?: boolean; label?: 'worktree' | 'plan' }) {
   return (
-    <Tip label={`No task ${taskKey} on this board: deleted, or on someone else's`}>
+    <Tip label={label ? `No ${label} ${taskKey} here: deleted, or on someone else’s Mac` : `No task ${taskKey} on this board: deleted, or on someone else's`}>
       <span className={block ? r.missingRow : r.missing}>
         <span className={r.key}>{taskKey}</span>
         <span>not found</span>
@@ -30,7 +33,7 @@ function Missing({ taskKey, block }: { taskKey: string; block?: boolean }) {
   );
 }
 
-/** One task inside a sentence: its status ring, key and title (cut short). */
+/** One task inside a sentence: a pill with its status ring, key and title (cut short), and an arrow to open it. */
 export function TaskChip({ taskKey }: { taskKey: string }) {
   const issue = useIssue(taskKey);
   const { open } = useTaskActions();
@@ -41,6 +44,25 @@ export function TaskChip({ taskKey }: { taskKey: string }) {
         <StatusIcon status={issue.status} size={12} />
         <span className={r.key}>{issue.key}</span>
         <span className={r.chipTitle}>{issue.title}</span>
+        <Icon name="arrowRight" size={10} className={r.chipGo} />
+      </button>
+    </Tip>
+  );
+}
+
+/**
+ * A bare key in the words ("BLG-72", not `task:BLG-72`): Claude wrote what it's about next to it,
+ * so only the status ring and the key, with the title on hover. A key that's gone stays text.
+ */
+export function TaskKeyChip({ taskKey }: { taskKey: string }) {
+  const issue = useIssue(taskKey);
+  const { open } = useTaskActions();
+  if (!issue) return <>{taskKey}</>;
+  return (
+    <Tip label={`${issue.title} · ${STATUS_INFO[issue.status].label}. Click to open`}>
+      <button type="button" className={`${r.chip} ${r.keyChip}`} onClick={() => open(issue)} aria-label={`${issue.key}: ${issue.title}, ${STATUS_INFO[issue.status].label}`}>
+        <StatusIcon status={issue.status} size={11} />
+        <span className={r.key}>{issue.key}</span>
       </button>
     </Tip>
   );
@@ -84,5 +106,41 @@ function TaskCardRow({ taskKey }: { taskKey: string }) {
         </span>
       </button>
     </div>
+  );
+}
+
+/** A worktree Claude started (Your Mac: `worktree:<id>`): a pill with its name; a click opens its conversation. */
+export function WorktreeChip({ id }: { id: string }) {
+  // Picks the store's own objects: a pick built fresh each time ({ w, project }) never settles, and React gives up (#185).
+  const project = useApp((s) => s.projects.find((p) => p.workspaces.some((w) => w.id === id)));
+  const w = project?.workspaces.find((x) => x.id === id);
+  const actions = useActions();
+  if (!project || !w) return <Missing taskKey={id} label="worktree" />;
+  return (
+    <Tip label={`${project.name} · ${w.name}${w.archived ? ' (archived)' : ''}. Click to open`}>
+      <button type="button" className={r.chip} onClick={() => actions.run({ type: 'open_ws', id })} aria-label={`Worktree ${w.name} in ${project.name}`}>
+        <Icon name="branch" size={12} />
+        <span className={r.key}>{project.name}</span>
+        <span className={r.chipTitle}>{w.name}</span>
+        <Icon name="arrowRight" size={10} className={r.chipGo} />
+      </button>
+    </Tip>
+  );
+}
+
+/** A plan Claude started (Your Mac: `plan:<id>`): a pill with its name; a click opens its page. */
+export function PlanChip({ id }: { id: string }) {
+  const plan = useApp((s) => s.plans.plans.find((p) => p.id === id));
+  const actions = useActions();
+  if (!plan) return <Missing taskKey={id} label="plan" />;
+  return (
+    <Tip label={`Plan · ${planTitle(plan)}. Click to open`}>
+      <button type="button" className={r.chip} onClick={() => actions.run({ type: 'view', view: { kind: 'plan', id } })} aria-label={`Plan ${planTitle(plan)}`}>
+        <Icon name="graph" size={12} />
+        <span className={r.key}>Plan</span>
+        <span className={r.chipTitle}>{planTitle(plan)}</span>
+        <Icon name="arrowRight" size={10} className={r.chipGo} />
+      </button>
+    </Tip>
   );
 }

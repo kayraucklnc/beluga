@@ -3,6 +3,7 @@ import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import { type FsEntry, MAX_DOWNLOAD_BYTES, MAX_FILE_BYTES, type ShareInfo } from '../protocol.js';
 import { belugaEnv } from './beluga-env.js';
+import type { SecretKind } from './gateway/model.js';
 
 export interface ShareConfig {
   readonly name: string;
@@ -39,13 +40,13 @@ const MAX_WATCHED = 200;
 const segmentsOf = (p: string): string[] => p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
 
 /** Beluga's own home (~/.beluga): your identity key, settings and trust choices live there. */
-const belugaHomeDir = (): string => path.resolve(belugaEnv('HOME') ?? process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.beluga'));
+export const belugaHomeDir = (): string => path.resolve(belugaEnv('HOME') ?? process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.beluga'));
 
 /** The Mac's file system ignores case: compare paths the way it does. */
 const fold = (p: string): string => (process.platform === 'darwin' || process.platform === 'win32' ? p.toLowerCase() : p);
 
 /** Where a path really is (its links followed, its case as on disk), for as much of it as exists. */
-function realOf(p: string): string {
+export function realOf(p: string): string {
   const rest: string[] = [];
   for (let at = p; ; at = path.dirname(at)) {
     try {
@@ -66,9 +67,11 @@ function belugaHomes(): string[] {
 
 /**
  * Inside Beluga's home, what stays usable: worktrees, chat folders, files put in the outbox, and
- * friends' tasks (the scratch folders they run in, and the files their results brought).
+ * friends' tasks (the scratch folders they run in, and the files their results brought), and the
+ * folder "Your Mac"'s Claude works in (core/assistant: its screenshots and the files it sends you;
+ * its session and history beside it stay secret).
  */
-const OPEN_IN_HOME = [['workspaces'], ['chats'], ['outbox'], ['tasks', 'work'], ['tasks', 'files']];
+const OPEN_IN_HOME = [['workspaces'], ['chats'], ['outbox'], ['tasks', 'work'], ['tasks', 'files'], ['assistant', 'work']];
 
 function secretInHome(abs: string): boolean {
   for (const candidate of new Set([fold(abs), fold(realOf(abs))])) {
@@ -97,6 +100,44 @@ export function isSecretPath(p: string): boolean {
   const base = segments.at(-1) ?? '';
   if (DOTENV_TEMPLATE.test(base)) return false;
   return SECRET_FILE.some((re) => re.test(base));
+}
+
+/** The macOS keychains: never sent to anyone, whoever approves. */
+const KEYCHAINS = /(^|[\\/])library[\\/]keychains([\\/]|$)/i;
+
+/**
+ * A secret no approval sends (BLG-209): Beluga's own private files in ~/.beluga (your identity,
+ * settings, rules, trust choices, history) and the keychains. Other secrets can go to a friend
+ * when you approve that one request.
+ */
+export function isNeverSent(p: string): boolean {
+  if (KEYCHAINS.test(p)) return true;
+  return path.isAbsolute(p) && secretInHome(path.resolve(p));
+}
+
+const CLOUD_SEGMENTS = new Set(['.aws', '.azure', '.gcloud', '.kube', '.docker']);
+const CLOUD_PATHS = /(^|[\\/])\.config[\\/](gcloud|doctl)([\\/]|$)/i;
+const TOKEN_FILE = /^\.(npmrc|netrc|pypirc|git-credentials|pgpass)$/i;
+const TOKEN_PATHS = /(^|[\\/])(\.config[\\/](gh|hub|op|1password)|\.claude[\\/]\.credentials)/i;
+
+/** The kind of secret `p` is (its approval says it in words: secretLabel), or undefined when it isn't one (isSecretPath). */
+export function secretKindOf(p: string): SecretKind | undefined {
+  if (!isSecretPath(p)) return undefined;
+  const segments = segmentsOf(p);
+  const base = segments.at(-1) ?? '';
+  if (segments.includes('.ssh') || /^id_(rsa|ed25519|ecdsa|dsa)$/i.test(base)) return 'ssh-key';
+  if (DOTENV.test(base)) return 'dotenv';
+  if (segments.some((s) => CLOUD_SEGMENTS.has(s)) || CLOUD_PATHS.test(p)) return 'cloud';
+  if (TOKEN_FILE.test(base) || TOKEN_PATHS.test(p) || /^\.?credentials(\.json)?$/i.test(base)) return 'token';
+  return 'secret';
+}
+
+/** A file a friend's task result brought here (~/.beluga/tasks/files): yours now, whatever its name says. */
+export function isReceivedTaskFile(p: string): boolean {
+  if (!path.isAbsolute(p)) return false;
+  const homes = belugaHomes();
+  // Where it really is counts too: a link in there to your own ~/.ssh is still your key.
+  return [path.resolve(p), realOf(path.resolve(p))].every((at) => homes.some((home) => fold(at).startsWith(home + path.sep + fold(path.join('tasks', 'files')) + path.sep)));
 }
 
 /**
@@ -218,7 +259,7 @@ export class ShareService {
   }
 
   /** `owner`: you, looking at your own files (your .env files show too). */
-  async list(shareName: string, relPath: string, owner = false): Promise<FsEntry[]> {
+  async list(shareName: string, relPath: string, owner = false, times = false): Promise<FsEntry[]> {
     const share = this.find(shareName);
     const dir = resolveInShare(share, relPath, owner);
     const dirents = await fs.readdir(dir, { withFileTypes: true });
@@ -237,7 +278,7 @@ export class ShareService {
         }
         const stat = await fs.stat(target).catch(() => undefined);
         if (!stat) return undefined;
-        return { name: d.name, dir: stat.isDirectory(), size: stat.isDirectory() ? 0 : stat.size };
+        return { name: d.name, dir: stat.isDirectory(), size: stat.isDirectory() ? 0 : stat.size, ...(times ? { mtime: Math.round(stat.mtimeMs) } : {}) };
       }),
     );
     return entries

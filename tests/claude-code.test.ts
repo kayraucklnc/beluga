@@ -380,6 +380,19 @@ describe('the watcher', () => {
     expect(outsideSessions(sessions())[0]).not.toHaveProperty('workspaceId');
   });
 
+  it('knows its own conversation when the workspace gets its session id after the transcript appeared', async () => {
+    const id = 'cccccccc-0000-0000-0000-000000000000';
+    writeFileSync(path.join(path.dirname(fake.session), `${id}.jsonl`), `${user('mine', now)}\n`);
+    await tick();
+    expect(outsideSessions(sessions()).map((s) => s.id)).toContain(id);
+    // Beluga records the session id a moment after Claude Code starts writing it.
+    const p = project();
+    store.dispatch({ type: 'projects', projects: [{ ...p, workspaces: p.workspaces.map((x) => (x.id === 'w-own' ? { ...x, sessionId: id } : x)) }] });
+    await tick();
+    expect(sessions().find((s) => s.id === id)).toMatchObject({ own: true });
+    expect(outsideSessions(sessions()).map((s) => s.id)).not.toContain(id);
+  });
+
   it("follows Beluga's own conversations' sub-agents: where they started, model, effort, own worktree", async () => {
     const OWN = 'aaaaaaaa-0000-0000-0000-000000000000';
     const folder = path.dirname(fake.session);
@@ -429,8 +442,9 @@ describe('the watcher', () => {
       fake.add(fake.session, user('Hello', now));
       touch(fake.session);
       live.start();
-      // The scan reads the disk for real (async): time moves on while it does.
-      for (let i = 0; i < 100 && !sessions().length; i++) {
+      // The scan reads the disk for real (async): time moves on while it does, for as long as a slow
+      // CI runner needs (a real deadline, not a count of turns: Date isn't faked here).
+      for (const until = Date.now() + 10_000; !sessions().length && Date.now() < until; ) {
         await vi.advanceTimersByTimeAsync(20);
         await new Promise((r) => setImmediate(r));
       }
@@ -535,6 +549,7 @@ describe('Beluga’s own conversations stay out of Activity', () => {
     expect((store.getState().claudeCode?.sessions ?? []).map((s: { id: string }) => s.id)).not.toContain(sid);
     second.stop();
   });
+
 });
 
 describe('sub-agent worktrees keep who started them', () => {

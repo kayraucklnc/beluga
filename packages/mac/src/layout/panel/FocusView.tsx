@@ -1,17 +1,19 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { type ReactNode, lazy, Suspense, useEffect } from 'react';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { Icon } from '../../components/Icon.js';
 import { Kbd } from '../../components/ui.js';
 import { useApp } from '../../lib/beluga.js';
-import { type FocusKind, closeFocus, usePanelRuntime } from '../../lib/panel.js';
+import { type FocusKind, closeFocus, filesWsOf, usePanelRuntime } from '../../lib/panel.js';
 import { ChatView } from '../../views/ChatView.js';
+import { ConvoCenter } from '../../agent-term/ConvoCenter.js';
 import s from './panel.module.css';
 
 const DiffView = lazy(() => import('../../views/DiffView.js').then((m) => ({ default: m.DiffView })));
 const FileFocus = lazy(() => import('../../views/reader/FileFocus.js').then((m) => ({ default: m.FileFocus })));
+const PrPage = lazy(() => import('../../pr/PrPage.js').then((m) => ({ default: m.PrPage })));
 const TerminalView = lazy(() => import('../../views/TerminalView.js').then((m) => ({ default: m.TerminalView })));
 
-const TITLES: Record<FocusKind, string> = { diff: 'Changes', file: 'File', terminal: 'Terminal' };
+const TITLES: Record<FocusKind, string> = { diff: 'Changes', file: 'File', terminal: 'Terminal', pr: 'Pull Request' };
 
 /** Escape goes back to the chat, unless it's closing something else first (a menu, a field, the terminal's own use). */
 function useEscapeBack(): void {
@@ -70,16 +72,23 @@ function FocusView({ kind, wsId }: { kind: FocusKind; wsId: string }) {
         </span>
       </div>
       <Suspense fallback={<div className={s.loading} />}>
-        <div className={s.focusBody}>{kind === 'diff' ? <DiffView /> : <TerminalView />}</div>
+        <div className={s.focusBody}>{kind === 'diff' ? <DiffView /> : kind === 'pr' ? <PrPage wsId={wsId} /> : <TerminalView />}</div>
       </Suspense>
     </div>
   );
 }
 
-/** A workspace's center: its conversation, or for a while a diff, a file or its terminal in full. */
+/** A workspace's center: its conversation (as a chat, its agent's terminal, or both), or for a while a diff, a file, its terminal or its PR in full. */
 export function WorkspaceCenter() {
   const view = useApp((st) => st.view);
   const wsId = view.kind === 'workspace' ? view.id : undefined;
   const focus = usePanelRuntime((r) => (wsId && r.focus?.wsId === wsId ? r.focus.kind : undefined));
-  return focus && wsId ? <FocusView kind={focus} wsId={wsId} /> : <ChatView />;
+  return focus && wsId ? <FocusView kind={focus} wsId={wsId} /> : wsId ? <ConvoCenter wsId={wsId} /> : <ChatView />;
+}
+
+/** A project's page, or for a while a file of its main folder in full (Open in Full from its Files tab). */
+export function ProjectCenter({ children }: { children: ReactNode }) {
+  const mainId = useApp((st) => (st.view.kind === 'project' ? filesWsOf(st) : undefined));
+  const file = usePanelRuntime((r) => Boolean(mainId && r.focus?.wsId === mainId && r.focus.kind === 'file'));
+  return file && mainId ? <FocusView kind="file" wsId={mainId} /> : children;
 }

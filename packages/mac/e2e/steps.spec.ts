@@ -7,7 +7,7 @@ import { expect, test, type Page } from './fixtures.js';
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea)');
-const lastSteps = (page: Page) => page.getByRole('list', { name: "Claude's steps" }).last();
+const lastSteps = (page: Page) => page.getByRole('list', { name: "The agent's steps" }).last();
 
 async function openWorkspace(page: Page, name: string, project = 'bob-api'): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
@@ -51,11 +51,11 @@ test('once Claude answers, its steps fold away; Show Steps opens them, and Hide 
   await openWorkspace(page, 'new-hero', 'landing');
   const card = await answer(page, 'run the tests please');
   // The answer stands on its own: no steps, no "Done in 2m".
-  await expect(card.getByRole('list', { name: "Claude's steps" })).toHaveCount(0);
+  await expect(card.getByRole('list', { name: "The agent's steps" })).toHaveCount(0);
   await expect(card).not.toContainText(/Done in|steps ·/);
   await card.hover();
   await card.getByRole('button', { name: 'Show Steps' }).click();
-  const steps = card.getByRole('list', { name: "Claude's steps" });
+  const steps = card.getByRole('list', { name: "The agent's steps" });
   await expect(steps).toBeVisible();
   await card.hover();
   await card.getByRole('button', { name: 'Hide Steps' }).click();
@@ -185,7 +185,8 @@ test('with reduced motion, a sent message just appears', async ({ page }) => {
   await countFlights(page);
   await send(page, 'What does the hero say now?');
   const row = page.locator('[data-mine="true"]', { hasText: 'What does the hero say now?' }).last();
-  await expect(row).toHaveAttribute('data-flown', 'instant');
+  // No copy flies: it appears (or, landing above a live turn's rows, fades in where it goes).
+  await expect(row).toHaveAttribute('data-flown', /^(instant|in-place)$/);
   expect(await flights(page)).toBe(0);
   await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 30_000 });
 });
@@ -199,6 +200,9 @@ test('while Claude works, a sent message flies into the queue above the box', as
   const queued = page.getByRole('region', { name: 'Queued messages' }).locator('li', { hasText: 'then list the riskiest parts' });
   await expect(queued).toHaveAttribute('data-flown', 'true');
   expect(await flights(page)).toBeGreaterThanOrEqual(1);
+  // It waits above the box, not in the chat (BLG-317).
+  await expect(page.locator('[data-index]', { hasText: 'then list the riskiest parts' })).toHaveCount(0);
+  await page.screenshot({ path: '../../.beluga/scratch/01-queued-above-the-box.png' });
   // Stop: the queued message comes back to the box.
   await page.getByRole('button', { name: 'Stop Claude' }).first().click();
   await expect(composer(page)).toHaveValue(/then list the riskiest parts/);

@@ -1,8 +1,12 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { agentLabel } from '../../shared/agent-label.js';
+import type { AgentRef } from '../../protocol.js';
 import os from 'node:os';
 import path from 'node:path';
 import { asks } from '../../net/mesh/extras.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
+import { assistantOf } from '../assistant/registry.js';
+import { gatewayOf } from '../gateway/registry.js';
 import { belugaHome } from '../home.js';
 import { watchNetwork } from '../network.js';
 import type { Session } from '../session.js';
@@ -12,6 +16,8 @@ import { trustOf } from '../trust.js';
 import { ChatClaude } from './claude.js';
 import { ChatFiles } from './files.js';
 import { MainChannel } from './main-channel.js';
+import { AnswerRequests } from './requests.js';
+import { localMentions } from '../team/mentions.js';
 
 /**
  * Chats for the daemon (the Mac app's Beluga), whenever the network is on: files in chats,
@@ -24,6 +30,7 @@ export interface Chat {
   readonly files: ChatFiles;
   readonly claude: ChatClaude;
   readonly main: MainChannel;
+  readonly requests: AnswerRequests;
   stop(): void;
 }
 
@@ -50,18 +57,35 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
   const claude = new ChatClaude({
     mesh,
     files,
-    answer: session?.backend?.answerChat ? (req) => session.backend!.answerChat!(req) : undefined,
+    // On your default agent (Claude when it can't), named by the one that answered (BLG-503).
+    answer: session?.answersChats ? (req) => session.answerChat(req) : undefined,
+    // You asking your own Claude: a real turn with its tools, in this chat (BLG-207).
+    // It works in Your Mac's folder: only where that is (the Mac app's daemon).
+    ...(session?.backend ? { act: (conversation: string, prompt: string) => session.host.runChat(conversation, prompt), canAct: () => Boolean(assistantOf(session)) } : {}),
     policy: () => store.getState().prefs.chatClaude,
     trustOf: (peerId) => trustOf(store.getState(), peerId),
     model: () => store.getState().prefs.model,
+    ...(session ? { agent: () => session.agentRef } : {}),
+    localize: (text) => localMentions(text, store.getState().board.issues),
     handledFile: path.join(opts.dir, 'chat-claude.json'),
-    onLive: (conversation, id, state) => store.dispatch({ type: 'net_live', conversation, state, live: { peerId: mesh.peerId, name: nameOf(mesh.peerId), for: id, since: Date.now() } }),
-    onProblem: (conversation, text) => session?.notifier.notify({ kind: 'problems', title: 'Your Claude couldn’t answer', body: text, channel: conversation }),
+    onLive: (conversation, id, state, agent) => store.dispatch({ type: 'net_live', conversation, state, live: { peerId: mesh.peerId, name: nameOf(mesh.peerId), for: id, since: Date.now(), agent } }),
+    onProblem: (conversation, text) => session?.notifier.notify({ kind: 'problems', title: `${agentLabel(session.agentRef, undefined, true, { capital: true })} couldn’t answer`, body: text, channel: conversation }),
+  });
+  // A friend's Claude answering your ask with something for their Mac: it goes there as your request (BLG-353).
+  const requests = new AnswerRequests({
+    mesh,
+    ask: (input) => {
+      const gateway = session && gatewayOf(session);
+      if (!gateway) throw new Error('Tasks between agents are off here');
+      return gateway.ask(input);
+    },
+    onProblem: (conversation, name, text) => session?.notifier.notify({ kind: 'problems', title: `Couldn’t send it to ${name}’s Mac`, body: text, channel: conversation }),
+    handledFile: path.join(opts.dir, 'chat-requests.json'),
   });
   // Someone's Claude is answering: only for an ask you have that called their Claude in.
-  const onLive = (e: { conversation: string; from: string; for: string; state: 'thinking' | 'idle' }): void => {
+  const onLive = (e: { conversation: string; from: string; for: string; state: 'thinking' | 'idle'; agent?: AgentRef }): void => {
     const known = store.getState().network.messages[e.conversation]?.some((m) => m.id === e.for && asks(m, e.from));
-    if (known || e.state === 'idle') store.dispatch({ type: 'net_live', conversation: e.conversation, state: e.state, live: { peerId: e.from, name: nameOf(e.from), for: e.for, since: Date.now() } });
+    if (known || e.state === 'idle') store.dispatch({ type: 'net_live', conversation: e.conversation, state: e.state, live: { peerId: e.from, name: nameOf(e.from), for: e.for, since: Date.now(), ...(e.agent ? { agent: e.agent } : {}) } });
   };
   mesh.on('live', onLive);
   const main = new MainChannel(mesh, opts.loadMain, (id) => {
@@ -85,8 +109,10 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
     files,
     claude,
     main,
+    requests,
     stop: () => {
       claude.stop();
+      requests.stop();
       files.stop();
       mesh.off('live', onLive);
       mesh.off('change', onChange);

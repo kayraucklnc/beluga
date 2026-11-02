@@ -5,16 +5,34 @@ import { belugaHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import type { DraftContext } from '../../agent/task-drafter.js';
-import { findPr } from '../../workspaces/pr.js';
+import { buildPrPrompt, findPr } from '../../workspaces/pr.js';
+import { ghHosts } from '../../workspaces/github.js';
+import { GitHubIssues } from '../issues/issues.js';
+import { ghIssueSource, runGhCli } from '../issues/gh.js';
+import { demoIssueSource, demoRepo } from '../issues/demo.js';
+import { attachIssues, detachIssues } from '../issues/registry.js';
+import { GitHubCi } from '../ci/ci.js';
+import { ghCiSource } from '../ci/gh.js';
+import { demoCiSource } from '../ci/demo.js';
+import { attachCi, detachCi } from '../ci/registry.js';
 import { Board } from './board.js';
 import { seedDemoBoard } from './demo.js';
+import { TaskSync, attachSync, detachSync } from './sync/sync.js';
+import { demoLinear } from './sync/demo.js';
+import { belugaEnv } from '../beluga-env.js';
 import { attachBoard, detachBoard } from './registry.js';
-import { BoardWork } from './work.js';
+import { BoardWork, busyChannels } from './work.js';
 import { Plans } from '../plans/plans.js';
 import { PlansWork } from '../plans/work.js';
 import { attachPlans, detachPlans } from '../plans/registry.js';
 import { seedDemoPlan } from '../plans/demo.js';
 import { PlanDecisions } from '../plans/decisions.js';
+import { launchTeam } from '../team/launch.js';
+import { TeamBoardSync } from '../team/board-sync.js';
+import { TeamAssign } from '../team/assign.js';
+import { TeamContext } from '../team/context-share.js';
+import { TeamKnocks } from '../team/knock.js';
+import { TeamPlans } from '../team/plan-share.js';
 
 /**
  * Start the board and plans for the daemon (the Mac app's Beluga): tasks in ~/.beluga/board.json,
@@ -45,8 +63,10 @@ export function launchBoard(host: BoardHost): () => void {
     ...(session.workspaces ? { controller: session.workspaces } : {}),
     selfId: () => session.selfId,
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
-    askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
+    askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
     ...(session.draftsTasks ? { draftTask: (text: string, ctx: DraftContext) => session.draftTask(text, ctx) } : {}),
+    ...(session.describesProjects ? { describeProject: (dir: string, project: string) => session.describeProject(dir, project) } : {}),
+    toast: (text: string) => session.toast(text, 'info'),
     // Tasks whose worktree went before their pull request merged still go Done (the demo has no GitHub).
     ...(host.demo
       ? {}
@@ -58,6 +78,38 @@ export function launchBoard(host: BoardHost): () => void {
         }),
   });
   attachBoard(session, work);
+  // A project's GitHub issues, handed to Claude through tasks. The demo has a pretend GitHub (acme/<project>).
+  const projectOf = (id: string) => store.getState().projects.find((p) => p.id === id);
+  const issues = new GitHubIssues({
+    store,
+    work,
+    repoOf: async (id) => (host.demo ? (projectOf(id) ? demoRepo(projectOf(id)!.name) : undefined) : session.workspaces?.mainSync.githubRepo(id)),
+    ...(host.demo ? {} : { knownHost: (h: string) => h === 'github.com' || ghHosts().includes(h) }),
+    ghReady: async (h) => host.demo || runGhCli(['auth', 'status', '--hostname', h]).then(() => true, () => false),
+    source: host.demo ? demoIssueSource() : ghIssueSource(),
+    askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
+    prPrompt: (ws) => {
+      const project = projectOf(ws.projectId);
+      return buildPrPrompt({ branch: ws.branch ?? ws.name, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', ...(project?.scripts?.prPrompt ? { projectPrompt: project.scripts.prPrompt } : {}) });
+    },
+  });
+  attachIssues(session, issues);
+  // A project's GitHub Actions: its runs as they go, and its workflows. The demo's play out live.
+  const ci = new GitHubCi({
+    store,
+    repoOf: async (id) => (host.demo ? (projectOf(id) ? demoRepo(projectOf(id)!.name) : undefined) : session.workspaces?.mainSync.githubRepo(id)),
+    ...(host.demo ? { localFiles: false } : { knownHost: (h: string) => h === 'github.com' || ghHosts().includes(h) }),
+    ghReady: async (h) => host.demo || runGhCli(['auth', 'status', '--hostname', h]).then(() => true, () => false),
+    source: host.demo ? demoCiSource() : ghCiSource(runGhCli),
+  });
+  attachCi(session, ci);
+  // Two-way sync with Linear, per project. The demo has a pretend Linear and keeps keys in memory only;
+  // BELUGA_LINEAR_API points the real one at a fake Linear.
+  const linearBase = belugaEnv('LINEAR_API');
+  const pretend = host.demo ? demoLinear() : undefined;
+  const sync = new TaskSync({ store, board, ...(pretend ? { file: null, provider: () => pretend } : {}), ...(linearBase ? { linear: { base: linearBase } } : {}) });
+  attachSync(session, sync);
+  sync.start();
   // Plans: drafted in a conversation, approved onto the board, run milestone by milestone.
   const plans = new Plans({ store, dir, now: () => Date.now() - back });
   // Made after the plans' work (it moves the plan along), told by its forYou hook.
@@ -92,15 +144,54 @@ export function launchBoard(host: BoardHost): () => void {
     askClaude: (prompt, channel) => void session.askOwnClaude(prompt, channel, false, false),
     schedule: () => planWork.pilot.schedule(),
   });
+  // Team boards: friends on the same GitHub repository keep one board (core/team), once both say yes.
+  const stopTeam = launchTeam({
+    session,
+    store,
+    dir: host.demo ? null : dir,
+    repoOf: async (id) => (host.demo ? (projectOf(id) ? demoRepo(projectOf(id)!.name) : undefined) : session.workspaces?.mainSync.githubRepo(id)),
+    notify: (e) => session.notifier.notify(e),
+    toast: (text, level) => session.toast(text, level),
+    parts: (team) => {
+      const live = (id: string): boolean => store.getState().projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived));
+      const teamDir = host.demo ? null : dir;
+      // Whose Claude is at work where, worked out once per log.
+      let busy: { log: unknown; set: Set<string> } | undefined;
+      const running = (id: string): boolean => {
+        const log = store.getState().log;
+        if (busy?.log !== log) busy = { log, set: busyChannels(log) };
+        return busy.set.has(`ws:${id}`);
+      };
+      const teamSync = new TeamBoardSync(team, { board, live, running, dir: teamDir });
+      // Plans you choose to share with the team: teammates review them, you apply what you like.
+      const teamPlans = new TeamPlans(team, { edit: (id, ops) => void planWork.edit(id, ops), dir: teamDir });
+      // What the project is about (for Claude writing tasks): one text for the whole team.
+      // Knocking on a teammate's worktree: let in, it's shared with them the friend-share way (BLG-416).
+      const knocks = new TeamKnocks(team, {
+        board,
+        store,
+        live,
+        letIn: (peerId, workspaceId, role) => session.sharing.shareWithFriend({ peerId, workspaceId, role }),
+        intend: (intent) => session.intend(intent),
+        dir: teamDir,
+      });
+      return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans, new TeamContext(team, board), knocks];
+    },
+  });
   let stopSeed = (): void => undefined;
   if (host.demo && !board.list().length) {
     stopSeed = seedDemoBoard(store, work, (ms) => (back = ms), () => void seedDemoPlan(store, planWork, work, (ms) => (back = ms)).catch(() => undefined));
   }
   return () => {
     stopSeed();
+    stopTeam();
     decisions?.stop();
     detachPlans(session);
     planWork.stop();
+    detachIssues(session);
+    detachCi(session);
+    detachSync(session);
+    sync.stop();
     detachBoard(session);
     work.stop();
     store.dispatch({ type: 'plans_off' });

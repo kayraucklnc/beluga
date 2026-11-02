@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -69,6 +70,8 @@ describe('folderSize', () => {
     const size = await folderSize(dir);
     expect(size).toBeGreaterThan(0);
     expect(size! % 1024).toBe(0);
+    // At the lowest priority (BLG-407), the very number du gives.
+    expect(size).toBe(Number(/^(\d+)/.exec(execFileSync('du', ['-sk', dir]).toString())?.[1]) * 1024);
   });
 
   it('returns undefined for a missing folder', async () => {

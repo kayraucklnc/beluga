@@ -129,7 +129,7 @@ const limitUntil = (run: RunInfo, f: RunFailure): number => f.resetsAt ?? run.la
 
 /** Why a run that's over ended, in words. */
 function endedWhy(run: RunInfo | undefined): string {
-  if (!run) return 'no Claude is working on it';
+  if (!run) return 'no agent is working on it';
   const failure = failureOf(run);
   if (failure && failure.kind !== 'stopped') return failureText(run.text).split('\n')[0]!;
   if (run.status === 'error') return BY_YOU.test(run.text) ? 'you stopped it' : `its run failed: ${run.text.replace(/\s+/g, ' ').slice(0, 120)}`;
@@ -177,7 +177,7 @@ export function pulseWords(p: TaskPulse, now: number): { readonly label: string;
     case 'paused':
       return { label: 'Paused · usage limit', sub: now < p.until ? `Resumes at ${resetWords(p.until, now)}` : 'Resuming', tone: 'warn' };
     case 'waiting':
-      return { label: 'Waiting for you', sub: 'Claude asked you something', tone: 'warn' };
+      return { label: 'Waiting for you', sub: 'The agent asked you something', tone: 'warn' };
     case 'needs_you':
       return { label: 'Needs you', sub: `Stopped twice: ${p.reason}`, tone: 'warn' };
   }
@@ -195,7 +195,7 @@ export function assess(input: { readonly run?: RunInfo; readonly asking: boolean
   if (asking) return { woken: false };
   if (!run) {
     const quiet = input.seenAt !== undefined && now - input.seenAt >= NO_RUN_MS;
-    return quiet ? { stall: 'no Claude is working on it', woken: true } : { woken: false };
+    return quiet ? { stall: 'no agent is working on it', woken: true } : { woken: false };
   }
   if (isTurn(run)) {
     if (run.status === 'queued' || run.status === 'awaiting_approval') return { woken: false };
@@ -324,14 +324,14 @@ export class TaskWatchdog {
     const waitedFor = span(now - s.at);
     if (s.retries >= STEER_RETRIES) {
       this.steered.delete(s.requestId);
-      this.deps.plans.note(s.planId, 'problem', `${s.key} still hasn't read the head Claude's message after ${waitedFor}: open its chat`, { kind: 'beluga' });
+      this.deps.plans.note(s.planId, 'problem', `${s.key} still hasn't read the plan head's message after ${waitedFor}: open its chat`, { kind: 'beluga' });
       return;
     }
     s.retries += 1;
     s.at = now;
     // Still in the queue: steered again (it interrupts what runs). Else a fresh turn with it.
     if (state === 'queued' && this.deps.promote?.(s.requestId)) {
-      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: interrupted it again`, { kind: 'beluga' });
+      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the plan head's message in ${waitedFor}: interrupted it again`, { kind: 'beluga' });
       return;
     }
     this.steered.delete(s.requestId);
@@ -339,16 +339,16 @@ export class TaskWatchdog {
     // a long command or a quiet turn is interrupted, a dead run restarted; what queued there keeps its place.
     if (this.deps.promote) {
       const id = this.deps.askClaude(steerAgainPrompt(s.prompt, []), s.channel, false);
-      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: steered it in again`, { kind: 'beluga' });
+      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the plan head's message in ${waitedFor}: steered it in again`, { kind: 'beluga' });
       // Followed like the first one: Steer Now once it queues, sent again if still unread.
       if (id) this.track({ ...s, requestId: id, at: now, promoted: false });
       return;
     }
-    this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: started a fresh turn with it`, { kind: 'beluga' });
+    this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the plan head's message in ${waitedFor}: started a fresh turn with it`, { kind: 'beluga' });
     this.waking.add(s.taskId);
     void (async () => {
       const waited = this.deps.takeOver ? await this.deps.takeOver(s.channel).catch(() => []) : [];
-      this.deps.system(s.channel, 'Beluga restarted Claude: an urgent message from the plan’s Claude waited 2 minutes unread.');
+      this.deps.system(s.channel, 'Beluga restarted the agent: an urgent message from the plan’s agent waited 2 minutes unread.');
       const id = this.deps.askClaude(steerAgainPrompt(s.prompt, waited), s.channel, false);
       if (id) this.track({ ...s, requestId: id, at: this.now(), promoted: false });
     })().finally(() => this.waking.delete(s.taskId));
@@ -430,14 +430,14 @@ export class TaskWatchdog {
   }
 
   /** You resume a task that waits for you (or one that stopped): woken now, with what it missed. */
-  resume(plan: Plan, t: TaskView, runOf: (channel: string) => RunInfo | undefined): string {
+  resume(plan: Plan, t: TaskView, runOf: (channel: string) => RunInfo | undefined, by: 'you' | 'beluga' = 'you'): string {
     if (!t.issue || !t.worktree || t.issue.worktreeGone) throw new Error('That task hasn’t started');
     if (t.state === 'running') throw new Error(`${t.issue.key} is working already`);
     if (this.waking.has(t.task.id)) return `${t.issue.key} is being woken`;
     const channel = `ws:${t.worktree}`;
     const run = runOf(channel);
     const reason = plan.watch?.[t.task.id]?.reason ?? endedWhy(run);
-    this.wake(plan, t, t.issue, channel, reason, run, `You resumed ${t.issue.key} at ${hhmm(this.now())}`);
+    this.wake(plan, t, t.issue, channel, reason, run, `${by === 'you' ? 'You resumed' : 'Beluga woke'} ${t.issue.key} at ${hhmm(this.now())}`);
     return `Resumed ${t.issue.key}`;
   }
 
@@ -455,7 +455,7 @@ export class TaskWatchdog {
     if (!retry && !back) return;
     this.homeResumed.add(run.requestId);
     if (retry) this.homeCrashed.add(plan.id);
-    this.deps.plans.note(plan.id, 'note', back ? `Usage is back: resumed the plan’s Claude at ${hhmm(now)}` : `The plan’s Claude crashed (${endedWhy(run)}): retried at ${hhmm(now)}`, { kind: 'beluga' });
+    this.deps.plans.note(plan.id, 'note', back ? `Usage is back: resumed the plan’s agent at ${hhmm(now)}` : `The plan’s agent crashed (${endedWhy(run)}): retried at ${hhmm(now)}`, { kind: 'beluga' });
     this.deps.askClaude(CONTINUE_PROMPT, plan.home, false);
   }
 
@@ -467,7 +467,7 @@ export class TaskWatchdog {
     this.deps.plans.note(plan.id, 'note', `${line} (${reason})`, { kind: 'beluga' });
     void (async () => {
       const waited = this.deps.takeOver ? await this.deps.takeOver(channel).catch(() => []) : [];
-      this.deps.system(channel, `Beluga woke Claude: it stopped before handing off (${reason}).`);
+      this.deps.system(channel, `Beluga woke the agent: it stopped before handing off (${reason}).`);
       const milestone = Object.values(plan.runs).some((r) => r?.agent?.worktree === t.worktree);
       this.deps.askClaude(wakePrompt(issue, reason, run, waited, milestone), channel, false);
     })().finally(() => this.waking.delete(t.task.id));

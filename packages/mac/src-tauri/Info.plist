@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged into the app's Info.plist by Tauri. macOS shows these words when it asks. -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Claude can work with your other apps for you, such as Finder or Safari, when you ask it to.</string>
+  <!-- Settings › Voice: speaking instead of typing, written down on this Mac. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Beluga writes down what you say, on this Mac, so you can speak to Claude instead of typing. The recording never leaves your Mac.</string>
+</dict>
+</plist>

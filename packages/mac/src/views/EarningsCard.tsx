@@ -24,7 +24,7 @@ export function EarningsCard() {
         </span>
         <span className={s.hintText}>
           <span className={s.hintTitle}>Track what your projects earn</span>
-          <span className={s.hintDetail}>Connect Stripe to a project and its all-time earnings show beside it in the sidebar, refreshed once a day.</span>
+          <span className={s.hintDetail}>Connect Stripe to a project and its earnings show beside it in the sidebar, with how it’s doing lately on its home.</span>
         </span>
         <Button size="small" variant="primary" onClick={() => openStripe()}>
           Connect Stripe…

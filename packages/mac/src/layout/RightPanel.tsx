@@ -1,4 +1,4 @@
-import { type DragEvent, type KeyboardEvent, memo, Suspense, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type KeyboardEvent, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { runId, setupId } from '@beluga/shared/terminal-keys.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
@@ -6,7 +6,7 @@ import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../components/ui.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
-import { currentTab, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, showPanelTab, tabShowing, tabsOf, useWorkspaceTabBridge } from '../lib/panel.js';
+import { currentTab, filesWsOf, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, setPhoneTab, showPanelTab, tabShowing, tabsOf, usePanelRuntime, useWorkspaceTabBridge } from '../lib/panel.js';
 import { PANEL_DEFAULT, PANEL_LABELS, type PaneId, type PanelTab, SPLIT_MAX, SPLIT_MIN, PANES_DEFAULT, clampPanelWidth, clampShare, paneKey, panelDigit, panelFits, slotOf, viewsOf } from '../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { useMaking } from '../lib/making.js';
@@ -19,6 +19,9 @@ import { HistoryTab } from './panel/HistoryTab.js';
 import { ScratchTab, useScratchNewest } from './panel/ScratchTab.js';
 import { BackgroundTab, useBackgroundRunning } from './panel/BackgroundTab.js';
 import s from './panel/panel.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
+
+const PhonePanel = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhonePanel })));
 
 const ICONS: Record<PanelTab, IconName> = {
   changes: 'diff',
@@ -28,6 +31,7 @@ const ICONS: Record<PanelTab, IconName> = {
   history: 'clock',
   scratch: 'pulse',
   background: 'play',
+  phone: 'phone',
 };
 const SLIDE_MS = 200;
 const STEP = 24;
@@ -52,6 +56,8 @@ function useBadges(): Badges {
   const running = (k: string): boolean => k in terminals && !(k in exits);
   const failed = ws ? [runId(ws.id), setupId(ws.id)].some((k) => (exits[k] ?? 0) !== 0) : false;
   const background = useBackgroundRunning(ws);
+  // Claude is acting on the phone right now: a dot on the Phone tab, whatever you're looking at.
+  const phoneBusy = useApp((st) => st.companion.devices.some((d) => d.control?.busy === true));
   // Something Claude saved to Scratch since you last looked: a dot until you do.
   const newest = useScratchNewest(ws?.id);
   const scratchSeen = useRef(new Map<string, number>());
@@ -59,6 +65,7 @@ function useBadges(): Badges {
   if (ws && newest !== undefined && (lookingScratch || !scratchSeen.current.has(ws.id))) scratchSeen.current.set(ws.id, newest);
   const freshScratch = ws && newest !== undefined ? newest > (scratchSeen.current.get(ws.id) ?? newest) : false;
   return {
+    ...(phoneBusy ? { phone: { tone: 'accent' as const } } : {}),
     ...(freshScratch ? { scratch: { tone: 'accent' as const } } : {}),
     ...(background ? { background: { tone: 'ok' as const } } : {}),
     ...(changed
@@ -170,7 +177,7 @@ function TabStrip({ pane, tabs, tab, open, badges, dock = false }: { pane: PaneI
               aria-controls={`panel-body-${pane}`}
               aria-selected={on}
               aria-label={PANEL_LABELS[t]}
-              title={`${PANEL_LABELS[t]} (⌥⌘${panelDigit(t)}) · drag it to the other half, or right-click to move it`}
+              title={`${PANEL_LABELS[t]}${shortcutKeys(`panel-${t}`) ? ` (${shortcutKeys(`panel-${t}`)})` : ''} · drag it to the other half, or right-click to move it`}
               tabIndex={slotOf(t) === shown ? 0 : -1}
               draggable
               className={cx(s.tab, on && s.tabOn, drop === i && s.dropBefore)}
@@ -216,7 +223,7 @@ function ViewSwitch({ views, tab, pane }: { views: readonly PanelTab[]; tab: Pan
         options={views.map((v) => ({
           value: v,
           label: PANEL_LABELS[v],
-          keys: `⌥⌘${panelDigit(v)}`,
+          keys: shortcutKeys(`panel-${v}`),
         }))}
       />
     </div>
@@ -227,7 +234,7 @@ function ViewSwitch({ views, tab, pane }: { views: readonly PanelTab[]; tab: Pan
  * One pane: its tabs, Changes' view switch, and the tab's content. The bottom one closes to just
  * its tabs (the chevron, ⌘J for the terminal) and opens again from any of them.
  */
-function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; style?: React.CSSProperties; badges: Badges }) {
+function Pane({ pane, lead, style, badges, settled }: { pane: PaneId; lead: boolean; style?: React.CSSProperties; badges: Badges; settled: boolean }) {
   const prefs = usePrefs();
   const view = useApp((st) => st.view);
   const projects = useApp((st) => st.projects);
@@ -236,6 +243,8 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
   const tab = currentTab(state, prefs, pane);
   const open = pane === 'top' || prefs.bottomOpen || lead;
   const wsId = view.kind === 'workspace' ? view.id : undefined;
+  // On a project's page, Files is its main folder.
+  const mainId = useApp((st) => (view.kind === 'project' ? filesWsOf(st) : undefined));
   const making = useMaking();
   if (!tabs.length || !tab) return null;
   // Dropping on the pane's content puts the tab at the end of its strip.
@@ -257,7 +266,7 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
       <header
         className={lead ? s.head : cx(s.paneHead, dock && s.dockHead)}
         {...(lead ? { 'data-tauri-drag-region': true } : {})}
-        {...(dock && !open ? { onClick: (e: React.MouseEvent) => e.target === e.currentTarget && setPrefs({ bottomOpen: true }), title: 'Show the terminal dock (⌘J)' } : {})}
+        {...(dock && !open ? { onClick: (e: React.MouseEvent) => e.target === e.currentTarget && setPrefs({ bottomOpen: true }), title: `Show the terminal dock${shortcutKeys('toggle-dock') ? ` (${shortcutKeys('toggle-dock')})` : ''}` } : {})}
       >
         {dock ? <Icon name="terminal" size={12} className={s.dockMark} /> : null}
         <TabStrip pane={pane} tabs={tabs} tab={tab} open={open} badges={badges} dock={dock} />
@@ -269,12 +278,13 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
         <>
           <ViewSwitch views={viewsOf(tab, tabsOf(state))} tab={tab} pane={pane} />
           <div className={s.body} id={pane === 'top' ? 'panel-body' : 'panel-body-bottom'} role="tabpanel" aria-labelledby={`panel-tab-${slotOf(tab)}`} onDragOver={onDragOver} onDrop={onDrop}>
-            {/* A worktree being made has no folder yet: its tabs fill in once it's there. */}
-            {making ? (
+            {/* A worktree being made has no folder yet: its tabs fill in once it's there. And while the
+                panel slides in, the tab waits: drawing a file's preview or a long diff then stalled the slide. */}
+            {making || !settled ? (
               <div className={s.loading} />
             ) : (
               <Suspense fallback={<div className={s.loading} />}>
-                <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id } : {})} />
+                <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id, mainId } : {})} {...(view.kind === 'shared' ? { sharedWs: { id: view.id, owner: view.owner } } : {})} />
               </Suspense>
             )}
           </div>
@@ -285,12 +295,12 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
 }
 
 /** The tab's content. Memoized: the panel re-renders as the conversation streams; its tabs only when their own data changes. */
-const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId: string | undefined; projectId?: string }) {
+const Body = memo(function Body({ tab, wsId, projectId, mainId, sharedWs }: { tab: PanelTab; wsId: string | undefined; projectId?: string; mainId?: string | undefined; sharedWs?: { id: string; owner: string } }) {
   switch (tab) {
     case 'changes':
       return wsId ? <ChangesTab key={wsId} wsId={wsId} /> : null;
     case 'files':
-      return wsId ? <FilesTab key={wsId} wsId={wsId} /> : null;
+      return wsId ? <FilesTab key={wsId} wsId={wsId} /> : mainId ? <FilesTab key={mainId} wsId={mainId} project /> : null;
     case 'terminal':
       return <TerminalPane where="panel" />;
     case 'info':
@@ -300,15 +310,25 @@ const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId:
         </div>
       );
     case 'scratch':
-      return wsId ? <ScratchTab key={wsId} wsId={wsId} /> : null;
+      return wsId ? <ScratchTab key={wsId} wsId={wsId} /> : sharedWs ? <ScratchTab key={sharedWs.id} wsId={sharedWs.id} owner={sharedWs.owner} /> : null;
     case 'background':
       return wsId ? <BackgroundTab key={wsId} wsId={wsId} /> : null;
     case 'history': {
       const target = wsId ?? projectId;
       return target ? <HistoryTab key={target} target={target} /> : null;
     }
+    case 'phone':
+      return <PhonePanel />;
   }
 });
+
+/** The Phone tab is there while an Android phone is paired (BLG-186). */
+function usePhoneTabBridge(): void {
+  const paired = useApp((st) => st.companion.devices.some((d) => d.platform !== 'ios'));
+  useEffect(() => setPhoneTab(paired), [paired]);
+  // Re-draw when it comes or goes (the tabs are worked out from it).
+  usePanelRuntime((r) => r.phone);
+}
 
 /**
  * Opening a file yourself (a link in the chat, Open File in a diff) shows it in the Files tab.
@@ -329,6 +349,44 @@ function useFileFollow(): void {
 }
 
 /**
+ * How the panel slides: its room in the window is taken (or given back) in one step, the moment
+ * it's asked for, and only its inside moves, so the conversation beside it is laid out once, not
+ * on every frame. Opening, the room it takes is the page's white until the panel covers it;
+ * closing, the panel slides away over the conversation, which already has its room back.
+ * `in`: slid in (it starts out of sight, one frame, so the slide has somewhere to come from).
+ * `settled`: the slide is over and the tab's content can be drawn. Open at launch: both at once.
+ */
+function useSlide(open: boolean, mounted: boolean, inner: React.RefObject<HTMLDivElement | null>): { in: boolean; moving: boolean; settled: boolean } {
+  const [slidIn, setSlidIn] = useState(open);
+  const [settled, setSettled] = useState(open);
+  const [moving, setMoving] = useState(false);
+  useLayoutEffect(() => {
+    if (open === slidIn) return;
+    // The out-of-sight start is styled before it moves (read layout once), else nothing slides.
+    if (open) void inner.current?.offsetWidth;
+    setMoving(true);
+    setSlidIn(open);
+  }, [open]);
+  useEffect(() => {
+    if (!moving) return;
+    const reduce = document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const t = setTimeout(
+      () => {
+        setMoving(false);
+        if (open) setSettled(true);
+      },
+      reduce ? 0 : SLIDE_MS,
+    );
+    return () => clearTimeout(t);
+  }, [moving, open]);
+  // Gone from the window: next time it opens, its content waits for the slide again.
+  useEffect(() => {
+    if (!mounted) setSettled(false);
+  }, [mounted]);
+  return { in: slidIn, moving, settled };
+}
+
+/**
  * The right side of the window, in two panes: what Claude made on top (Changes, Files, Scratch,
  * Info) and what runs below (Terminal, Background), split where you drag it. It slides in and out
  * (⌥⌘0), is as wide as you drag it, and remembers each pane's tab in each workspace.
@@ -336,6 +394,7 @@ function useFileFollow(): void {
 export function RightPanel() {
   const { client } = useBeluga();
   useWorkspaceTabBridge(client);
+  usePhoneTabBridge();
   useFileFollow();
   const prefs = usePrefs();
   const view = useApp((st) => st.view);
@@ -344,19 +403,22 @@ export function RightPanel() {
   const windowWidth = useWindowWidth();
   const [drag, setDrag] = useState<number>();
   const inner = useRef<HTMLDivElement>(null);
-  const width = clampPanelWidth(drag ?? prefs.panelWidth, windowWidth);
+  // The center keeps its room beside the sidebar (when it shows): the panel stops growing there.
+  const sidebarWidth = prefs.sidebar ? prefs.sidebarWidth : 0;
+  const width = clampPanelWidth(drag ?? prefs.panelWidth, windowWidth, sidebarWidth);
   // Not beside a plan: its chat is the page's right side (your choice stays for everywhere else).
   const open = prefs.inspector && panelFits(view);
   const presence = usePresence(open, SLIDE_MS);
+  const slide = useSlide(open, presence.mounted, inner);
   const hasTop = paneTabsOf(state, 'top', prefs).length > 0;
   const hasBottom = paneTabsOf(state, 'bottom', prefs).length > 0;
   const split = clampShare(prefs.paneSplit, SPLIT_MIN, SPLIT_MAX);
   const both = hasTop && hasBottom && paneShowing(state, 'bottom', prefs);
   const badges = useBadges();
   return (
-    <aside className={cx(s.panel, drag !== undefined && s.dragging, !open && s.closed)} style={{ width: open ? width : 0 }} aria-label="Panel" aria-hidden={!open} inert={!open}>
+    <aside className={cx(s.panel, presence.closing && s.leaving)} style={{ width: open ? width : 0 }} aria-label="Panel" aria-hidden={!open} inert={!open}>
       {presence.mounted ? (
-        <div ref={inner} className={s.inner} style={{ width }}>
+        <div ref={inner} className={cx(s.inner, !slide.in && s.innerOut, slide.moving && s.sliding, slide.settled && s.settled)} style={{ width }}>
           <ResizeHandle
             axis="x"
             label="Resize the panel"
@@ -365,18 +427,18 @@ export function RightPanel() {
             onEnd={() => {
               if (drag !== undefined)
                 setPrefs({
-                  panelWidth: clampPanelWidth(drag, window.innerWidth),
+                  panelWidth: clampPanelWidth(drag, window.innerWidth, sidebarWidth),
                 });
               setDrag(undefined);
             }}
             onReset={() => setPrefs({ panelWidth: PANEL_DEFAULT })}
             onStep={(dir) =>
               setPrefs({
-                panelWidth: clampPanelWidth(width + dir * STEP, window.innerWidth),
+                panelWidth: clampPanelWidth(width + dir * STEP, window.innerWidth, sidebarWidth),
               })
             }
           />
-          <Pane pane="top" lead badges={badges} style={both ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined} />
+          <Pane pane="top" lead badges={badges} settled={slide.settled} style={both ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined} />
           {both ? (
             <ResizeHandle
               axis="y"
@@ -396,7 +458,7 @@ export function RightPanel() {
               }
             />
           ) : null}
-          <Pane pane="bottom" lead={!hasTop} badges={badges} />
+          <Pane pane="bottom" lead={!hasTop} badges={badges} settled={slide.settled} />
         </div>
       ) : null}
     </aside>

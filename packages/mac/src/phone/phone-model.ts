@@ -1,4 +1,5 @@
 import type { DeviceView } from '../../../../src/companion/protocol.js';
+import type { PhoneTouchData } from '../../../../src/ipc/client.js';
 
 /**
  * What the Mac says about your phones (docs/companion.md, "On the Mac"): pure, so it's tested
@@ -35,4 +36,26 @@ export function markOf(devices: readonly DeviceView[], now: number): { readonly 
 export function leftText(expiresAt: number, now: number): string {
   const m = Math.max(0, Math.ceil((expiresAt - now) / 60_000));
   return m <= 1 ? 'less than a minute left' : `${m} min left`;
+}
+
+const KEY_WORDS: Record<string, string> = { back: 'Back', home: 'Home', recents: 'Recents', enter: 'Enter', notifications: 'the notifications', quick_settings: 'Quick settings', lock: 'Lock', power_dialog: 'the power menu' };
+
+/** What Claude just did on the phone, as the mirror's caption says it (BLG-186). Never what it typed. */
+export function touchCaption(t: PhoneTouchData): string {
+  switch (t.op) {
+    case 'tap':
+      return 'The agent tapped';
+    case 'long_press':
+      return 'The agent pressed and held';
+    case 'swipe':
+      return 'The agent swiped';
+    case 'type':
+      return 'The agent typed';
+    case 'key':
+      return `The agent pressed ${KEY_WORDS[t.what ?? ''] ?? t.what ?? 'a key'}`;
+    case 'scroll':
+      return t.what ? `The agent scrolled ${t.what}` : 'The agent scrolled';
+    case 'open':
+      return `The agent opened ${t.what ?? 'an app'}`;
+  }
 }

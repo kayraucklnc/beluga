@@ -24,7 +24,7 @@ import { useArrangeDrag } from './arrange-drag.js';
 import { GroupHeader, NewGroupRow, groupItems, isGroupOption, moveItems, moveKey } from './ProjectGroups.js';
 import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, useLayout } from './project-layout.js';
 import { OutsideWorktrees } from './OtherWorktrees.js';
-import { ProjectAgents, SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
+import { ProjectAgents, WorkspaceWithAgents, useAgentOrigins, useCcSessions } from './SubAgents.js';
 import { hasRowsInside } from './project-rows.js';
 import { type Tally, groupTally, groupWorking, projectPlans, projectTally, projectWorking, tallyTip } from './attention-model.js';
 import { TallyMark } from './signal-marks.js';
@@ -32,8 +32,10 @@ import { Row } from './sidebar-parts.js';
 import { WorkspaceRow } from './workspace-row.js';
 import { PlanRow } from './plan-row.js';
 import { useGitHubMenuItems } from '../views/project/GitHubRow.js';
+import { TeamBadge, useTeamMenuItems } from '../team/Team.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * The sidebar's Projects, arranged the way you like: drag projects and groups to reorder them,
@@ -43,11 +45,8 @@ import s from './project-groups.module.css';
 
 type Arrange = (item: Target, place: Place) => void;
 
-/**
- * Spec options the sidebar does its own way (groups as a submenu; Hide with Undo, not an alert),
- * or not at all here: work happens in worktrees, never in the main checkout.
- */
-const ownWay = (id: string): boolean => isGroupOption(id) || id === 'p-hide' || id === 'p-main';
+/** Spec options the sidebar does its own way (groups as a submenu; Hide with Undo, not an alert). */
+const ownWay = (id: string): boolean => isGroupOption(id) || id === 'p-hide';
 
 /** A folder hovered while you drag a project into it opens after a moment (spring-loaded, as in Finder). */
 const SPRING_MS = 700;
@@ -183,11 +182,19 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   const archived = p.workspaces.filter((w) => w.archived);
   const item: Target = { project: p.id };
   const githubItems = useGitHubMenuItems(p.id, Boolean(p.root));
+  // Friends on the same GitHub repository you teamed up with (core/team).
+  const teamItems = useTeamMenuItems(p.id);
   // Archived work stays out of the sidebar: the Overview's Archived list has it.
   const showArchivedItem: ActionItem[] = archived.length ? [{ label: `Show Archived (${archived.length})`, onSelect: () => showArchivedOf(actions.run, p.id) }] : [];
   // Everything about its worktrees (archiving, restoring, cleaning up those made outside Beluga) is on the Worktrees page.
   const cleanUpItem: ActionItem[] = p.workspaces.some((w) => w.kind === 'worktree') ? [{ label: 'Manage Worktrees…', onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) }] : [];
-  const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, earning), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, separate: true, onSelect: () => hide(p) }, { label: 'Delete Project…', danger: true, onSelect: () => openSheet({ kind: 'delete_project', projectId: p.id }) }];
+  // Share with friends over the network (nobody hosts): it shows in their Projects with your avatar.
+  const shareItem: ActionItem[] = p.root ? [{ label: 'Share with…', icon: 'people', separate: true, onSelect: () => openSheet({ kind: 'share_project', projectId: p.id }) }] : [];
+  // A conversation had with Claude Code outside Beluga, continued in a new worktree (BLG-321).
+  const importItem: ActionItem[] = p.root ? [{ label: 'Import from Claude Code…', icon: 'claude', onSelect: () => openSheet({ kind: 'import_conversation', projectId: p.id }) }] : [];
+  // Its variables and its main folder's .env, without going through Settings (BLG-369).
+  const envItem: ActionItem[] = p.root ? [{ label: 'Environment…', icon: 'lock', onSelect: () => openSheet({ kind: 'project_env', projectId: p.id }) }] : [];
+  const extra: ActionItem[] = [...shareItem, ...teamItems, ...importItem, ...envItem, ...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, earning), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, separate: true, onSelect: () => hide(p) }, { label: 'Delete Project…', danger: true, onSelect: () => openSheet({ kind: 'delete_project', projectId: p.id }) }];
   const kids = depth + 2;
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
   const sessions = useCcSessions();
@@ -243,7 +250,8 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
           }}
           trailing={
             <>
-              <EarningsPill root={p.root} projectId={p.id} />
+              <TeamBadge projectId={p.id} />
+              <EarningsPill root={p.root} projectId={p.id} celebrate />
               <span className={side.hoverTools}>
                 <IconButton icon="branch" label={`New worktree in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_worktree', projectId: p.id }))} />
                 <IconButton icon="plus" label={`New chat in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_chat', projectId: p.id }))} />
@@ -274,15 +282,12 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
             <Fragment key={x.id}>
               <PlanRow plan={x} indent={kids} />
               {taskChats(x.id).map((w) => (
-                <WorkspaceRow key={w.id} ws={w} indent={kids + 1} />
+                <WorkspaceWithAgents key={w.id} ws={w} indent={kids + 1} />
               ))}
             </Fragment>
           ))}
           {mine.map((w) => (
-            <Fragment key={w.id}>
-              <WorkspaceRow ws={w} indent={kids} />
-              <SubAgentRows ws={w} indent={kids + 1} />
-            </Fragment>
+            <WorkspaceWithAgents key={w.id} ws={w} indent={kids} />
           ))}
           {/* Worktrees made outside Beluga: after Beluga's own, most recent first, each with where it is. */}
           <OutsideWorktrees p={p} indent={kids} />
@@ -347,13 +352,15 @@ function HiddenProjects() {
 /** The + on the Projects heading: add projects, or make a group. */
 export function ProjectsAddMenu() {
   const actions = useActions();
+  const { ui } = useBeluga();
   const items: ActionItem[] = [
-    { label: 'Add Projects…', keys: '⌘O', onSelect: () => actions.run({ type: 'add_project' }) },
+    { label: 'Add Projects…', keys: shortcutKeys('add-project'), onSelect: () => actions.run({ type: 'add_project' }) },
+    { label: 'New Project…', onSelect: () => ui.patch({ addProject: 'new' }) },
     { label: 'New Group', onSelect: () => newEmptyGroup() },
   ];
   return (
     <ActionsDropdown items={items}>
-      <IconButton icon="plus" label="Add a project, or make a group" />
+      <IconButton icon="plus" label="Add a project, start one, or make a group" />
     </ActionsDropdown>
   );
 }
@@ -370,6 +377,7 @@ function useSpringLoad(group: string | undefined, folded: boolean): void {
 
 export function Projects() {
   const actions = useActions();
+  const { ui } = useBeluga();
   const { entries } = useLayout();
   const arrange = useArrange();
   const tree = useRef<HTMLDivElement>(null);
@@ -396,6 +404,7 @@ export function Projects() {
   const treeItems: ActionItem[] = [
     { label: 'New Group', onSelect: () => newEmptyGroup() },
     { label: 'Add Projects…', onSelect: () => actions.run({ type: 'add_project' }) },
+    { label: 'New Project…', onSelect: () => ui.patch({ addProject: 'new' }) },
   ];
   return (
     <>

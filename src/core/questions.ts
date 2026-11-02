@@ -75,7 +75,7 @@ export class QuestionBroker {
       const timer = setTimeout(() => {
         if (!this.waiting.delete(qid)) return;
         this.deps.store.dispatch({ type: 'question_remove', qid });
-        this.deps.toast(`Claude's ${question.kind === 'plan' ? 'plan' : 'question'} went unanswered, so it carried on without it`, 'warn');
+        this.deps.toast(`Your agent's ${question.kind === 'plan' ? 'plan' : 'question'} went unanswered, so it carried on without it`, 'warn');
         resolve(SKIP);
       }, this.deps.timeoutMs());
       timer.unref();
@@ -118,6 +118,8 @@ export class QuestionBroker {
       return posed(answer);
     }
     this.deps.store.dispatch({ type: 'question_remove', qid });
+    // Approving Claude's plan ends planning in that conversation: what you send next is acted on.
+    if (answer.kind === 'plan' && answer.approve && this.deps.store.getState().planMode[q.channel]) this.deps.store.dispatch({ type: 'plan_mode', channel: q.channel, on: false });
     const self = this.deps.selfId();
     if (q.owner === self) this.settle(qid, self, answer);
     else this.deps.send({ kind: 'agent_answer', qid, answer }, { to: q.owner });

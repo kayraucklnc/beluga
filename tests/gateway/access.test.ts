@@ -103,7 +103,7 @@ describe('rules: scope and expiry', () => {
     expect(ruleMatches(anywhere, task({ needs: ['shell'], project: 'api' }), NOW)).toBe(true);
     const cmd = ruleFor({ peerId: KAY, kind: 'command', needs: ['shell'], command: 'npm test', folder: '/p/api' }, 'kay', { scope: 'this', command: 'this', expiry: 'week' }, NOW, 'r_fromreq03');
     expect(cmd).toMatchObject({ kind: 'command', command: 'npm test', folder: '/p/api', needs: [] });
-    expect(ruleLabel(here)).toBe('Requests to your Claude that need at most: run commands, work in your projects · in landing');
+    expect(ruleLabel(here)).toBe('Requests to your agent that need at most: run commands, work in your projects · in landing');
     expect(ruleLabel(cmd)).toBe('The command `npm test` · in /p/api');
     expect(scopeChoices(facts)).toEqual({ this: 'Only in landing', any: 'In any project' });
     expect(scopeChoices(task())).toBeUndefined();
@@ -142,7 +142,8 @@ describe('the rule book', () => {
     expect(edited.id).not.toBe(kept.id);
     expect(book.rules()[0]!.decision).toBe('ask');
     expect(() => book.save({ peerId: KAY, peerName: 'kay', kind: 'task', needs: [], decision: 'allow', expiresAt: NOW - 5 })).toThrow('past');
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ version: 1, rules: [{ decision: 'ask' }] });
     // A day later it's gone, here and in the file.
     now += 86_400_001;

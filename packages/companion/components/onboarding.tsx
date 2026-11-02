@@ -68,7 +68,7 @@ export function Illustration({ page }: { readonly page: 0 | 1 | 2 }) {
               <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
                 Approval
               </T>
-              <T v="caption">Your Claude · now</T>
+              <T v="caption">Your agent · now</T>
             </View>
           </View>
           <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
@@ -92,7 +92,7 @@ export function Illustration({ page }: { readonly page: 0 | 1 | 2 }) {
             <Text style={{ color: ink.peach, fontSize: 12, fontWeight: '800' }}>✳</Text>
           </View>
           <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
-            Claude
+            Your agent
           </T>
           <View style={{ flex: 1 }} />
           <Hourglass color={ink.peach} size={14} />
@@ -111,7 +111,7 @@ export function Illustration({ page }: { readonly page: 0 | 1 | 2 }) {
 function Chip({ label, Icon, tone, flex }: { label: string; Icon: typeof X; tone: 'plain' | 'mint'; flex?: boolean }) {
   return (
     <View style={{ flex: flex ? 1.3 : 1, height: 36, borderRadius: 18, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(tone) }}>
-      <Icon color={toneInk(tone)} size={15} strokeWidth={2.4} />
+      <Icon color={toneInk(tone)} size={15} strokeWidth={1.9} />
       <T v="caption" c={toneInk(tone)} style={{ fontWeight: '700' }}>
         {label}
       </T>
@@ -254,7 +254,7 @@ export function Burst() {
         <Flyer key={i} angle={(i / dots.length) * Math.PI * 2} color={tones[i % tones.length]!} distance={90 + (i % 3) * 14} />
       ))}
       <Animated.View style={[{ width: 92, height: 92, borderRadius: 46, alignItems: 'center', justifyContent: 'center', backgroundColor: tint.mint }, check]}>
-        <Check color={ink.mint} size={46} strokeWidth={2.6} />
+        <Check color={ink.mint} size={46} strokeWidth={2} />
       </Animated.View>
     </View>
   );

@@ -74,11 +74,40 @@ export function spawnPty(opts: SpawnOptions): IPty {
   });
 }
 
-/** `$SHELL` if it exists, else zsh, else sh. */
-export function defaultShell(env: NodeJS.ProcessEnv = process.env): string {
+/** `$SHELL` if it exists, else zsh, else sh. On Windows: PowerShell 7, else Windows PowerShell, else cmd. */
+export function defaultShell(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, exists: (file: string) => boolean = existsSync): string {
+  if (platform === 'win32') {
+    const system = env.SystemRoot ?? 'C:\\Windows';
+    const candidates = [`${env.ProgramFiles ?? 'C:\\Program Files'}\\PowerShell\\7\\pwsh.exe`, `${system}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`];
+    for (const c of candidates) if (exists(c)) return c;
+    return env.ComSpec ?? env.COMSPEC ?? `${system}\\System32\\cmd.exe`;
+  }
   const candidates = [env.SHELL, '/bin/zsh', '/bin/bash'];
-  for (const c of candidates) if (c && existsSync(c)) return c;
+  for (const c of candidates) if (c && exists(c)) return c;
   return '/bin/sh';
+}
+
+/**
+ * The sh that runs commands written for sh (`npm i && npm run dev`, a sentinel's script):
+ * /bin/sh, or on Windows Git for Windows' bash, the one Claude Code itself runs commands in
+ * (CLAUDE_CODE_GIT_BASH_PATH when you set it). Undefined on a Windows without Git.
+ */
+export function posixSh(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, exists: (file: string) => boolean = existsSync): string | undefined {
+  if (platform !== 'win32') return '/bin/sh';
+  const candidates = [
+    env.CLAUDE_CODE_GIT_BASH_PATH,
+    `${env.ProgramFiles ?? 'C:\\Program Files'}\\Git\\bin\\bash.exe`,
+    env.LOCALAPPDATA ? `${env.LOCALAPPDATA}\\Programs\\Git\\bin\\bash.exe` : undefined,
+    env['ProgramFiles(x86)'] ? `${env['ProgramFiles(x86)']}\\Git\\bin\\bash.exe` : undefined,
+  ];
+  return candidates.find((c): c is string => Boolean(c) && exists(c!));
+}
+
+/** posixSh, or a clear error where there's none (Windows without Git for Windows). */
+export function needPosixSh(env: NodeJS.ProcessEnv = process.env): string {
+  const sh = posixSh(env);
+  if (!sh) throw new Error('Commands need Git for Windows (its bash): install it from git-scm.com, or set CLAUDE_CODE_GIT_BASH_PATH');
+  return sh;
 }
 
 /** Variables that would describe the *outer* terminal, or confuse a nested `claude`. */
@@ -95,6 +124,16 @@ const DROPPED_ENV = [
   'TMUX_PANE',
   'CLAUDECODE',
   'CLAUDE_CODE_ENTRYPOINT',
+  // A Claude Code session's own markers (when Beluga itself runs under one): a `claude` started in
+  // a terminal here is a session of its own, not a child that keeps no transcript (BLG-534).
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_PID',
+  'CLAUDE_AGENT_SDK_VERSION',
 ];
 
 /** Environment for the child: ours, minus outer-terminal hints, plus TERM/COLORTERM and overrides. */

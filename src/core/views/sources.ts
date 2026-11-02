@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { needPosixSh } from '../../terminal/pty.js';
+import { killTree, ownGroup } from '../process-tree.js';
 import {
   type Cell,
   MAX_SOURCE_ROWS,
@@ -23,8 +25,10 @@ import {
 import { mentionsSecret } from '../../agent/policy.js';
 import { isSecretPath } from '../shares.js';
 import { loadEnvFile } from '../env-vars.js';
-import { type DatabaseUrl, databaseUrl, scrubbed, unreachable } from './database-url.js';
+import { type FoundDatabase, databaseUrl, databaseUrlOf } from './database-url.js';
+import { PSQL_MISSING, type Psql, connectPostgres } from './postgres-connect.js';
 import { belugaHome } from '../home.js';
+import { keep, recall } from './kept.js';
 
 /**
  * Running a view's source (shared/view-spec.ts) on this computer: a file, a folder, a SQLite or
@@ -51,6 +55,12 @@ export interface FetchOptions {
   readonly fresh?: boolean;
   /** A code view: the text itself, not rows. */
   readonly text?: boolean;
+  /**
+   * What was fetched before, if anything, however old (kept.ts): 'prefer' runs the source when
+   * nothing was kept; 'only' never runs it ({ notKept } instead). A source with `refresh` keeps
+   * its rows only that long. `fresh` wins.
+   */
+  readonly cache?: 'prefer' | 'only';
 }
 
 const expandHome = (p: string): string => p.replace(/^~(?=$|\/)/, os.homedir());
@@ -134,22 +144,33 @@ export async function fetchSource(source: Source, query: ViewQuery, opts: FetchO
   const why = refusal(source, opts.cwd);
   if (why) throw new Error(why);
   if (opts.confirm) approve(source, opts.cwd);
+  const bound = bind(source, query.params);
+  if (refusal(bound, opts.cwd)) throw new Error(refusal(bound, opts.cwd));
+  const keys = keysOfFetch(source, bound, query, opts);
+  // What it brought before (it ran with its owner's yes then): shown again without running it.
+  if (opts.cache && !opts.fresh) {
+    const was = recallFetch(bound, query, keys, opts);
+    if (was) return was;
+    if (opts.cache === 'only') return { notKept: true };
+  }
   // Asked once per command as Claude wrote it: the values its controls fill in don't ask again.
   const ask = needsYes(source, opts.cwd);
   if (ask) return { needsApproval: true, what: ask };
-  source = bind(source, query.params);
-  if (refusal(source, opts.cwd)) throw new Error(refusal(source, opts.cwd));
-  if (!opts.text) {
-    const pushed = await pushedDown(source, query, opts);
-    if (pushed) return pushed;
+  source = bound;
+  if (keys.page) {
+    const pushed = (await pushedDown(source, query, opts))!;
+    keep(keys.group, keys.page, pushed.at, pushed);
+    return pushed;
   }
-  const key = `${sourceKey(source)}\u0000${opts.cwd ?? ''}\u0000${opts.text ? 't' : 'r'}`;
+  const key = keys.whole;
   const maxAge = source.refresh ? Math.max(1000, source.refresh * 1000 - 250) : KEEP_MS;
   let whole = opts.fresh ? undefined : kept.get(key);
   if (!whole || Date.now() - whole.at > maxAge) {
     let running = inFlight.get(key);
     if (!running) {
-      running = fetchWhole(source, opts).finally(() => inFlight.delete(key));
+      running = fetchWhole(source, opts)
+        .then((w) => (keep(keys.group, key, w.at, w), w))
+        .finally(() => inFlight.delete(key));
       inFlight.set(key, running);
     }
     whole = await running;
@@ -157,10 +178,38 @@ export async function fetchSource(source: Source, query: ViewQuery, opts: FetchO
     // Keep the newest few.
     if (kept.size > 40) kept.delete(kept.keys().next().value!);
   }
+  return pageOfWhole(whole, query, opts);
+}
+
+function pageOfWhole(whole: Whole, query: ViewQuery, opts: FetchOptions): ViewPage {
   if (opts.text) return { rows: [], columns: [], at: whole.at, hasMore: false, text: whole.text ?? '' };
   const page = pageOf(whole.rows, query);
   return { ...page, columns: whole.columns, at: whole.at, ...(whole.truncated ? { truncated: true } : {}) };
 }
+
+/**
+ * Where a fetch is kept (kept.ts): a source that pages itself, per page asked for; anything else
+ * whole, and paged from that.
+ */
+function keysOfFetch(named: Source, source: Source, query: ViewQuery, opts: FetchOptions): Keys {
+  // Grouped by the source as the view names it (before its controls fill it in), so it can be forgotten with its view.
+  const group = sourceKey(named);
+  // Where it ran only matters to a source that doesn't say (the show tool makes paths whole, so its first fetch is the window's too).
+  const place = ('path' in source && !path.isAbsolute(source.path)) || ((source.kind === 'command' || source.kind === 'postgres') && !source.cwd) ? (opts.cwd ?? '') : '';
+  const whole = `${sourceKey(source)}\u0000${place}\u0000${opts.text ? 't' : 'r'}`;
+  if (opts.text || !pagesItself(source)) return { group, whole };
+  const { params: _p, ...q } = query;
+  return { group, whole, page: `${whole}\u0000${JSON.stringify(q)}` };
+}
+type Keys = { readonly group: string; readonly whole: string; readonly page?: string };
+
+function recallFetch(source: Source, query: ViewQuery, keys: Keys, opts: FetchOptions): ViewPage | undefined {
+  const was = keys.page ? recall<ViewPage>(keys.group, keys.page) : recall<Whole>(keys.group, keys.whole);
+  // A source that refreshes itself keeps its rows only that long.
+  if (!was || (source.refresh && Date.now() - was.at > source.refresh * 1000)) return undefined;
+  return keys.page ? { ...(was.value as ViewPage), at: was.at } : pageOfWhole({ ...(was.value as Whole), at: was.at }, query, opts);
+}
+
 
 async function fetchWhole(source: Source, opts: FetchOptions): Promise<Whole> {
   const at = Date.now();
@@ -295,6 +344,9 @@ async function folderRows(source: Extract<Source, { kind: 'folder' }>, opts: Fet
 const quoteIdent = (k: string): string => `"${k.replace(/"/g, '""')}"`;
 const quoteText = (s: string): string => `'${s.replace(/'/g, "''")}'`;
 
+/** A database, or a command or address that says where a page goes ({{limit}}, {{offset}}…). */
+const pagesItself = (source: Source): boolean => source.kind === 'sqlite' || source.kind === 'postgres' || (source.kind === 'command' && TEMPLATE.test(source.command)) || (source.kind === 'http' && TEMPLATE.test(source.url + (source.body ?? '')));
+
 /** A database (or a command or address that says where a page goes) pages, sorts and searches itself. */
 async function pushedDown(source: Source, q: ViewQuery, opts: FetchOptions): Promise<ViewPage | undefined> {
   const at = Date.now();
@@ -388,8 +440,10 @@ async function sqlite(db: string, sql: string, timeout: number): Promise<Row[]> 
 
 async function postgres(source: Extract<Source, { kind: 'postgres' }>, sql: string, timeout: number, cwd: string | undefined): Promise<Row[]> {
   // Without "env" or "url": the project's own database (DATABASE_URL…, or Supabase's variables).
+  // Read each time: a change in Settings › Environment or env.json applies to the next run.
   const place = viewEnv.database(source.cwd ?? cwd);
-  const found = source.url && !source.env ? { url: source.url, from: 'its address' } : databaseUrl({ ...process.env, ...place.vars }, source.env);
+  const env = { ...process.env, ...place.vars };
+  const found = source.url && !source.env ? databaseUrlOf(source.url, 'its address', env) : databaseUrl(env, source.env);
   if ('problem' in found) throw new Error(`${found.problem}. Looked in ${place.where}.`);
   return queryPostgres(found, sql, timeout);
 }
@@ -409,36 +463,26 @@ export async function testDatabase(place: { readonly vars: Record<string, string
   }
 }
 
-/** Of a connection string and its fallbacks, the one that answered last time (no waiting on a dead address again). */
-const reachedBy = new Map<string, string>();
+/** psql, read-only: every statement in a read-only transaction; a dead address gives up soon. */
+const psql: Psql = async (url, sql, timeout) => {
+  try {
+    return await run('psql', ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-d', url, '-c', `SELECT coalesce(json_agg(t), '[]'::json) FROM (${sql}) t`], {
+      timeout,
+      env: { PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=' + timeout, PGCONNECT_TIMEOUT: '8' },
+    });
+  } catch (err) {
+    throw err instanceof Error && err.message === 'psql isn’t installed' ? new Error(PSQL_MISSING) : err;
+  }
+};
 
 /**
- * Run a query against the first address that answers (Supabase's direct address, then its
- * poolers). Errors never carry the connection string or its password.
+ * Run a query against the first address that answers (postgres-connect.ts: Supabase's direct
+ * address, then its session pooler, found if need be; the project's other passwords). Errors never
+ * carry the connection string or its password.
  */
-export async function queryPostgres(found: Extract<DatabaseUrl, { url: string }>, sql: string, timeout: number): Promise<Row[]> {
-  const all = [found.url, ...(found.more ?? [])];
-  const known = reachedBy.get(found.url);
-  const order = known && all.includes(known) ? [known, ...all.filter((u) => u !== known)] : all;
-  let last = '';
-  for (const url of order) {
-    try {
-      const out = await run('psql', ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-d', url, '-c', `SELECT coalesce(json_agg(t), '[]'::json) FROM (${sql}) t`], {
-        timeout,
-        // Read-only too: every statement runs in a read-only transaction. A dead address gives up soon.
-        env: { PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=' + timeout, PGCONNECT_TIMEOUT: '8' },
-      });
-      reachedBy.set(found.url, url);
-      return out.trim() ? toRows(JSON.parse(out)).rows : [];
-    } catch (err) {
-      const text = err instanceof Error ? err.message : String(err);
-      if (text === 'psql isn’t installed') throw new Error('psql isn’t on this Mac: install it with “brew install libpq” (or Postgres.app)');
-      last = order.reduce((t, u) => scrubbed(t, u), text);
-      if (!unreachable(text)) break;
-    }
-  }
-  const tried = order.length > 1 ? `, tried ${order.length} addresses` : '';
-  throw new Error(`${last} (connecting with ${found.from}${tried})${found.hint && unreachable(last) ? ` ${found.hint}` : ''}`);
+export async function queryPostgres(found: FoundDatabase, sql: string, timeout: number): Promise<Row[]> {
+  const out = await connectPostgres(found, sql, timeout, psql);
+  return out.trim() ? toRows(JSON.parse(out)).rows : [];
 }
 
 /** Your variables for a view shown there: for a database (and where they came from), and for a command. */
@@ -452,6 +496,9 @@ let viewEnv: ViewEnv = { database: () => ({ vars: loadEnvFile().global, where: '
 export function useViewEnv(env: ViewEnv): void {
   viewEnv = env;
 }
+
+/** Your variables for a command run in `cwd` (as a view's command gets them): sentinels' scripts use them too. */
+export const commandEnv = (cwd?: string): Record<string, string> => viewEnv.commands(cwd);
 
 /** A variable from your Beluga environment (Settings), else Beluga's own. */
 function envValue(name: string): string | undefined {
@@ -510,7 +557,7 @@ function fill(template: string, q: ViewQuery | undefined, quote: (s: string) => 
 
 async function shell(command: string, cwd: string, timeout: number): Promise<string> {
   // The same variables your Claude's own commands get there (yours, the project's, its .env when on).
-  return run('/bin/sh', ['-c', command], { cwd, timeout, env: viewEnv.commands(cwd) });
+  return run(needPosixSh(), ['-c', command], { cwd, timeout, env: viewEnv.commands(cwd) });
 }
 
 async function httpGet(source: Extract<Source, { kind: 'http' }>, url: string, timeout: number, body?: string): Promise<{ text: string; json?: unknown }> {
@@ -545,7 +592,8 @@ function run(cmd: string, args: readonly string[], opts: { cwd?: string; timeout
     const child = spawn(cmd, args, {
       cwd: opts.cwd ?? os.homedir(),
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
+      detached: ownGroup(),
+      windowsHide: true,
       env: { ...process.env, ...opts.env, NO_COLOR: '1', TERM: 'dumb', PAGER: 'cat', GIT_PAGER: 'cat', CI: '1' },
     });
     const out: Buffer[] = [];
@@ -560,13 +608,7 @@ function run(cmd: string, args: readonly string[], opts: { cwd?: string; timeout
       } else out.push(b);
     });
     child.stderr.on('data', (b: Buffer) => (err = (err + b.toString('utf8')).slice(-4000)));
-    const kill = (): void => {
-      try {
-        if (child.pid) process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        // Already gone.
-      }
-    };
+    const kill = (): void => killTree(child);
     const timer = setTimeout(() => {
       kill();
       reject(new Error(`Took longer than ${Math.round(opts.timeout / 1000)}s`));

@@ -12,6 +12,8 @@
 //   --skip-build       reuse what the last `npm run app:build` made
 //   --dry-run          build and write latest.json, but don't touch GitHub
 //   --force            release even if GitHub's latest release isn't older
+//   --ad-hoc           sign the app ad hoc instead of with the "Beluga Self-Signed" certificate
+//                      ($APPLE_SIGNING_IDENTITY picks another); updates then lose Screen Recording
 //   --key <file>       the updater's private key (default ~/.tauri/beluga-updater.key, else
 //                      ~/.tauri/klaud-updater.key from before the rename, or $TAURI_SIGNING_PRIVATE_KEY); its password, if any, from
 //                      $TAURI_SIGNING_PRIVATE_KEY_PASSWORD or <key>.password
@@ -57,6 +59,25 @@ export function latestJson({ version, notes, pubDate, signature, url, arch }) {
   return { version, notes, pub_date: pubDate, platforms: { [`darwin-${arch}`]: { signature: signature.trim(), url } } };
 }
 
+/**
+ * One latest.json for every platform: the Mac's (here) and Linux's and Windows' (CI's
+ * release-desktop.yml) land on the same release, so each adds its own and keeps the others of the
+ * same version. A different version's are dropped: they'd offer an older build.
+ */
+export function mergeLatest(existing, next) {
+  const kept = existing && existing.version === next.version && existing.platforms && typeof existing.platforms === 'object' ? existing.platforms : {};
+  return { ...next, platforms: { ...kept, ...next.platforms } };
+}
+
+/** The latest.json already on this release, if there is one. */
+export function releasedLatest(tag) {
+  try {
+    return JSON.parse(execFileSync('gh', ['release', 'download', tag, '--repo', REPO, '--pattern', 'latest.json', '--output', '-'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString());
+  } catch {
+    return undefined;
+  }
+}
+
 function args(argv) {
   const out = { flags: new Set() };
   for (let i = 0; i < argv.length; i++) {
@@ -98,6 +119,25 @@ function signingEnv(opts) {
   return { TAURI_SIGNING_PRIVATE_KEY: readFileSync(key, 'utf8').trim(), TAURI_SIGNING_PRIVATE_KEY_PASSWORD: password };
 }
 
+/** The certificate releases are signed with when $APPLE_SIGNING_IDENTITY doesn't name another. */
+export const CODE_SIGN_IDENTITY = 'Beluga Self-Signed';
+
+/**
+ * Whether a designated requirement (`codesign -d -r-`) pins one exact build. An ad-hoc signature's
+ * does (`cdhash H"…"`), so macOS forgets Screen Recording and the other privacy grants on every
+ * update; a certificate's names the identifier and the certificate, which stay the same.
+ */
+export const pinsOneBuild = (requirement) => /designated\s*=>\s*cdhash\b/.test(requirement);
+
+/** Sign the app with the same certificate every release, so the permissions people gave it survive updates. */
+function codeSignEnv(opts) {
+  if (process.env.APPLE_SIGNING_IDENTITY || opts.flags.has('ad-hoc')) return {};
+  if (!read('security', ['find-identity', '-v', '-p', 'codesigning']).includes(`"${CODE_SIGN_IDENTITY}"`)) {
+    throw new Error(`No "${CODE_SIGN_IDENTITY}" code-signing certificate in the keychain. See docs/updates.md, or pass --ad-hoc (every update then loses its Screen Recording permission).`);
+  }
+  return { APPLE_SIGNING_IDENTITY: CODE_SIGN_IDENTITY };
+}
+
 /** The version GitHub's latest release offers, if there is one with a latest.json. */
 function publishedVersion() {
   try {
@@ -133,7 +173,7 @@ function main() {
   const arch = archOf();
   if (!opts.flags.has('skip-build')) {
     console.log(`Building ${APP} ${version} (${arch}) with update signing…`);
-    run('npm', ['run', 'app:build'], { cwd: mac, env: { ...process.env, ...signingEnv(opts) } });
+    run('npm', ['run', 'app:build'], { cwd: mac, env: { ...process.env, ...signingEnv(opts), ...codeSignEnv(opts) } });
   }
 
   // The build names its files for tauri.conf.json's productName; the release names them for the app.
@@ -142,6 +182,24 @@ function main() {
   const app = path.join(bundle, `macos/${built}.app.tar.gz`);
   const dmg = path.join(bundle, `dmg/${built}_${version}_${arch}.dmg`);
   for (const f of [app, `${app}.sig`, dmg]) if (!existsSync(f)) throw new Error(`Missing ${f}: did the build sign the update? (createUpdaterArtifacts, the key)`);
+  // A bundle whose signature doesn't seal its resources opens here but is "damaged" once downloaded.
+  try {
+    read('codesign', ['--verify', '--deep', '--strict', path.join(bundle, `macos/${built}.app`)]);
+  } catch (e) {
+    throw new Error(`${built}.app's code signature doesn't verify, so downloaded copies would say "damaged" (signingIdentity in tauri.conf.json):\n${e.stderr ?? e.message}`);
+  }
+  // The desktop widgets (BLG-309) keep their own sandbox: signing the app with --deep would take it
+  // away, and macOS then drops the widgets without a word.
+  const widgets = path.join(bundle, `macos/${built}.app/Contents/PlugIns/BelugaWidgets.appex`);
+  if (!existsSync(widgets)) throw new Error(`${built}.app has no desktop widgets (Contents/PlugIns/BelugaWidgets.appex): did scripts/build-widgets.mjs run?`);
+  const widgetRights = execFileSync('codesign', ['-d', '--entitlements', '-', '--xml', widgets], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+  if (!widgetRights.includes('com.apple.security.app-sandbox')) throw new Error(`${built}.app's widgets lost their sandbox entitlement (was the app signed with --deep?), so macOS would drop them`);
+  if (!opts.flags.has('ad-hoc')) {
+    const requirement = execFileSync('codesign', ['-d', '-r-', path.join(bundle, `macos/${built}.app`)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    if (pinsOneBuild(requirement.toString())) {
+      throw new Error(`${built}.app is ad-hoc signed, so updating to it would take away Screen Recording and the other permissions. Build it again without --skip-build (it signs with "${CODE_SIGN_IDENTITY}"), or pass --ad-hoc.`);
+    }
+  }
 
   const out = path.join(bundle, 'release');
   rmSync(out, { recursive: true, force: true });
@@ -151,7 +209,7 @@ function main() {
   copyFileSync(`${app}.sig`, path.join(out, `${name}.sig`));
   copyFileSync(dmg, path.join(out, dmgAsset(version, arch)));
   const signature = readFileSync(`${app}.sig`, 'utf8');
-  const latest = latestJson({ version, notes, pubDate: new Date().toISOString(), signature, url: assetUrl(tag, name), arch });
+  const latest = mergeLatest(dry ? undefined : releasedLatest(tag), latestJson({ version, notes, pubDate: new Date().toISOString(), signature, url: assetUrl(tag, name), arch }));
   writeFileSync(path.join(out, 'latest.json'), `${JSON.stringify(latest, null, 2)}\n`);
   writeFileSync(path.join(out, 'notes.md'), `${notes}\n`);
   const files = ['latest.json', name, `${name}.sig`, dmgAsset(version, arch)].map((f) => path.join(out, f));

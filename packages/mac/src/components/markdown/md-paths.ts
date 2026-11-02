@@ -27,6 +27,8 @@ const IMAGE_FILE = /\.(png|jpe?g|gif|svg|webp)$/i;
 
 export const isMarkdownPath = (p: string): boolean => MARKDOWN_FILE.test(p);
 export const isImageFile = (p: string): boolean => IMAGE_FILE.test(p);
+/** A video the reader and Outputs play (BLG-100). */
+export const isVideoFile = (p: string): boolean => /\.(mp4|m4v|mov|webm)$/i.test(p);
 
 /** The folder a share-relative file is in ('' at the top). */
 export const dirOf = (file: string): string => {

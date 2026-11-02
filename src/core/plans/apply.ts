@@ -1,6 +1,7 @@
 import type { Board } from '../board/board.js';
 import { criteria, criterionLine } from '../board/criteria.js';
-import { type Actor, type Assignee, type BriefSection, type Issue, isOpen } from '../board/model.js';
+import { labelsFor } from '../board/labels.js';
+import { type Actor, type Assignee, type BriefSection, type Issue, boardOf, isOpen } from '../board/model.js';
 import { PlanError } from './edit.js';
 import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, milestoneDeps, taskById } from './model.js';
 
@@ -14,7 +15,6 @@ import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, mileston
 export interface ApplyActors {
   readonly by: Actor;
   readonly me: Assignee;
-  readonly claude: Assignee;
 }
 
 export interface Applied {
@@ -32,6 +32,11 @@ export class ApplyError extends Error {
   }
 }
 
+const inPlanSet = (board: Board, issue: Issue, labels: readonly string[]): string[] => {
+  const set = new Set(labelsFor(board.state(), boardOf(issue)).map((l) => l.name));
+  return labels.map((l) => l.toLowerCase()).filter((l) => set.has(l) || issue.labels.includes(l));
+};
+
 export function applyDraft(plan: Plan, board: Board, actors: ApplyActors): Applied {
   const linked = new Map<string, string>();
   try {
@@ -44,7 +49,7 @@ export function applyDraft(plan: Plan, board: Board, actors: ApplyActors): Appli
 function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<string, string>): Applied {
   const draft = plan.draft;
   if (!draft) throw new PlanError('There are no changes to approve');
-  if (!draft.milestones.length || !allTasks(draft).length) throw new PlanError('The plan has no tasks yet: ask Claude to write it first');
+  if (!draft.milestones.length || !allTasks(draft).length) throw new PlanError('The plan has no tasks yet: ask your agent to write it first');
   const diff = diffBodies(plan.body, draft);
   const passed = (id: string): boolean => Boolean(plan.runs[id]?.passedAt);
   const waiting = new Set(draft.milestones.filter((m) => !passed(m.id) && !milestoneDeps(draft, m).every(passed)).map((m) => m.id));
@@ -59,7 +64,8 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
   for (const { task, milestone } of allTasks(draft)) {
     const link = { id: plan.id, milestone: milestone.id, task: task.id };
     const fresh = waiting.has(milestone.id) ? 'backlog' : 'todo';
-    const assignee = task.assignee === 'me' ? actors.me : actors.claude;
+    // Yours is assigned to you; Claude's is no one's (a task is for a person, BLG-278): who's on it shows while it runs.
+    const assignee = task.assignee === 'me' ? actors.me : undefined;
     const existing = issueOf.get(task.id);
     if (!existing) {
       const made = board.create(
@@ -67,7 +73,7 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
           projectId: plan.projectId,
           title: task.title,
           status: fresh,
-          assignee,
+          ...(assignee ? { assignee } : {}),
           ...(task.priority ? { priority: task.priority } : {}),
           ...(task.estimate ? { estimate: task.estimate } : {}),
           ...(task.labels?.length ? { labels: task.labels } : {}),
@@ -94,7 +100,8 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
         ...(old && differs('title') ? { title: task.title } : {}),
         ...(task.priority && differs('priority') ? { priority: task.priority } : {}),
         ...(task.estimate && differs('estimate') ? { estimate: task.estimate } : {}),
-        ...(task.labels && old && differs('labels') ? { labels: task.labels } : {}),
+        // Claude wrote the plan: its labels come from the project's set (and any the task already had).
+        ...(task.labels && old && differs('labels') ? { labels: inPlanSet(board, existing, task.labels) } : {}),
         ...((notStarted && moved && existing.status !== fresh) || revived ? { status: fresh } : {}),
       },
       actors.by,

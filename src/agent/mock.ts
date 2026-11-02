@@ -1,10 +1,13 @@
 import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
+import type { McpServerRow } from '../shared/mcp.js';
 import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
 import { cleanPlanTitle, slugify } from './namer.js';
-import { type DraftContext, type TaskDraft, firstLineTitle } from './task-drafter.js';
+import { type DraftContext, MAX_TASKS, type TaskDraft, firstLineTitle, matchPerson } from './task-drafter.js';
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
 import { MOCK_GRAPH_ANSWER } from './mock-graphs.js';
+import { mockTerminal } from './mock-terminal.js';
+import { RunFailedError, classifyRun } from '../shared/run-failure.js';
 import { MOCK_VIEWS_ANSWER } from './mock-views.js';
 
 interface Script {
@@ -20,12 +23,64 @@ interface Script {
   readonly after?: readonly string[];
   /** Takes what you say while it works into the turn at its next step, as Claude Code does (steering). */
   readonly steerable?: boolean;
+  /** Doing a task: sections of its brief it writes (what an investigation found, say). */
+  readonly brief?: ReadonlyArray<readonly ['context' | 'acceptance', string]>;
   /** One step that runs long: after it starts, the next step comes `ms` later (a steer waits; Send now stops it). */
   readonly slowStep?: { readonly step: string; readonly ms: number };
 }
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
 const SCRIPTS: readonly Script[] = [
+  {
+    // Issues › Investigate on the demo's headline bug (core/issues/prompts.ts): why, a reproduction, and the brief written.
+    match: /^Investigate GitHub issue #48\b/,
+    stepMs: 900,
+    steps: ['Bash gh issue view 48 --repo acme/bob-api --comments', 'Grep "decodeURIComponent" src', 'Read src/users.ts', 'Read src/routes/login.ts', 'Write tests/login-plus-email.test.ts', 'Bash npm test -- login-plus-email'],
+    brief: [
+      [
+        'context',
+        [
+          '**What happens:** `POST /login` with an address that has a `+` in it answers 500.',
+          '',
+          '**Why:** `findUser()` in `src/users.ts` runs `decodeURIComponent` on an email that was already decoded, so `+` becomes a space. No user is `lena test@acme.dev`, and `login()` in `src/routes/login.ts` reads `user.id` without checking, which throws.',
+          '',
+          '**How to reproduce:** `tests/login-plus-email.test.ts` signs in as `lena+test@acme.dev`; it fails with the 500 today.',
+          '',
+          '**Where the fix goes:** `findUser()` takes the email as it comes (no second decode), and `login()` answers 401 when there is no such user instead of throwing.',
+        ].join('\n'),
+      ],
+      ['acceptance', '- [ ] An address with a `+` signs in (the new test passes)\n- [ ] An unknown address gets a 401, not a 500\n- [ ] The other login tests still pass'],
+    ],
+    answer: [
+      '**What happens:** signing in with an address that has a `+` answers 500.',
+      '',
+      '**Why:** `findUser()` decodes the email a second time (`decodeURIComponent`), so `+` turns into a space and no user matches; `login()` then reads `user.id` of nothing and throws.',
+      '',
+      '**How to reproduce:** `npm test -- login-plus-email` (a new failing test, kept for the fix).',
+      '',
+      '**How to fix:** drop the second decode in `findUser()`, and answer 401 for an unknown user. Small and low risk: two lines and a test.',
+      '',
+      'Verdict: a real bug. It’s all in the task’s brief; say **Fix It** when you want it fixed.',
+    ].join('\n'),
+  },
+  {
+    // Investigate on any other demo issue.
+    match: /^Investigate GitHub issue #\d+/,
+    stepMs: 900,
+    steps: ['Bash gh issue view --comments', 'Grep -n "TODO|FIXME" src', 'Read src/server.ts', 'Write tests/issue-repro.test.ts', 'Bash npm test -- issue-repro'],
+    brief: [
+      ['context', '**What happens:** as the report says; `tests/issue-repro.test.ts` shows it.\n\n**Why:** the code path in `src/server.ts` doesn’t handle the case the report describes.\n\n**Where the fix goes:** `src/server.ts`, with the new test kept.'],
+      ['acceptance', '- [ ] The reproduction passes\n- [ ] Nothing else changes'],
+    ],
+    answer: '**What happens:** what the report says, reproduced by a new failing test.\n\n**Why:** `src/server.ts` doesn’t handle that case.\n\n**How to fix:** handle it there and keep the test. Small.\n\nVerdict: a real bug; it’s in the task’s brief.',
+  },
+  {
+    // Fix It (after investigating, or straight away): the fix, its test, a commit. The demo has no GitHub, so no pull request.
+    match: /^(Now fix|Fix) GitHub issue #\d+/,
+    stepMs: 900,
+    steps: ['Read tests/login-plus-email.test.ts', 'Edit src/users.ts', 'Edit src/routes/login.ts', 'Bash npm test', 'Bash git commit -am "Fix sign-in with a + in the email"'],
+    answer: 'Fixed: `findUser()` no longer decodes the email twice, and an unknown user gets a 401. The new test passes, and so does the rest of the suite.\n\nThis is the demo, with no GitHub to push to, so there’s no pull request; on a real repository I’d open one that says “Fixes #48”.',
+  },
   {
     // /visualize, or asking for a diagram: an interactive graph (docs/graphs.md).
     match: /visuali[sz]e|diagram|\bdraw (it|this|me)\b|map (it|this) out/i,
@@ -51,6 +106,26 @@ const SCRIPTS: readonly Script[] = [
       'BOB-5',
       'BOB-6',
       'BOB-99',
+      '```',
+    ].join('\n'),
+  },
+  {
+    // Asking what reviewers said: the PR's comments as cards, and the code they're about (BLG-514).
+    match: /comments on (this|the) (pr|pull request)|what did (the )?reviewers? say/i,
+    steps: ['Bash gh pr view --comments'],
+    answer: [
+      'One thread is still open: bob wants the refund routes registered next to their handlers. mia also asked to cover refunds.',
+      '',
+      '```beluga-pr-comments',
+      'show: open',
+      '```',
+      '',
+      'The check every route goes through is here:',
+      '',
+      '```beluga-code',
+      'src/auth.ts:1-3',
+      'highlight: 2',
+      'note: requireUser throws without a session',
       '```',
     ].join('\n'),
   },
@@ -288,6 +363,9 @@ async function mockPeerRun(input: AgentRunInput, bridge: RoomBridge, target: { p
 
 /** "ask bob to run the tests" / "ask mia's Claude whether …" / "@bob run the tests": whom to ask, and what. */
 export function gatewayTarget(prompt: string): { person: string; ask: string } | undefined {
+  // "@claude:bob run the tests": bob's Claude, said outright.
+  const theirs = /(?:^|\s)@claude:(\w[\w.-]*)[,:]?\s+([\s\S]+)/i.exec(prompt.trim());
+  if (theirs) return { person: theirs[1]!, ask: theirs[2]!.trim().replace(/[.?!]+$/, '') };
   // A task ("@BLG-24 (task: …)", see explainTaskMentions) is nobody to ask.
   const tagged = /(?:^|\s)@(?!claude)(?![A-Za-z][A-Za-z0-9]*-\d+ \(task: )(\w[\w.-]*)[,:]?\s+([\s\S]+)/i.exec(prompt.trim());
   if (tagged) return { person: tagged[1]!, ask: tagged[2]!.trim().replace(/[.?!]+$/, '') };
@@ -352,10 +430,250 @@ async function mockSyncMain(input: AgentRunInput, target: { branch: string; upst
   return `${target.branch} is up to date with ${target.upstream}. I set your uncommitted changes aside, merged the new commits (no conflicts), and put your changes back. Nothing was pushed.`;
 }
 
+/** The demo's Claude in a sentinel run (core/sentinel): a short brief whose first line is the run's headline. */
+async function mockSentinel(input: AgentRunInput, pace: number): Promise<string> {
+  const steps = /test/i.test(input.prompt)
+    ? ['Bash npm test', 'Read src/webhooks.ts']
+    : /issue/i.test(input.prompt)
+      ? ['Bash gh issue list --json number,title,labels', 'mcp__beluga_board__task_list']
+      : ['Bash git log --since="24 hours ago" --oneline', 'Bash gh pr list', 'Bash gh run list --limit 10', 'Read NOTES.md'];
+  for (const step of steps) {
+    await sleep(600 * pace, input.signal);
+    input.onEvent('tool', step);
+  }
+  await sleep(500 * pace, input.signal);
+  return [
+    '3 commits landed, 1 review waits on you, CI is green',
+    '',
+    '**Needs you first**',
+    '- bob asked for your review on the webhook retries `task:BOB-4`',
+    '',
+    '**What moved**',
+    '- Sign-in with a `+` in the email is fixed (merged as #52)',
+    '- Checkout now refuses expired sessions `task:BOB-3`',
+    '- The landing hero has its new copy',
+    '',
+    '**Next**',
+    '- Refunds from the admin are the last open part of the payments launch',
+  ].join('\n');
+}
+
+/**
+ * The demo's Claude in a sentinel run that keeps numbers (Stripe revenue): it reads what the step
+ * before brought and keeps the numbers its brief names with sentinel_measure.
+ */
+async function mockMeasure(input: AgentRunInput, tools: NonNullable<AgentRunInput['dashboardTools']>, pace: number): Promise<string> {
+  const keeps = /it keeps ([^.]+)\./.exec(input.sentinelBrief ?? '')?.[1] ?? '';
+  const names = [...keeps.matchAll(/([a-z0-9-]+)(?: \(([^)]+)\))?/g)].map((m) => ({ name: m[1]!, unit: m[2] }));
+  const seed = new Date().getDate();
+  const value = (name: string): number => (/revenue/.test(name) ? 3_200 + ((seed * 37) % 400) : /fail/.test(name) ? seed % 3 : /sub/.test(name) ? 3 + (seed % 6) : 10 + (seed % 20));
+  await sleep(700 * pace, input.signal);
+  input.onEvent('tool', 'Read the events');
+  const kept: string[] = [];
+  for (const n of names.length ? names : [{ name: 'value', unit: undefined }]) {
+    await sleep(350 * pace, input.signal);
+    input.onEvent('tool', 'mcp__beluga_dashboard__sentinel_measure');
+    tools.measure!(n.name, value(n.name), n.unit);
+    kept.push(`${value(n.name).toLocaleString('en-US')} ${n.name.replace(/-/g, ' ')}`);
+  }
+  return `${kept.join(', ')}\n\nAdded up from the last day’s events.`;
+}
+
+/** The demo's Claude building a dashboard from words: a tile for each number the words name (or the first few), and a chart of the first. */
+async function mockDashboardAsk(input: AgentRunInput, tools: NonNullable<AgentRunInput['dashboardTools']>, id: string, pace: number): Promise<string> {
+  const said = input.prompt.toLowerCase();
+  await sleep(600 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_dashboard__metric_list');
+  // "Shop (id sn_x, on, …):" then "  - name: Label · …" lines.
+  const found: Array<{ sentinel: string; metric: string; label: string }> = [];
+  let sentinel = '';
+  for (const line of tools.metricList().split('\n')) {
+    const head = /\(id (sn_\w+),/.exec(line);
+    if (head) sentinel = head[1]!;
+    const m = /^\s+- ([a-z0-9-]+): ([^·]+?) · (?!rows)/.exec(line);
+    if (m && sentinel) found.push({ sentinel, metric: m[1]!, label: m[2]!.trim() });
+  }
+  const wanted = found.filter((f) => said.split(/[^a-z]+/).some((w) => w.length > 3 && (f.label.toLowerCase().includes(w.replace(/s$/, '')) || f.metric.includes(w.replace(/s$/, '')))));
+  // Something nothing keeps yet ("the open PR count"): a draft sentinel that fetches it, then its tile.
+  const fetches = /\b(pr|prs|pull requests?|open issues?|count of|how many)\b/.test(said) && !wanted.length;
+  if (fetches && input.sentinelTools) return mockFetchTile(input, input.sentinelTools, tools, id, pace);
+  const tiles = (wanted.length ? wanted : found.slice(0, 3)).slice(0, 6);
+  const compare = /last week|week/.test(said) ? ('week' as const) : /yesterday/.test(said) ? ('day' as const) : /month/.test(said) ? ('month' as const) : undefined;
+  for (const t of tiles) {
+    await sleep(400 * pace, input.signal);
+    input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_add_tile');
+    tools.addTile(id, { kind: 'number', sentinel: t.sentinel, metric: t.metric, ...(compare ? { compare } : {}) });
+  }
+  if (tiles[0] && /chart|graph|over time|trend/.test(said)) {
+    input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_add_tile');
+    tools.addTile(id, { kind: 'series', width: 3, metrics: [{ sentinel: tiles[0].sentinel, metric: tiles[0].metric }] });
+  }
+  await sleep(300 * pace, input.signal);
+  return tiles.length ? `Added ${tiles.map((t) => t.label).join(', ')}${compare ? `, compared with ${compare === 'day' ? 'yesterday' : `last ${compare}`}` : ''}.` : 'There are no numbers kept yet: a sentinel with a Keep the numbers step keeps them.';
+}
+
+/**
+ * The demo's Claude adding a tile for something no sentinel fetches yet: a draft sentinel that
+ * counts the open pull requests every morning (paused until you turn it on), and its number tile.
+ */
+async function mockFetchTile(input: AgentRunInput, sentinels: NonNullable<AgentRunInput['sentinelTools']>, tools: NonNullable<AgentRunInput['dashboardTools']>, id: string, pace: number): Promise<string> {
+  const issues = /issue/.test(input.prompt.toLowerCase());
+  const what = issues ? { name: 'Open issues', metric: 'open-issues', label: 'Open issues', cmd: 'gh issue list --state open --json number --jq length' } : { name: 'Open pull requests', metric: 'open-prs', label: 'Open pull requests', cmd: 'gh pr list --state open --json number --jq length' };
+  await sleep(500 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_list');
+  await sleep(600 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_create');
+  const made = await sentinels.create({
+    name: what.name,
+    trigger: { kind: 'schedule', every: 'day', at: '09:00', missed: 'catch-up' },
+    steps: [
+      { kind: 'script', name: 'Count them', command: what.cmd, cwd: 'project', timeoutSec: 60 },
+      { kind: 'measure', name: 'Keep the number', from: 'previous', metrics: [{ name: what.metric, label: what.label, unit: 'count', better: 'down' }] },
+    ],
+  } as unknown as Parameters<typeof sentinels.create>[0]);
+  const sid = /`sentinel:([\w-]+)`/.exec(made)?.[1] ?? what.name;
+  await sleep(400 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_add_tile');
+  tools.addTile(id, { kind: 'number', sentinel: sid, metric: what.metric, title: what.label });
+  await sleep(300 * pace, input.signal);
+  return `Nothing kept ${what.label.toLowerCase()} yet, so I set up \`sentinel:${sid}\`: every day at 9:00 it counts them with gh and keeps the number. It’s a draft: turn it on and the tile fills in after its first run.`;
+}
+
+/**
+ * The demo's Sentinel chat (docs/sentinel.md §12): it reads Sentinel as it is (sentinel_list), and
+ * pauses, runs or deletes the sentinel the words name; a delete asks you first, as the real one does.
+ */
+async function mockSentinelChat(input: AgentRunInput, tools: NonNullable<AgentRunInput['sentinelTools']>, dash: AgentRunInput['dashboardTools'], pace: number): Promise<string> {
+  const said = input.prompt.toLowerCase();
+  await sleep(500 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_list');
+  const list = tools.list();
+  // "Morning brief · Every day at 7:00 · watching · Look · last run done: … · `sentinel:sn_x`"
+  const items = list.split('\n').flatMap((l) => {
+    const m = /^(.+?) · (.+?) · (.+?) · .*`sentinel:([\w-]+)`/.exec(l);
+    return m ? [{ name: m[1]!, when: m[2]!, state: m[3]!, id: m[4]!, line: l }] : [];
+  });
+  const named = items.filter((x) => said.includes(x.name.toLowerCase()) || x.name.toLowerCase().split(/\s+/).some((w) => w.length > 4 && said.includes(w)));
+  const target = named[0];
+  if (/\b(delete|remove)\b/.test(said) && /dashboard/.test(said) && dash) {
+    const boards = dash.list().split('\n').flatMap((l) => {
+      const m = /^(.+?) \(id (db_\w+)\)/.exec(l);
+      return m ? [{ name: m[1]!, id: m[2]! }] : [];
+    });
+    const d = boards.find((b) => said.includes(b.name.toLowerCase()));
+    if (!d) return `Which dashboard? There are ${boards.map((b) => b.name).join(', ') || 'none'}.`;
+    input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_remove');
+    if (!(await input.canUseTool('mcp__beluga_dashboard__dashboard_remove', { dashboard: d.id }))) return `You said no, so “${d.name}” stays.`;
+    dash.remove(d.id);
+    return `Deleted the dashboard “${d.name}”. Its numbers stay with their sentinels.`;
+  }
+  if (/\b(delete|remove)\b/.test(said)) {
+    if (!target) return `Which one? You have ${items.map((x) => x.name).join(', ') || 'no sentinels yet'}.`;
+    await sleep(400 * pace, input.signal);
+    input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_remove');
+    if (!(await input.canUseTool('mcp__beluga_sentinel__sentinel_remove', { id: target.id }))) return `You said no, so “${target.name}” keeps watching.`;
+    tools.remove(target.id);
+    return `Deleted “${target.name}”. It stopped watching; its runs’ reports go with the next clean-up.`;
+  }
+  if (/\bpause\b/.test(said) && target) {
+    input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_pause');
+    return tools.pause(target.id).replace(/^“/, 'Done: “');
+  }
+  if (/\brun\b/.test(said) && target) {
+    input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_run');
+    return `${tools.run(target.id)}. Its tiles update when it’s done.`;
+  }
+  await sleep(500 * pace, input.signal);
+  if (dash) input.onEvent('tool', 'mcp__beluga_dashboard__metric_list');
+  const on = items.filter((x) => x.state === 'watching');
+  const off = items.filter((x) => x.state !== 'watching');
+  return [
+    `${on.length} of your ${items.length} sentinels are watching${off.length ? `; ${off.map((x) => x.name).join(', ')} ${off.length === 1 ? 'is' : 'are'} paused` : ''}.`,
+    '',
+    ...on.slice(0, 6).map((x) => `- **${x.name}** · ${x.when.toLowerCase()} \`sentinel:${x.id}\``),
+    '',
+    'Ask me to change one, add a tile for something, or set up a new watcher.',
+  ].join('\n');
+}
+
+/**
+ * The demo's Claude setting a sentinel up from words (Describe it, the page's box): when it runs
+ * from the time and days the words name, an Ask Claude step with them as its prompt, and a Notify.
+ */
+async function mockSentinelAsk(input: AgentRunInput, tools: NonNullable<AgentRunInput['sentinelTools']>, id: string, pace: number): Promise<string> {
+  const words = input.prompt.trim();
+  const said = words.toLowerCase();
+  await sleep(700 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_get');
+  await sleep(600 * pace, input.signal);
+  input.onEvent('tool', 'Bash git log --oneline -5');
+  // "at 8", "8am", "7:30": the hour it runs (7 in the morning when the words say none).
+  const time = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/.exec(said) ?? /\bat\s+(\d{1,2})(?::(\d{2}))?\b/.exec(said) ?? /\b(\d{1,2}):(\d{2})\b/.exec(said);
+  const h = time ? Number(time[1]) : /evening/.test(said) ? 18 : 7;
+  const hour = time?.[3] === 'pm' && h < 12 ? h + 12 : time?.[3] === 'am' && h === 12 ? 0 : h;
+  const at = `${String(Math.min(23, hour)).padStart(2, '0')}:${time?.[2] ?? '00'}`;
+  const trigger = /weekday/.test(said)
+    ? { kind: 'schedule' as const, every: 'week' as const, days: [1, 2, 3, 4, 5], at, missed: 'catch-up' as const }
+    : /\bweek(ly)?\b|monday/.test(said)
+      ? { kind: 'schedule' as const, every: 'week' as const, days: [1], at, missed: 'catch-up' as const }
+      : /hour/.test(said)
+        ? { kind: 'schedule' as const, every: 'hours' as const, hours: 3 as const, at: '00:00', missed: 'skip' as const }
+        : /morning|daily|every day|night|evening/.test(said)
+          ? { kind: 'schedule' as const, every: 'day' as const, at, missed: 'catch-up' as const }
+          : { kind: 'manual' as const };
+  const firstWords = words
+    .replace(/^(every|each)\s+(other\s+)?(weekday|week|day|morning|evening|night|hour)s?(\s+(morning|evening|night))?,?\s*/i, '')
+    .replace(/^(at|by|on)\s+[\w:]+(\s*(am|pm))?\s*,?\s*/i, '')
+    .split(/[,.;]/)[0]!
+    .split(/\s+/)
+    .slice(0, 4)
+    .join(' ')
+    .replace(/(\s+(and|or|the|a|an|to|of|with|for))+$/i, '');
+  const name = firstWords ? firstWords.charAt(0).toUpperCase() + firstWords.slice(1) : 'Watcher';
+  const tasks = /task/.test(said);
+  const steps = [
+    { kind: 'claude' as const, name: 'Read what changed', where: /mac\b|disk|screen/.test(said) ? ('mac' as const) : ('project' as const), prompt: `${words}\n\nLook at what changed since the last run in {{project}} ({{date}}): commits, pull requests, issues, CI and these open tasks:\n{{tasks}}\n\nStart with what needs the user first.${tasks ? ' Make a task (task_create) for anything that looks urgent.' : ''} If nothing changed, say so in one line and stop.` },
+    { kind: 'notify' as const, name: 'Tell me', phone: /phone/.test(said) },
+  ];
+  await sleep(800 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_update');
+  try {
+    await tools.update(id, { name, trigger, steps });
+  } catch (err) {
+    return `I couldn’t change it: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  await sleep(400 * pace, input.signal);
+  const when = trigger.kind === 'manual' ? 'it runs when you press Run' : trigger.every === 'week' && trigger.days?.length === 5 ? `every weekday at ${at.replace(/^0/, '')}` : trigger.every === 'week' ? `every Monday at ${at.replace(/^0/, '')}` : trigger.every === 'hours' ? 'every 3 hours' : `every day at ${at.replace(/^0/, '')}`;
+  return `Set it up: ${when}, Claude reads what changed and writes a brief${tasks ? ', with tasks for anything urgent' : ''}, then tells you${/phone/.test(said) ? ' on your phone' : ''}. It’s paused: Turn On when it looks right.`;
+}
+
 const FILLER = /^(?:(?:please|pls|can you|could you|we should|we need to|i want to|i'd like to|let's|lets|make it so)\s+)+/i;
+
+/** The demo's About This Project (it reads no files). */
+export function mockAbout(project: string): string {
+  return [`${project} is a small web app and its API, for a team that ships every week.`, '', '- `src/`: the server (routes, then services, then the database)', '- `web/`: the app people use', '- `tests/`: one file per route'].join('\n');
+}
 
 /** The demo's task writer: a tidy title from the first line, a goal and criteria, labels the words name. */
 export function mockDraft(text: string, ctx: DraftContext): TaskDraft {
+  // New Task (BLG-319): a list makes one task per line ("for Ata" gives it to Ata), under an epic
+  // when the words say so.
+  const items = ctx.several ? text.split('\n').flatMap((l) => /^\s*(?:[-*•]|\d+[.)])\s+(.+)/.exec(l)?.[1]?.trim() ?? []).slice(0, MAX_TASKS) : [];
+  if (items.length > 1) {
+    const tasks = items.map((item) => {
+      const named = /\b(?:for|to)\s+([\p{L}][\p{L}'-]*)\s*[.!]?$/iu.exec(item);
+      const who = matchPerson(named?.[1], ctx.people ?? []);
+      const d = mockDraft(who ? item.slice(0, named!.index).trim() : item, { ...ctx, several: false });
+      return who ? { ...d, for: who } : d;
+    });
+    const intro = text.split('\n').find((l) => l.trim() && !/^\s*(?:[-*•]|\d+[.)])\s/.test(l));
+    if (intro && /\bepic\b/i.test(intro)) {
+      const epic = mockDraft(intro.replace(/\b(?:an?\s+)?epic\b(?:\s+(?:for|to))?:?/i, '').replace(/[:,]\s*$/, ''), { ...ctx, several: false });
+      return { title: epic.title, goal: epic.goal, acceptance: [], labels: [], more: tasks, epic: true };
+    }
+    const [first, ...rest] = tasks;
+    return { ...first!, more: rest };
+  }
   const words = firstLineTitle(text).replace(FILLER, '').replace(/[.!?]+$/, '').split(' ').slice(0, 8).join(' ');
   const title = words.charAt(0).toUpperCase() + words.slice(1);
   const said = text.toLowerCase();
@@ -364,6 +682,17 @@ export function mockDraft(text: string, ctx: DraftContext): TaskDraft {
   return {
     title,
     goal: `${title}, so it works the way it was described. Done when it does, and nothing around it changes.`,
+    // After a look at the code (the demo reads none): where it is and what's likely behind it.
+    ...(ctx.look
+      ? {
+          context: [
+            'Looked at the code before writing this:',
+            '- **Where it happens:** `src/routes/` and the handler it calls, the first place to check.',
+            '- **How it works today:** the request goes straight through, without the step this needs.',
+            '- **Likely fix:** add that step where the request comes in, with a test that reproduces the report first.',
+          ].join('\n'),
+        }
+      : {}),
     acceptance: [`${title}: works as described`, 'Nothing else changes', 'Tests cover it'],
     labels,
     ...(priority ? { priority } : {}),
@@ -388,21 +717,76 @@ function mockPlanTitle(goal: string): string | undefined {
   return cleanPlanTitle(top.sort(([, a], [, b]) => a.at - b.at).map(([w]) => w).join(' '));
 }
 
+/** The demo's MCP servers (Settings › Claude): one of each kind, two waiting for a sign-in. */
+const DEMO_MCP: readonly McpServerRow[] = [
+  { name: 'figma', label: 'figma', from: 'user', status: 'needs-auth', canSignIn: true },
+  { name: 'plugin:context7:context7', label: 'context7', from: 'plugin', where: 'context7', status: 'connected', canSignIn: false },
+  { name: 'linear', label: 'linear', from: 'project', where: 'bob-api', status: 'needs-auth', canSignIn: true },
+  { name: 'plugin:ratel:ratel', label: 'ratel', from: 'plugin', where: 'ratel', status: 'failed', error: 'npx exited (code 1)', canSignIn: false },
+  { name: 'claude.ai Gmail', label: 'Gmail', from: 'claude.ai', status: 'connected', canSignIn: false },
+];
+
+/** The demo's answer to a side question (/btw): short, about the work, as the real one would be. */
+export function mockBtw(question: string): string {
+  const q = question.trim().replace(/\?+$/, '');
+  return `Short answer: yes. For “${q.slice(0, 80)}”, what I’ve done so far keeps the change inside \`src/core\`, and the tests I ran passed. I haven’t touched the phone app yet, so nothing there depends on it.`;
+}
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   const context = new MockContext();
+  let mcp = DEMO_MCP;
+  const signing = new Map<string, Promise<boolean>>();
   return {
+    // The terminal view (BLG-534) on the demo's stand-in for Claude Code's terminal app.
+    terminal: async (input, sink) => mockTerminal(input, sink),
+    mcpServers: async () => {
+      await new Promise((r) => setTimeout(r, 300 * pace));
+      return mcp;
+    },
+    // The sign-in page is a stand-in; you're "back from the browser" a moment later.
+    mcpSignIn: async (_projects, name) => {
+      if (!mcp.some((m) => m.name === name && m.canSignIn)) return { error: `No MCP server named ${name}.` };
+      signing.set(
+        name,
+        new Promise((r) => setTimeout(r, 1200 * pace)).then(() => {
+          mcp = mcp.map((m) => (m.name === name ? { ...m, status: 'connected', canSignIn: false } : m));
+          signing.delete(name);
+          return true;
+        }),
+      );
+      return { url: `https://example.com/oauth/${encodeURIComponent(name)}` };
+    },
+    mcpSignedIn: (name) => signing.get(name) ?? Promise.resolve(undefined),
     nameTask: async (prompt) => {
       await new Promise((r) => setTimeout(r, 600 * pace));
       return slugify(prompt);
     },
     draftTask: async (text, ctx) => {
-      await new Promise((r) => setTimeout(r, 1500 * pace));
+      // "Take your time" in what you wrote: slow enough, at any pace, to watch the task being written (BLG-598).
+      const watch = /take your time/i.test(text) ? 5000 : 0;
+      await new Promise((r) => setTimeout(r, Math.max(watch, (ctx.look ? 6000 : 1500) * pace)));
       return mockDraft(text, ctx);
+    },
+    describeProject: async (_dir, project) => {
+      await new Promise((r) => setTimeout(r, 4000 * pace));
+      return mockAbout(project);
     },
     // A short name a moment later, as Haiku would give it.
     titlePlan: async (goal) => {
       await new Promise((r) => setTimeout(r, 400 * pace));
       return mockPlanTitle(goal);
+    },
+    // A side question: a beat of thinking, then the answer word by word, as Claude streams it.
+    btw: async (req) => {
+      await sleep(900 * pace, req.signal);
+      const answer = mockBtw(req.question);
+      let soFar = '';
+      for (const word of answer.split(/(?<= )/)) {
+        await sleep(35 * pace, req.signal);
+        soFar += word;
+        req.onText(soFar);
+      }
+      return answer;
     },
     answerChat: async (req) => {
       await sleep(1800 * pace, req.signal);
@@ -423,8 +807,18 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   async function runScript(input: AgentRunInput): Promise<string> {
     const script = SCRIPTS.find((s) => s.match.test(input.prompt)) ?? FALLBACK;
     if (/^\/compact/.test(input.prompt.trim())) return context.compact(input, (ms) => sleep(ms * pace, input.signal));
+    // Claude Code's sign-in ran out mid-run (BLG-589): the failed card offers Sign In's choices.
+    if (/^sign-in expired$/i.test(input.prompt.trim())) throw new RunFailedError(classifyRun({ result: 'Failed to authenticate: Auth session expired and could not be refreshed', apiError: 'authentication_failed' }));
     // Updating main (the one thing a main-folder run may change): what real Claude would report.
     if (input.place?.syncMain) return mockSyncMain(input, input.place.syncMain, pace);
+    // A sentinel's run (core/sentinel): its brief, before the main folder's "move it to a worktree".
+    if (input.sentinelBrief && input.sentinelTools?.stop) return input.dashboardTools?.measure && /sentinel_measure/.test(input.sentinelBrief) ? mockMeasure(input, input.dashboardTools, pace) : mockSentinel(input, pace);
+    // Building a dashboard (its Describe it): the numbers that match the words, as tiles.
+    if (input.dashboardTools?.building) return mockDashboardAsk(input, input.dashboardTools, input.dashboardTools.building, pace);
+    // The Sentinel chat: it reads Sentinel and acts on the sentinel the words name.
+    if (input.sentinelTools && /You are the Sentinel chat/.test(input.sentinelBrief ?? '')) return mockSentinelChat(input, input.sentinelTools, input.dashboardTools, pace);
+    // Changing a sentinel (sentinel.ask): it reads the words, fills the sentinel in with its tools.
+    if (input.sentinelTools?.asking) return mockSentinelAsk(input, input.sentinelTools, input.sentinelTools.asking, pace);
     // A plan's conversation: Claude writes, revises and checks the plan with its tools.
     if (input.planTools && !/^\/compact/.test(input.prompt.trim())) return mockPlanning(input, input.planTools, pace);
     // A main folder is questions only: a change request moves to a new worktree, as real Claude is told to.
@@ -517,7 +911,7 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     } finally {
       if (script.steerable) input.onSteer?.(undefined);
       // The run stopped before Claude read them: back to the queue (see AgentHost.followUp).
-      for (const followUp of said.splice(0)) followUp.onError('Claude finished before getting to this message');
+      for (const followUp of said.splice(0)) followUp.onError('The agent finished before getting to this message');
     }
     const subs = (script.subagents ?? []).map((s, i) => ({ ...s, id: `sub-${Date.now()}-${i}` }));
     for (const s of subs) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'start', title: s.title, kind: s.kind ?? 'agent' }));
@@ -550,6 +944,10 @@ function keepTaskTrue(input: AgentRunInput, script: Script): void {
   const key = board.current!;
   const first = script.answer.replace(/\*\*/g, '').split(/(?<=\.)\s/)[0] ?? script.answer;
   try {
+    for (const [section, text] of script.brief ?? []) {
+      input.onEvent('tool', `task_brief_edit ${key} ${section}`);
+      board.editBrief(undefined, section, text, 'what the investigation found');
+    }
     input.onEvent('tool', `task_note ${key}`);
     board.note(undefined, first);
     if (script.match.test('implement')) {

@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'org.jetbrains.kotlin.android'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'sh.ratel.beluga'
+version = '1.0.0'
+
+android {
+  namespace "sh.ratel.beluga.control"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+  // What the app and Beluga Link share (the add-on's build uses it too: addon/build.gradle).
+  sourceSets {
+    main.java.srcDirs += '../shared'
+  }
+}
+
+dependencies {
+  implementation "androidx.core:core-ktx:1.17.0"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+}

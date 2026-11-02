@@ -147,3 +147,76 @@
   background: var(--bg-press);
   box-shadow: 0 0 0 2px var(--bg-press);
 }
+
+/* An image's reference: a chip (icon, end of its file name) over the room its words take. While
+   one shows, the words are drawn here and the box's own go see-through (caret and selection stay). */
+.highlighter[data-ink] {
+  color: var(--text);
+}
+.highlighter[data-ink] .mark {
+  color: inherit;
+}
+.inkBehind {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
+}
+
+.imageChip {
+  position: relative;
+  color: transparent;
+  background: none;
+}
+
+.chipRoom {
+  visibility: hidden;
+}
+
+/* An image in the words (ImageChip.tsx): icon and name, hugging them. The same in the box and in a
+   sent message. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 0 5px 0 4px;
+  border-radius: 6px;
+  vertical-align: baseline;
+  white-space: nowrap;
+  font-size: 0.92em;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--text);
+  text-decoration: none;
+  background: color-mix(in srgb, var(--accent) 11%, var(--bg));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+a.chip:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+}
+
+.chip svg {
+  flex: none;
+  color: var(--accent);
+}
+
+/* Too long for its room: the start goes ("…8.14.32@2x"). Right to left puts the cut there; the
+   name inside is isolated left to right, so it never reads backwards. */
+.chipName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+/* In the box: over the room its reference's characters take (about the chip's own width). */
+.chipFace.chipFace {
+  position: absolute;
+  inset: -1px 0;
+  display: flex;
+  justify-content: center;
+  max-width: none;
+  line-height: inherit;
+}

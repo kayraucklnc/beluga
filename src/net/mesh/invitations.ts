@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { readJson, writeJson } from './files.js';
 
 /**
- * Invitations: a one-time link (`klaud://add#…`, or `klaud://join#…` for a group) and a short
+ * Invitations: a one-time link (`beluga://add#…`, or `beluga://join#…` for a group) and a short
  * code (`K7QM-4XPA-R2TD`) that do the same thing. Neither names your address: the secret in them
  * is stretched into a temporary key pair you listen on while the invitation is open, so only
  * someone holding the secret can even find you, and both sides prove they know it.
@@ -44,16 +44,18 @@ export const InvitationRecord = z.object({
   failures: z.number().int().min(0),
   /** Group invites: let people in without asking an admin. */
   auto: z.boolean().optional(),
+  /** Only this person may use it (a friend request sent to someone in your room). */
+  for: z.string().regex(/^[\w-]{32}$/).optional(),
 });
 export type InvitationRecord = z.infer<typeof InvitationRecord>;
 
-/** Links are made as klaud:// for now: a Klaud from before the rename only reads that, Beluga reads both. */
-export const LINK_SCHEME = 'klaud://';
+/** Links are made as beluga://; klaud:// ones from before the rename still open. */
+export const LINK_SCHEME = 'beluga://';
 
 export const formatCode = (code: string): string => (code.match(/.{1,4}/g) ?? []).join('-');
 export const linkOf = (r: Pick<InvitationRecord, 'kind' | 'secret'>): string => `${LINK_SCHEME}${r.kind === 'friend' ? 'add' : 'join'}#${r.secret}`;
 
-export function newInvitation(kind: InviteKind, opts: { groupId?: string; auto?: boolean; ttlMs?: number; codeTtlMs?: number } = {}): InvitationRecord {
+export function newInvitation(kind: InviteKind, opts: { groupId?: string; auto?: boolean; ttlMs?: number; codeTtlMs?: number; for?: string } = {}): InvitationRecord {
   const now = Date.now();
   const code = Array.from({ length: CODE_LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
   return {
@@ -68,6 +70,7 @@ export function newInvitation(kind: InviteKind, opts: { groupId?: string; auto?:
     uses: 0,
     failures: 0,
     ...(opts.auto ? { auto: true } : {}),
+    ...(opts.for ? { for: opts.for } : {}),
   };
 }
 
@@ -85,7 +88,7 @@ function readCode(typed: string): string | undefined {
   return compact.length === CODE_LENGTH && [...compact].every((c) => ALPHABET.includes(c)) ? compact : undefined;
 }
 
-/** The code as a link (`klaud://add?code=K7QM-4XPA-R2TD`): clicking it is the same as typing it. */
+/** The code as a link (`beluga://add?code=K7QM-4XPA-R2TD`): clicking it is the same as typing it. */
 export const codeLinkOf = (r: Pick<InvitationRecord, 'kind' | 'code'>): string => `${LINK_SCHEME}${r.kind === 'friend' ? 'add' : 'join'}?code=${formatCode(r.code)}`;
 
 /** Read an invitation out of pasted text ("beluga://add#…", "beluga://add?code=…", the same with klaud:// from before the rename, "K7QM-4XPA-R2TD", "k7qm 4xpa r2td"…). */

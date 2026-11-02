@@ -3,7 +3,9 @@
   max-width: var(--chat-max);
   width: 100%;
   margin: 0 auto;
-  padding: 0 24px 10px;
+  /* A side panel (Ask Sentinel) sets a slimmer margin. */
+  padding: 0 var(--composer-inset, 24px) 10px;
+  container: composer / inline-size;
 }
 .box {
   display: flex;
@@ -15,6 +17,13 @@
 }
 .box:focus-within {
   box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 2px 10px rgba(0, 0, 0, 0.07);
+}
+/* White on white: a half-pixel line all but vanished, so light gets a full edge and a soft lift. */
+:global(:root[data-theme='light']) .box:not(.asking) {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.13), 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px -4px rgba(0, 0, 0, 0.1);
+}
+:global(:root[data-theme='light']) .box:not(.asking):focus-within {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 18px -6px rgba(0, 0, 0, 0.14);
 }
 .asking {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
@@ -95,15 +104,35 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   padding: 4px 6px 6px 8px;
+}
+/* One line, always: controls keep their shape; only a chip marked to shrink (the model) gives way. */
+.bar > * {
+  flex-shrink: 0;
+}
+.bar > [data-shrink] {
+  flex-shrink: 1;
 }
 .flex {
   flex: 1;
+  flex-shrink: 1;
+  min-width: 0;
+}
+/* A narrow box: a chip's words step aside and its icon stays (the full name is in its menu and tooltip). */
+@container composer (max-width: 440px) {
+  .chipLabel {
+    display: none;
+  }
+  .bar {
+    gap: 2px;
+  }
 }
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
   height: 22px;
   padding: 0 8px;
   border-radius: 11px;
@@ -181,6 +210,17 @@
   flex: none;
   font-weight: 500;
 }
+/* Each row's kind (a command, a skill, a person, a file…), in a soft tone. */
+.sugIcon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  justify-content: center;
+  color: var(--text-3);
+}
+.suggestionOn .sugIcon {
+  color: rgba(255, 255, 255, 0.85);
+}
 .sugHint {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -228,6 +268,38 @@
 .suggestionOn .sugKey,
 .suggestionOn .sugStatus {
   color: rgba(255, 255, 255, 0.85);
+}
+/* Other projects' tasks: last, under a warm heading, quieter, and never the accent when picked. */
+.sugSectionElsewhere {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--warn);
+}
+.sugSection.sugSectionElsewhere:not(:first-child) {
+  margin-top: 6px;
+  padding-top: 8px;
+}
+.sugElsewhere {
+  opacity: 0.72;
+}
+.sugElsewhere.suggestionOn {
+  opacity: 1;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--text);
+}
+.sugElsewhere.suggestionOn .sugKey {
+  color: color-mix(in srgb, var(--info) 80%, var(--text));
+}
+.sugProject {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  line-height: 17px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
 
 .wrap:focus-within .legend,
@@ -282,6 +354,7 @@
 }
 .split button {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 5px;
   padding: 0 10px;
@@ -342,41 +415,74 @@
   background: currentColor;
 }
 
-/* Plan mode: the whole box turns to the plan colour, with a faint stripe, and says so. */
+/*
+ * Planning (Plan First, Plan with Tasks): the same box, quieter than a warning. A hairline in the
+ * mode's pastel, a wash of it under the top edge, and a small tag that names the mode. No stripes, no glow.
+ */
 .planning {
-  --plan: #2bb3a3;
-  background:
-    repeating-linear-gradient(135deg, color-mix(in srgb, var(--plan) 5%, transparent) 0 6px, transparent 6px 12px),
-    color-mix(in srgb, var(--plan) 7%, var(--bg-raised));
+  --plan: #3fae9f;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--plan) 7%, var(--bg-raised)), var(--bg-raised) 64px);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--plan) 65%, transparent),
-    0 0 0 4px color-mix(in srgb, var(--plan) 14%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--plan) 38%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.planning[data-mode='tasks'] {
+  --plan: #8a7ce8;
+}
+/* A side question (/btw): the peach of its answer card (btw.module.css). */
+.planning[data-mode='btw'] {
+  --plan: #e0975f;
 }
 .planning:focus-within {
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--plan) 85%, transparent),
-    0 0 0 4px color-mix(in srgb, var(--plan) 20%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--plan) 62%, transparent),
+    0 4px 14px rgba(0, 0, 0, 0.07);
 }
 .planning .chipOn {
-  background: color-mix(in srgb, var(--plan) 22%, transparent);
-  color: color-mix(in srgb, var(--plan) 80%, var(--text));
+  background: color-mix(in srgb, var(--plan) 15%, transparent);
+  color: color-mix(in srgb, var(--plan) 72%, var(--text));
+}
+.planning .sendReady {
+  background: color-mix(in srgb, var(--plan) 88%, var(--text));
 }
 .planBanner {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px 0;
-  color: color-mix(in srgb, var(--plan) 75%, var(--text));
-  font-size: 0.82rem;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px 0;
+  font-size: 0.8rem;
 }
-.planBanner span {
+.planTag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--plan) 13%, transparent);
+  color: color-mix(in srgb, var(--plan) 70%, var(--text));
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.planHint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-3);
 }
-.planBanner strong {
-  font-weight: 650;
-}
 .planKeys {
-  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+}
+.planKeys kbd {
+  font-size: 0.74rem;
+  line-height: 14px;
 }
 
 /* The message box over its mention pills (MentionHighlighter): the field is see-through. */
@@ -394,7 +500,7 @@
   padding: 0 2px;
   font: inherit;
   font-weight: 600;
-  color: var(--accent);
+  color: color-mix(in srgb, var(--plan, var(--accent)) 75%, var(--text));
   cursor: pointer;
 }
 .planLink:hover {

@@ -8,7 +8,7 @@ import { AddFriendSheet, JoinGroupSheet } from './AddFriendSheet.js';
 import { closeChat } from './ChatTabs.js';
 import { PersonAvatar } from './Avatars.js';
 import { addableFriends, groupId, presenceLine, shownState, sortFriends } from './net-model.js';
-import { closeNet, openNet, useNetSheet } from './net-sheets.js';
+import { type NetSheet, closeNet, openNet, useNetSheet } from './net-sheets.js';
 import { StatusSheet } from './StatusMenu.js';
 import { errorText, openGroup, quietly, useSay, useShownConversation } from './use-net.js';
 import s from './network.module.css';
@@ -253,6 +253,28 @@ function Confirmations() {
   }
   if (sheet?.kind === 'leave_group') return <LeaveGroupAlert groupId={sheet.groupId} />;
   if (sheet?.kind === 'delete_group') return <DeleteGroupAlert groupId={sheet.groupId} />;
+  if (sheet?.kind === 'delete_message') return <DeleteMessageAlert conversation={sheet.conversation} id={sheet.id} mine={sheet.mine} />;
+  if (sheet?.kind === 'clear_dm') {
+    const f = net.friends.find((x) => x.peerId === sheet.peerId);
+    if (!f) return null;
+    return (
+      <Alert
+        title={`Clear your chat with ${f.name}?`}
+        message={`Every message is removed from this Mac. ${f.name} keeps their copy.`}
+        tone="caution"
+        icon="chat"
+        confirm={{
+          label: 'Clear',
+          destructive: true,
+          onClick: () => {
+            closeNet();
+            void api.clear(`dm:${f.peerId}`).catch((err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn’t clear the chat: ${errorText(err)}`, level: 'error' }));
+          },
+        }}
+        onCancel={closeNet}
+      />
+    );
+  }
   if (sheet?.kind === 'remove_member') {
     const g = net.groups.find((x) => x.id === sheet.groupId);
     const m = g?.members.find((x) => x.peerId === sheet.peerId);
@@ -277,10 +299,104 @@ function Confirmations() {
   return null;
 }
 
+/** Delete a message: from this Mac, and (one of yours, ticked) from your friend's too. */
+function DeleteMessageAlert({ conversation, id, mine }: { conversation: string; id: string; mine: boolean }) {
+  const { client } = useBeluga();
+  const friend = useApp((st) => st.network.friends.find((f) => `dm:${f.peerId}` === conversation));
+  const [everyone, setEveryone] = useState(mine);
+  const name = friend?.name ?? 'your friend';
+  return (
+    <Alert
+      title="Delete this message?"
+      message={everyone ? `It’s removed from this Mac and from ${name}’s.` : `It’s removed from this Mac. ${name} still has it.`}
+      tone="caution"
+      icon="trash"
+      confirm={{
+        label: 'Delete',
+        destructive: true,
+        onClick: () => {
+          closeNet();
+          void client.api.network['messages.delete'](conversation, id, everyone ? { everyone: true } : {}).catch((err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn’t delete it: ${errorText(err)}`, level: 'error' }));
+        },
+      }}
+      onCancel={closeNet}
+    >
+      {mine ? <Checkbox checked={everyone} onChange={setEveryone} label={`Delete for ${name} too`} detail="If they’re offline, it goes when they’re back" /> : null}
+    </Alert>
+  );
+}
+
+/** Talking with friends is off: say so and turn it on right here; the sheet that was asked for opens once it's on. */
+function TurnOnSheet({ asked }: { asked: string }) {
+  const { client, ui } = useBeluga();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const turnOn = async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await quietly(client, client.api.network.setEnabled(true));
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet
+      title="Talking with friends is off"
+      subtitle={`Turn it on to ${asked}.`}
+      icon="people"
+      close={closeNet}
+      onReturn={() => void turnOn()}
+      footer={
+        <>
+          <span className={s.chosen}>
+            {error ? (
+              <span style={{ color: 'var(--error)' }}>{error}</span>
+            ) : (
+              <button
+                type="button"
+                className={s.settingsLink}
+                onClick={() => {
+                  closeNet();
+                  ui.patch({ settings: 'people' });
+                }}
+              >
+                Open Settings › People & access
+              </button>
+            )}
+          </span>
+          <Button onClick={closeNet}>Not Now</Button>
+          <Button variant="primary" autoFocus disabled={busy} onClick={() => void turnOn()}>
+            {busy ? 'Turning On…' : 'Turn On'}
+          </Button>
+        </>
+      }
+    >
+      <p className={s.halfText} style={{ margin: '2px 0 4px' }}>
+        Messages, channels and files go straight from Mac to Mac, end-to-end encrypted. No server, no account. You can turn it off again in Settings.
+      </p>
+    </Sheet>
+  );
+}
+
+/** What a sheet needs the network for, said for the Turn On sheet. */
+const NEEDS: Partial<Record<NetSheet['kind'], string>> = {
+  add_friend: 'add a friend',
+  join_group: 'join this channel',
+  new_group: 'start a channel',
+  add_people: 'add people',
+  status: 'set your status',
+};
+
 /** Whichever friends-and-groups sheet is open (the group info is drawn by its header). */
 export function NetworkSheets() {
   const sheet = useNetSheet();
+  const enabled = useApp((st) => st.network.enabled);
   if (!sheet) return null;
+  const asked = NEEDS[sheet.kind];
+  if (!enabled && asked) return <TurnOnSheet asked={asked} />;
   switch (sheet.kind) {
     case 'add_friend':
       return <AddFriendSheet {...(sheet.accept ? { accept: sheet.accept } : {})} />;

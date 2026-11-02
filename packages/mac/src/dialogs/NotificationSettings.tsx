@@ -10,17 +10,19 @@ import { NotifyStatusLine } from './sound/NotifyStatus.js';
 import { SoundSettings } from './sound/SoundSettings.js';
 import { TestNotification } from './sound/TestNotification.js';
 
-type Toggle = 'desktop' | 'onlyAway' | 'planMilestones' | 'needsYou' | 'done' | 'mentions' | 'people' | 'background' | 'problems' | 'pr';
+type Toggle = 'desktop' | 'onlyAway' | 'planMilestones' | 'needsYou' | 'done' | 'doneHere' | 'mentions' | 'people' | 'background' | 'sentinels' | 'problems' | 'pr';
 
 const KINDS: ReadonlyArray<readonly [Toggle, string, string]> = [
-  ['needsYou', 'Claude needs you', 'A question, a plan, or an approval'],
-  ['done', 'Claude finished', 'In a conversation you’re not looking at'],
+  ['needsYou', 'Your agent needs you', 'A question, a plan, or an approval'],
+  ['done', 'Your agent finished', 'In a conversation you’re not looking at'],
+  ['doneHere', 'Your agent finished where I’m looking', 'A run of yours that took 20 seconds or more, once nothing else is running or queued there, so you notice it ended'],
   ['mentions', 'Mentions and messages', 'Someone writes @you, or to you when it’s just the two of you'],
   ['people', 'People come and go', 'Someone joins, leaves, invites you, or hands work to you'],
-  ['background', 'Background tasks', 'Something Claude runs in the background, or a new worktree’s setup, finishes'],
+  ['background', 'Background tasks', 'Something your agent runs in the background, or a new worktree’s setup, finishes'],
+  ['sentinels', 'Sentinels', 'A sentinel’s run ends or fails. One that waits for you, like a merge to allow, still tells you. Each sentinel can also go quiet on its own page'],
   ['problems', 'Problems', 'Errors, merge conflicts, failed setups'],
   ['pr', 'Pull requests', 'Opened, checks finished, reviewed'],
-  ['planMilestones', 'Plans: milestones only', 'A plan tells you when a milestone passes, fails or waits for you, and when its Claude asks you something. Its tasks finishing go quietly into the bell'],
+  ['planMilestones', 'Plans: milestones only', 'A plan tells you when a milestone passes, fails or waits for you, and when its agent asks you something. Its tasks finishing go quietly into the bell'],
 ];
 
 /**
@@ -49,7 +51,7 @@ export function NotificationSettings() {
         <Row label="See the pop-up" detail="A pretend friend’s request and a pretend decision, in the corner of the screen for a minute. Their buttons do nothing.">
           <Button onClick={previewRequestPopup}>Preview Pop-up</Button>
         </Row>
-        <Row label="Only when Beluga isn’t in front" detail="Stay quiet while you’re using Beluga. Nothing is ever announced about the conversation you’re looking at.">
+        <Row label="Only when Beluga isn’t in front" detail="Stay quiet while you’re using Beluga. In the conversation you’re looking at, only a long run of yours finishing is announced.">
           <Switch label="Only when Beluga isn’t in front" on={n.onlyAway} onChange={(v) => save({ onlyAway: v })} />
         </Row>
       </Group>

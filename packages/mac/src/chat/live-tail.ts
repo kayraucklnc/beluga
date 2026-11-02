@@ -183,5 +183,6 @@ export function workingPhase(card: AgentItem): string | undefined {
   if (card.between === 'thinking') return 'Thinking';
   if (card.steps.some((x) => !HIDDEN_STEPS.test(x))) return '';
   const subs = card.subagents.filter((x) => x.status === 'running').length;
-  return subs ? `${subs} sub-agent${subs === 1 ? '' : 's'} at work` : 'Starting';
+  // Before its first step: what it waits on, when it says (Claude Code downloading, an API retry; BLG-403).
+  return subs ? `${subs} sub-agent${subs === 1 ? '' : 's'} at work` : (card.progress ?? 'Starting');
 }

@@ -128,6 +128,16 @@ const field = z.object({
 
 const link = z.object({ label: short(60), href: short(500) });
 
+/** A node's own steps, drawn inside it in order, each with its status ("Install", "Unit tests"). */
+const item = z.object({
+  label: short(80),
+  status: z.enum(STATUSES).optional(),
+  /** A few words at its end ("12s"). */
+  note: clip(24).optional(),
+});
+/** How many of a node's steps are drawn (the rest are counted). */
+export const MAX_ITEMS = 40;
+
 const nodeSchema = z.object({
   id,
   type: kindOf(NODE_KINDS, NODE_ALIASES, 'service'),
@@ -138,6 +148,7 @@ const nodeSchema = z.object({
   group: id.optional(),
   details: clip(4000).optional(),
   fields: z.array(field).transform((a) => a.slice(0, 40)).optional(),
+  items: z.array(item).transform((a) => a.slice(0, MAX_ITEMS)).optional(),
   image: clip(500).optional(),
   value: clip(24).optional(),
   links: z.array(link).transform((a) => a.slice(0, 8)).optional(),
@@ -181,6 +192,7 @@ const graphSchema = z.object({
 
 export type GraphNode = z.infer<typeof nodeSchema>;
 export type GraphField = z.infer<typeof field>;
+export type GraphItem = z.infer<typeof item>;
 export type GraphEdge = Omit<z.infer<typeof edgeSchema>, 'id'> & { readonly id: string };
 export type GraphStep = z.infer<typeof stepSchema>;
 export interface Graph {

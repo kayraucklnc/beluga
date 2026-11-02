@@ -5,7 +5,8 @@ import { Icon } from '../../components/Icon.js';
 import { type ActionItem, ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Dot, IconButton, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApp } from '../../lib/beluga.js';
+import { useApp, useBeluga } from '../../lib/beluga.js';
+import { sameDeep } from '../../lib/stable.js';
 import { workspaceItems } from '../../layout/workspace-row.js';
 import type { OverviewItem } from './overview-model.js';
 import s from '../overview.module.css';
@@ -67,7 +68,7 @@ function PlanItemRow(props: RowBase & { now: number }) {
         </span>
         <span className={s.branch}>plan</span>
         <span className={cx(s.state, s[`tone_${tone}`])}>
-          <Dot tone={tone} live={item.rank === 2} />
+          <Dot tone={tone === 'claude' ? 'plan' : tone} live={item.rank === 2} />
           {plan.tip || 'Plan'}
         </span>
         <span className={s.extra} title={item.last}>
@@ -84,18 +85,20 @@ export function ActiveRow(props: RowBase & { now: number }) {
   return props.item.plan ? <PlanItemRow {...props} /> : <WorkspaceItemRow {...props} />;
 }
 
+const sameRow = <T,>(a: T, b: T): boolean => sameDeep(a, b, 2);
+
 function WorkspaceItemRow(props: RowBase & { now: number }) {
   const { item, now } = props;
   const w = item.ws;
   const actions = useActions();
-  const state = useApp((st) => st);
-  const st = stateOf(state, w, 0);
-  const act = activityOf(state.log, `ws:${w.id}`);
-  const unread = state.unread[`ws:${w.id}`] ?? 0;
-  const pr = state.prs[w.id];
-  const ctx = state.context[`ws:${w.id}`];
+  const { client } = useBeluga();
+  // What the row shows, worked out from the shared state: drawn again only when part of it changes.
+  const { st, running, lastTs, unread, pr, ctx } = useApp((full) => {
+    const act = activityOf(full.log, `ws:${w.id}`);
+    return { st: stateOf(full, w, 0), running: act.running, lastTs: act.lastTs, unread: full.unread[`ws:${w.id}`] ?? 0, pr: full.prs[w.id], ctx: full.context[`ws:${w.id}`] };
+  }, sameRow);
   return (
-    <ActionsContext items={() => workspaceItems(state, w, actions.run)}>
+    <ActionsContext items={() => workspaceItems(client.store.getState(), w, actions.run)}>
       <div {...rowProps(props, `${w.name}, ${st.label}`)} className={s.row}>
         <span className={s.kind}>
           <Icon name={w.kind === 'chat' ? 'chat' : w.kind === 'main' ? 'folder' : 'branch'} size={14} />
@@ -106,7 +109,7 @@ function WorkspaceItemRow(props: RowBase & { now: number }) {
         </span>
         <span className={s.branch}>{w.branch ?? (w.kind === 'chat' ? 'chat' : '')}</span>
         <span className={cx(s.state, s[`tone_${st.tone}`])}>
-          <Dot tone={st.tone} live={act.running} />
+          <Dot tone={running && w.kind === 'worktree' ? 'worktree' : st.tone} live={running} />
           {st.label}
         </span>
         <span className={s.extra} title={item.last}>
@@ -114,7 +117,7 @@ function WorkspaceItemRow(props: RowBase & { now: number }) {
           {ctx ? `${pr ? ' · ' : ''}${Math.round((ctx.used / ctx.window) * 100)}% context` : ''}
           {!pr && !ctx && item.last ? item.last : ''}
         </span>
-        <span className={s.when}>{act.lastTs ? ago(act.lastTs, now) : item.size !== undefined ? formatBytes(item.size) : ''}</span>
+        <span className={s.when}>{lastTs ? ago(lastTs, now) : item.size !== undefined ? formatBytes(item.size) : ''}</span>
       </div>
     </ActionsContext>
   );

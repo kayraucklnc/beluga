@@ -26,7 +26,7 @@ export function GraphGlyph({ size = 14 }: { size?: number }) {
 }
 
 /** Each status has a shape of its own, so it reads without its color. */
-function StatusMark({ status }: { status: GraphStatus }) {
+export function StatusMark({ status }: { status: GraphStatus }) {
   const ring = <circle cx="6" cy="6" r="4.75" />;
   const shape = (() => {
     switch (status) {

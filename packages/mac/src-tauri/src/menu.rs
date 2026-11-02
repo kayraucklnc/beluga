@@ -66,7 +66,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &item(app, "onboarding", "Onboard Again…", None)?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::close_window(app, None)?,
+            // Our own Close Window (not the predefined one), so its ⌘W can let go while the
+            // keyboard is in the terminal view, where ⌘W closes a pane (set_menu_keys, BLG-537).
+            &item(app, "close-window", "Close Window", Some("CmdOrCtrl+W"))?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -144,6 +146,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
                 "Background",
                 Some("Alt+CmdOrCtrl+7"),
             )?,
+            &item(app, "panel-phone", "Phone", Some("Alt+CmdOrCtrl+8"))?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "toggle-dock", "Toggle Terminal", Some("CmdOrCtrl+J"))?,
             &PredefinedMenuItem::separator(app)?,
@@ -160,14 +163,22 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "Go",
         true,
         &[
-            // The places' order (⌥1…7 in the window too; see lib/go.ts).
-            &item(app, "go-overview", "Overview", Some("Alt+1"))?,
-            &item(app, "go-tasks", "Tasks", Some("Alt+2"))?,
-            &item(app, "go-room", "Chat", Some("Alt+3"))?,
-            &item(app, "go-search", "Search", Some("Alt+4"))?,
-            &item(app, "go-usage", "Usage", Some("Alt+5"))?,
-            &item(app, "go-terminal", "Terminal", Some("Alt+6"))?,
-            &item(app, "go-files", "Shared Files", Some("Alt+7"))?,
+            // The places' order (⌘1…7 in the window too; see lib/go.ts. Never ⌥ and a digit: ⌥3 types # on many keyboards).
+            &item(app, "go-overview", "Overview", Some("CmdOrCtrl+1"))?,
+            &item(app, "go-tasks", "Tasks", Some("CmdOrCtrl+2"))?,
+            // A project's GitHub issues (no ⌘ key: the places keep theirs).
+            &item(app, "go-issues", "Issues", None)?,
+            // Its GitHub Actions: runs as they go, workflows as graphs.
+            &item(app, "go-actions", "Actions", None)?,
+            // Sentinel: watchers on a schedule (docs/sentinel.md).
+            &item(app, "go-sentinel", "Sentinel", None)?,
+            // Its Dashboard: the numbers sentinels keep (docs/sentinel.md §10).
+            &item(app, "go-dashboard", "Dashboard", None)?,
+            &item(app, "go-room", "Chat", Some("CmdOrCtrl+3"))?,
+            &item(app, "go-search", "Search", Some("CmdOrCtrl+4"))?,
+            &item(app, "go-usage", "Usage", Some("CmdOrCtrl+5"))?,
+            &item(app, "go-terminal", "Terminal", Some("CmdOrCtrl+6"))?,
+            &item(app, "go-files", "Shared Files", Some("CmdOrCtrl+7"))?,
             &PredefinedMenuItem::separator(app)?,
             &item(
                 app,
@@ -247,6 +258,12 @@ fn conversation_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>
                 Some("Shift+CmdOrCtrl+G"),
             )?,
             &PredefinedMenuItem::separator(app)?,
+            &item(
+                app,
+                "conv-terminal",
+                "Show as Terminal",
+                Some("Shift+CmdOrCtrl+T"),
+            )?,
             &item(app, "conv-copy", "Copy Last Answer", None)?,
             &item(
                 app,
@@ -329,6 +346,29 @@ pub fn apply_state<R: Runtime>(menu: &Menu<R>, state: &MenuState) {
     }
 }
 
+/// Set menu-bar items' keys by id (None: no key). A key the menu can't take leaves the item without one.
+pub fn apply_keys<R: Runtime>(menu: &Menu<R>, keys: &HashMap<String, Option<String>>) {
+    let Ok(top) = menu.items() else { return };
+    let submenus: Vec<Submenu<R>> = top
+        .into_iter()
+        .filter_map(|k| match k {
+            MenuItemKind::Submenu(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    for (id, accel) in keys {
+        match submenus.iter().find_map(|s| s.get(id)) {
+            Some(MenuItemKind::MenuItem(i)) if i.set_accelerator(accel.as_deref()).is_err() => {
+                let _ = i.set_accelerator(None::<&str>);
+            }
+            Some(MenuItemKind::Check(i)) if i.set_accelerator(accel.as_deref()).is_err() => {
+                let _ = i.set_accelerator(None::<&str>);
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "quit" => app.exit(0),
@@ -336,6 +376,16 @@ pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
+            }
+        }
+        // As the predefined item did: the window in front closes (the main one hides, see lib.rs).
+        "close-window" => {
+            if let Some(w) = app
+                .webview_windows()
+                .into_values()
+                .find(|w| w.is_focused().unwrap_or(false))
+            {
+                let _ = w.close();
             }
         }
         _ => {

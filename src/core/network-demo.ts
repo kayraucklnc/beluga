@@ -5,11 +5,13 @@ import { generateIdentity } from '../net/crypto.js';
 import { Mesh } from '../net/mesh/mesh.js';
 import { dmConversation, groupConversation } from '../net/mesh/views.js';
 import { type NetworkService, startNetwork } from './network.js';
-import { demoScreenshot } from '../demo-image.js';
+import { demoPortrait, demoScreenshot } from '../demo-image.js';
 import { ChatClaude } from './chat/claude.js';
 import { demoAnswerFromPrompt } from './chat/demo-answers.js';
 import { ChatFiles } from './chat/files.js';
 import type { Store } from './store.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import { DEMO_AGENTS } from './demo-agents.js';
 import { belugaEnv } from './beluga-env.js';
 
 const CHECKLIST = `# Friday release
@@ -21,7 +23,7 @@ const CHECKLIST = `# Friday release
 `;
 
 /** A demo friend's Mac shares files and answers when their Claude is asked, like a real one (with made-up answers). */
-function demoChat(mesh: Mesh, dir: string, pace: number): { files: ChatFiles; claude: ChatClaude } {
+function demoChat(mesh: Mesh, dir: string, pace: number, agent: AgentRef): { files: ChatFiles; claude: ChatClaude } {
   const files = new ChatFiles({ mesh, dir: path.join(dir, 'chat-files') });
   const claude = new ChatClaude({
     mesh,
@@ -30,6 +32,7 @@ function demoChat(mesh: Mesh, dir: string, pace: number): { files: ChatFiles; cl
       await new Promise((r) => setTimeout(r, (1800 + Math.random() * 1500) * pace));
       return demoAnswerFromPrompt(req.system, req.prompt);
     },
+    agent: () => agent,
     policy: () => 'everyone',
     trustOf: () => 'trusted',
   });
@@ -64,9 +67,12 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   await me.mesh.accept((await mia.createInvite()).link);
   await mia.accept((await bob.createInvite()).code);
   mia.setPresence({ state: 'away', note: 'in a meeting' });
+  // mia has a profile picture (her card's avatar opens it large); bob keeps his initial.
+  mia.setAvatar(demoPortrait());
   let stopped = false;
   const pace = Number(belugaEnv('DEMO_PACE')) || 1;
-  const chats = { bob: demoChat(bob, path.join(base, 'bob'), pace), mia: demoChat(mia, path.join(base, 'mia'), pace) };
+  // bob answers with Claude (Opus), mia with Codex: the chat shows whose agent said what.
+  const chats = { bob: demoChat(bob, path.join(base, 'bob'), pace, defaultAgentOf(DEMO_AGENTS.bob)), mia: demoChat(mia, path.join(base, 'mia'), pace, defaultAgentOf(DEMO_AGENTS.mia)) };
   const group = bob.createGroup('launch', [meId, mia.peerId]);
   bob.sendGroup(group.id, 'Morning! Staging is green, ready when you are.');
   // bob shares the checklist and a screenshot: they come straight from his Mac.
@@ -86,9 +92,45 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   const responders = { bob: demoResponder(bob, 'bob', meId, base), mia: demoResponder(mia, 'mia', meId, base) };
   store.dispatch({ type: 'remembered', people: { ...store.getState().remembered, [bob.peerId]: { name: 'bob', trust: 'trusted' } } });
 
+  // BELUGA_DEMO_SCENE=people (screenshots of BLG-210): a channel with someone offline and a secret waiting on you.
+  let ata: Mesh | undefined;
+  if (belugaEnv('DEMO_SCENE') === 'people') {
+    void (async () => {
+      ata = await friend('ata');
+      await me.mesh.accept((await ata.createInvite()).link);
+      await ata.accept((await bob.createInvite()).code);
+      await until(() => bob.summary().friends.some((f) => f.peerId === ata!.peerId && f.online));
+      const api = bob.createGroup('api-redesign', [meId, mia.peerId, ata.peerId]);
+      const conv = groupConversation(api.id);
+      const joined = await until(() => [ata!, mia].every((m) => m.summary().groups.some((g) => g.id === api.id && g.active)) && me.mesh.summary().groups.some((g) => g.id === api.id && g.active));
+      if (!joined || stopped) return;
+      me.mesh.sendGroup(api.id, '@ata what’s in the text files on your desktop? Need the API notes.');
+      ata.sendGroup(api.id, 'Three endpoints to retire: /v1/session, /v1/token and /v1/me. And a todo to move auth to cookies.');
+      await new Promise((r) => setTimeout(r, 400));
+      bob.sendGroup(api.id, 'Yep, that’s the plan.');
+      mia.sendGroup(api.id, 'Can my agent grab the deploy key to test against staging?');
+      me.mesh.sendGroup(api.id, 'Sure, just this once.');
+      // mia's Claude asks for a secret here: only you can allow it, each time.
+      try {
+        const t = responders.mia.gateway.ask({ person: meId, kind: 'file', path: '~/.ssh/id_ed25519', ask: 'Send me the deploy key so I can test against staging', summary: 'the deploy key', by: 'agent', conversation: conv });
+        if (t.state === 'confirm') responders.mia.gateway.confirm(t.id, true);
+      } catch {
+        // Not linked yet: the scene goes without it.
+      }
+      // ata goes offline: messages to them wait.
+      await new Promise((r) => setTimeout(r, 1500));
+      await ata.close();
+    })().catch(() => undefined);
+  }
+
+  // BELUGA_DEMO_SCENE=team (BLG-417): bob teams up on bob-api, works on a task and knocks on your worktree.
+  let stopTeam: (() => void) | undefined;
+  if (belugaEnv('DEMO_SCENE') === 'team') void import('./team/demo.js').then(async (m) => (stopTeam = await m.startDemoTeam(bob, meId, path.join(base, 'bob')))).catch(() => undefined);
+
   // They answer you (mention Claude and their Claude asks yours something).
   bob.on('message', (m) => {
-    if (m.mine) return;
+    // An edit comes as the same message again: he already answered it.
+    if (m.mine || m.edited) return;
     if (m.conversation === dmConversation(meId)) setTimeout(() => !stopped && bob.sendDm(meId, `On it: “${m.text.slice(0, 60)}”`), 1200).unref();
     if (m.conversation === dmConversation(meId) && /claude|screenshot/i.test(m.text)) setTimeout(() => !stopped && responders.bob.askBack(/screenshot/i.test(m.text) ? 'screenshot' : 'question'), 2000).unref();
   });
@@ -97,13 +139,14 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   });
   mia.on('message', (m) => {
     if (m.mine || m.from !== meId || m.conversation !== groupConversation(group.id)) return;
-    setTimeout(() => !stopped && mia.sendGroup(group.id, 'Sounds good 👍'), 1500).unref();
+    setTimeout(() => !stopped && mia.sendGroup(group.id, 'Sounds good, see you there.'), 1500).unref();
   });
 
   return {
     mesh: me.mesh,
     stop: async () => {
       stopped = true;
+      stopTeam?.();
       for (const c of Object.values(chats)) {
         c.claude.stop();
         c.files.stop();
@@ -111,7 +154,7 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
       responders.bob.stop();
       responders.mia.stop();
       await me.stop();
-      await Promise.all([bob.close(), mia.close()]);
+      await Promise.all([bob.close(), mia.close(), ata?.close().catch(() => undefined)]);
       await testnet.destroy();
       rmSync(base, { recursive: true, force: true });
     },

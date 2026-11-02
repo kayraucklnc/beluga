@@ -122,7 +122,8 @@ describe('the watcher: background commands, followed live', () => {
     later.stop();
   });
 
-  it('shows its output as it grows: cleaned, secrets out; a command writing to its own log shows that', () => {
+  // Not on Windows: Claude Code keeps background output elsewhere there (its own tasks/ layout).
+  it.skipIf(process.platform === 'win32')('shows its output as it grows: cleaned, secrets out; a command writing to its own log shows that', () => {
     const out = w.taskOutput(SID, undefined, 'bdev');
     expect(out?.text).toContain('Ready on http://localhost:3000');
     expect(out?.text).not.toContain('\u001b[');

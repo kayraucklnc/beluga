@@ -8,8 +8,12 @@ import type { Method } from '../ipc/api.js';
  * `phone` only for what fits the phone (docs/companion.md, "What it is for"): reading, answering
  * (approvals, Claude's questions, friends' requests, plan decisions), asking your Mac (a message in
  * a conversation, a new chat in a project, a friend's Claude), stopping a run, and chatting with
- * friends. Never code, diffs, git, terminals, files on the Mac by path, settings, projects,
- * invitations or hosting. The host refuses a `mac` method before its arguments are even parsed.
+ * friends. Since BLG-42 also a worktree's files, read-only (`companion.files.*`, through the
+ * companion's file gate: inside that worktree, never a secret), and its terminals, interactive and
+ * shared with the Mac (`companion.terminals` / `termOpen` / `termClose`). Never editing, diffs, git
+ * beyond Merge, files on the Mac by path, settings, projects, invitations or hosting; the Mac's own
+ * `terminals.*` and `files.*` stay the Mac's. The host refuses a `mac` method before its arguments
+ * are even parsed.
  */
 export type Side = 'phone' | 'mac';
 
@@ -37,6 +41,8 @@ export const PHONE: Record<Method, Side> = {
   'session.runOnPeerByHand': 'mac',
   'session.stopAgent': 'mac',
   'session.compact': 'mac',
+  'session.btw': 'mac',
+  'session.btwDismiss': 'mac',
   'session.quit': 'mac',
   'session.serveFolder': 'mac',
   'session.localLocation': 'mac',
@@ -68,6 +74,14 @@ export const PHONE: Record<Method, Side> = {
   'sharing.invite': 'mac',
   'sharing.remove': 'mac',
   'sharing.leave': 'mac',
+  'sharing.shareWithFriend': 'mac',
+  'sharing.unshareFriend': 'mac',
+  'sharing.leaveProject': 'mac',
+  'sharing.copyProject': 'mac',
+  'sharing.scratch': 'mac',
+  'sharing.earlier': 'mac',
+  'sharing.runHere': 'mac',
+  'sharing.fork': 'mac',
   'invites.create': 'mac',
   'invites.revoke': 'mac',
   'invites.copyLink': 'mac',
@@ -104,9 +118,10 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.newWorktree': 'mac',
   'workspaces.newChat': 'mac',
   'workspaces.startChat': 'phone',
-  'workspaces.startWorktree': 'mac',
+  'workspaces.startWorktree': 'phone',
   'workspaces.branches': 'mac',
   'workspaces.fork': 'mac',
+  'workspaces.editPrompt': 'phone',
   'workspaces.continueInWorktree': 'mac',
   'workspaces.archive': 'mac',
   'workspaces.restore': 'mac',
@@ -117,6 +132,9 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.merge': 'mac',
   'workspaces.prepareRemoval': 'mac',
   'workspaces.applyEnvBack': 'mac',
+  'workspaces.keepEnvHere': 'mac',
+  'workspaces.saveEnvInBeluga': 'mac',
+  'workspaces.checkEnv': 'mac',
   'workspaces.askClaudeToReview': 'mac',
   'workspaces.askClaudeToMerge': 'mac',
   'workspaces.compact': 'mac',
@@ -134,6 +152,8 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.otherActivity': 'mac',
   'workspaces.worktreeInfo': 'mac',
   'workspaces.showConversation': 'mac',
+  'workspaces.outsideConversations': 'mac',
+  'workspaces.importOutside': 'mac',
   'workspaces.removeOther': 'mac',
   'workspaces.staleOthers': 'mac',
   'workspaces.cleanUpOthers': 'mac',
@@ -150,17 +170,32 @@ export const PHONE: Record<Method, Side> = {
   'workbench.runSetup': 'mac',
   'workbench.setScript': 'mac',
   'workbench.shareScripts': 'mac',
-  'workbench.setModel': 'mac',
+  'workbench.setModel': 'phone',
+  'workbench.setAgent': 'phone',
   'workbench.createPr': 'mac',
+  'workbench.quickPr': 'mac',
+  'workbench.mergeToBase': 'mac',
+  'workbench.gitFix': 'mac',
+  'workbench.signInClaude': 'mac',
   'workbench.fixChecks': 'mac',
   'workbench.resolvePrConflicts': 'mac',
   'workbench.continueAfterMerge': 'mac',
   'workbench.openPr': 'mac',
   'workbench.mergePr': 'mac',
+  'workbench.prStep': 'mac',
+  'workbench.prConversation': 'mac',
+  'workbench.prPost': 'mac',
+  'workbench.addressPrComments': 'mac',
+  'workbench.excerpt': 'mac',
+  'workbench.openCode': 'mac',
+  'workbench.cancelMergeWhenReady': 'mac',
   'workbench.refreshPrs': 'mac',
   'workbench.editPrPrompt': 'mac',
   'workbench.resetPrPrompt': 'mac',
   'workbench.measureDisk': 'mac',
+  // Setting up your agents (onboarding, Settings › Agent): the Mac's.
+  'workbench.checkAgents': 'mac',
+  'workbench.agentSignIn': 'mac',
   'workbench.search': 'mac',
   'workbench.openHit': 'mac',
   'workbench.saveTemplate': 'mac',
@@ -174,6 +209,12 @@ export const PHONE: Record<Method, Side> = {
   'env.set': 'mac',
   'env.claudeDotenv': 'mac',
   'env.testDatabase': 'mac',
+  'env.importDotenv': 'mac',
+  'env.newKeysBack': 'mac',
+  'env.endpoints': 'mac',
+  'env.saveEndpoint': 'mac',
+  'env.removeEndpoint': 'mac',
+  'env.checkEndpoints': 'mac',
 
   // ---- images in a message: a photo from the phone goes in as bytes, never as a Mac path
   'attachments.add': 'phone',
@@ -189,6 +230,8 @@ export const PHONE: Record<Method, Side> = {
   'projects.add': 'mac',
   'projects.addFolder': 'mac',
   'projects.suggest': 'mac',
+  'projects.create': 'mac',
+  'projects.newHome': 'mac',
   'projects.iconAt': 'mac',
   'local.listDirs': 'mac',
   'local.openFolder': 'mac',
@@ -202,6 +245,9 @@ export const PHONE: Record<Method, Side> = {
   'network.friends.accept': 'mac',
   'network.friends.cancelInvite': 'mac',
   'network.friends.remove': 'mac',
+  // Asking someone in your room is the Mac's (the sidebar's Not friends yet); answering a request is a NeedsYou item, on the phone too.
+  'network.friends.addFromRoom': 'mac',
+  'network.friends.answerOffer': 'phone',
   'network.dm.send': 'phone',
   'network.dm.history': 'phone',
   'network.groups.list': 'phone',
@@ -221,6 +267,9 @@ export const PHONE: Record<Method, Side> = {
   'network.groups.decline': 'phone',
   'network.presence.set': 'phone',
   'network.presence.get': 'phone',
+  // Setting your picture is the Mac's (Settings); the phone can show everyone's.
+  'network.avatar.set': 'mac',
+  'network.avatar.get': 'phone',
   'network.post': 'phone',
   'network.files.add': 'mac',
   'network.files.addData': 'phone',
@@ -232,6 +281,9 @@ export const PHONE: Record<Method, Side> = {
   'network.files.preview': 'phone',
   'network.channels.main': 'phone',
   'network.read': 'phone',
+  'network.messages.delete': 'phone',
+  'network.messages.edit': 'phone',
+  'network.clear': 'phone',
 
   'stripe.connect': 'mac',
   'stripe.disconnect': 'mac',
@@ -240,6 +292,12 @@ export const PHONE: Record<Method, Side> = {
   // ---- supporting Beluga: the star and coffee asks are the Mac's (they open web pages there)
   'support.answer': 'mac',
 
+  // ---- Your Mac's chats (BLG-102): since 1.14 the phone lists them, starts one and deletes one
+  // (it's chatting). Which tab is open is the Mac's: the phone opens any chat without moving it.
+  'assistant.newChat': 'phone',
+  'assistant.openChat': 'mac',
+  'assistant.deleteChat': 'phone',
+
   // ---- Claude Code's sessions: what its agents made (outputs, background logs), not their steps' code
   'claudeCode.steps': 'mac',
   'claudeCode.step': 'mac',
@@ -247,6 +305,11 @@ export const PHONE: Record<Method, Side> = {
   'claudeCode.outputs': 'phone',
   'claudeCode.output': 'phone',
   'claudeCode.taskOutput': 'phone',
+  'claudeCode.skills': 'mac',
+  'claudeCode.mcpServers': 'mac',
+  'claudeCode.mcpSignIn': 'mac',
+  'claudeCode.mcpSignedIn': 'mac',
+  'claudeCode.mcpSetEnabled': 'mac',
   // A step's details are code (commands, diffs); the phone gets steps in words in its views.
   'agent.steps': 'mac',
   'agent.step': 'mac',
@@ -254,7 +317,10 @@ export const PHONE: Record<Method, Side> = {
   // ---- tasks between Claudes: answering and asking, not your rules or capabilities
   'gateway.list': 'phone',
   'gateway.confirm': 'phone',
+  'gateway.setAskFreely': 'mac',
   'gateway.cancel': 'phone',
+  'gateway.forget': 'phone',
+  'needs.dismiss': 'phone',
   'gateway.ask': 'phone',
   'gateway.setNote': 'mac',
   'gateway.decide': 'phone',
@@ -264,10 +330,11 @@ export const PHONE: Record<Method, Side> = {
   'gateway.setCapabilities': 'mac',
   'gateway.image': 'phone',
 
-  // ---- the board: a comment, nothing structural
+  // ---- the board: a comment and a task's status (moving it along), nothing structural
   'board.create': 'mac',
   'board.update': 'mac',
-  'board.move': 'mac',
+  'board.setPrivate': 'mac',
+  'board.move': 'phone',
   'board.editBrief': 'mac',
   'board.restoreRevision': 'mac',
   'board.comment': 'phone',
@@ -275,25 +342,50 @@ export const PHONE: Record<Method, Side> = {
   'board.addProof': 'mac',
   'board.removeProof': 'mac',
   'board.remove': 'mac',
-  'board.start': 'mac',
+  // Start a task in a new worktree (with Claude on it), as the Mac's Start does.
+  'board.start': 'phone',
+  // Who works a task from its next start (BLG-498): a pick from a list, as the Mac's task page has it.
+  'board.setAgent': 'phone',
   'board.settleGone': 'mac',
   'board.setAutoTasks': 'mac',
+  'board.createBoard': 'mac',
+  'board.editBoard': 'mac',
+  'board.removeBoard': 'mac',
   'board.setPrefix': 'mac',
+  'board.createLabel': 'mac',
+  'board.setContext': 'mac',
+  'board.removeLabel': 'mac',
+  // Connecting a tracker is a key and settings: the Mac's.
+  'board.syncTeams': 'mac',
+  'board.syncConnect': 'mac',
+  'board.syncDisconnect': 'mac',
+  'board.syncAuto': 'mac',
+  // Sync Now is a tap that fits anywhere, but the phone shows no sync status yet.
+  'board.syncNow': 'mac',
   'board.archive': 'mac',
   'board.archiveDone': 'mac',
   'board.unarchive': 'mac',
   'board.emptyArchive': 'mac',
 
+  // ---- dialogues: the phone reads the thread and stops it (the Mac starts and steers it)
+  'dialogues.start': 'mac',
+  'dialogues.confirm': 'phone',
+  'dialogues.continue': 'phone',
+  'dialogues.stop': 'phone',
+  'dialogues.interject': 'mac',
+
   // ---- plans: approve, decide at a milestone's gate, send back with words; never edit their structure
-  'plans.create': 'mac',
+  'plans.create': 'phone',
   'plans.here': 'mac',
   'plans.approve': 'phone',
   'plans.discard': 'phone',
   'plans.edit': 'mac',
-  'plans.setAutonomy': 'mac',
+  'plans.setAutonomy': 'phone',
   'plans.setPaused': 'mac',
   'plans.setParallel': 'mac',
   'plans.setTestsAt': 'mac',
+  // Who works the plan's milestones and tasks from here on (BLG-498): a pick from a list.
+  'plans.setWorkAgent': 'phone',
   'plans.tidyUp': 'mac',
   'plans.pass': 'phone',
   'plans.recheck': 'phone',
@@ -301,10 +393,43 @@ export const PHONE: Record<Method, Side> = {
   'plans.openPr': 'mac',
   'plans.mergePr': 'mac',
   'plans.mergeLocal': 'mac',
+  'plans.bringInMain': 'mac',
+  'plans.retryConflicts': 'phone',
+  'plans.showConflict': 'mac',
   'plans.startTask': 'mac',
-  'plans.resumeTask': 'mac',
+  'plans.resumeTask': 'phone',
   'plans.remove': 'mac',
   'plans.setStyle': 'mac',
+
+  // ---- GitHub issues: the Mac's Issues view for now. Reading them and handing one to Claude fits the
+  // phone too (BLG-170): until its screen exists, a task made from one shows on the phone's board.
+  'issues.list': 'mac',
+  'issues.get': 'mac',
+  'issues.investigate': 'mac',
+  'issues.fix': 'mac',
+  'issues.toTask': 'mac',
+  'issues.comment': 'mac',
+  // A project's GitHub Actions: the Mac's Actions and run pages (the phone has no GitHub screens yet).
+  'ci.runs': 'mac',
+  'ci.run': 'mac',
+  'ci.workflows': 'mac',
+  'ci.log': 'mac',
+  'ci.rerun': 'mac',
+  'ci.cancel': 'mac',
+  // Team boards: answering an offer is the phone's (a NeedsYou card); leaving a team is the Mac's.
+  'team.answer': 'phone',
+  'team.leave': 'mac',
+  'team.befriend': 'mac',
+  'team.ackAssignment': 'phone',
+  // Shared plans: sharing one is the Mac's (its menu); reviewing one and settling suggestions are answers, the phone's too.
+  'team.sharePlan': 'mac',
+  'team.reviewPlan': 'phone',
+  'team.applySuggestion': 'phone',
+  'team.dismissSuggestion': 'phone',
+  // Knocks on a teammate's worktree (BLG-416): answering one is the phone's too (its card); knocking starts on a task's page, the Mac's.
+  'team.knock': 'mac',
+  'team.cancelKnock': 'mac',
+  'team.answerKnock': 'phone',
 
   // ---- git, live views' sources, editing files: the Mac's
   'git.fetch': 'mac',
@@ -323,6 +448,7 @@ export const PHONE: Record<Method, Side> = {
   'git.worktreeAt': 'mac',
   'view.fetch': 'mac',
   'files.searchContent': 'mac',
+  'files.searchNames': 'mac',
   'files.save': 'mac',
   'files.formatter': 'mac',
   'files.format': 'mac',
@@ -332,12 +458,119 @@ export const PHONE: Record<Method, Side> = {
   'companion.pair.approve': 'mac',
   'companion.pair.cancel': 'mac',
   'companion.devices.remove': 'mac',
+  'companion.phone.use': 'mac',
+  'companion.phone.pairAdb': 'mac',
+  'companion.phone.wifi': 'mac',
+  'companion.phone.pairCable': 'mac',
+  'companion.phone.setUpLink': 'mac',
+  'companion.phone.settings': 'mac',
+  'companion.phone.act': 'mac',
+  'companion.phone.macros': 'mac',
+  'companion.phone.macroRun': 'mac',
+  'companion.phone.macroDelete': 'mac',
   'companion.older': 'phone',
   'companion.ask': 'phone',
   'companion.post': 'phone',
   'companion.askPerson': 'phone',
   // Only ever the calling phone's own certificate.
   'companion.signOut': 'phone',
+  // Your Mac's one setting the phone may change (BLG-127): whether it stays awake for the phone.
+  'companion.keepAwake': 'phone',
+  'companion.defaultAgent': 'phone',
+  // The Mac app's window shows what the phone has open; an icon the views named by its checksum.
+  'companion.openOnMac': 'phone',
+  'companion.icon': 'phone',
+  // Merging a worktree (a deliberate act: the phone confirms with a sheet first): the Mac's checks,
+  // its merge, and Claude resolving conflicts. Files by name only; workspaces.merge itself stays the Mac's.
+  'companion.mergeCheck': 'phone',
+  'companion.merge': 'phone',
+  'companion.resolve': 'phone',
+  'companion.branchStep': 'phone',
+  // A live view's rows, run on the Mac with view.fetch's rules (only your own Claude's views, only sources they name).
+  'companion.viewFetch': 'phone',
+  // A task described in words: Claude's draft shown first, then added.
+  'companion.draftTask': 'phone',
+  'companion.addTask': 'phone',
+  // A worktree's files, read-only, through the file gate (worktree-files.ts): inside it, never secrets.
+  'companion.files.list': 'phone',
+  'companion.files.find': 'phone',
+  'companion.files.read': 'phone',
+  // A worktree's terminals, the same sessions as the Mac's (terminals.ts): your own paired phone
+  // types into them; who attached and how much they typed is logged.
+  'companion.terminals': 'phone',
+  'companion.termOpen': 'phone',
+  'companion.termClose': 'phone',
+  // A sub-agent opened on the phone (BLG-110): its steps in words and its report, code stripped.
+  'companion.subAgent': 'phone',
+  // Which conversations the phone saved files from are archived or deleted (BLG-124): names only.
+  'companion.gone': 'phone',
+  'companion.voice': 'phone',
+  'companion.voicePrepare': 'phone',
+  'companion.transcribe': 'phone',
+  // The Mac app's own microphone; the phone has companion.transcribe.
+  'voice.models': 'mac',
+  'voice.prepare': 'mac',
+  'voice.transcribe': 'mac',
+  // Settings › Terminal › Import from…, and the welcome's terminal step: Mac settings only.
+  'terminalImport.detect': 'mac',
+  // The agent's own terminal in a conversation (BLG-534) opens on the Mac, and its visuals open
+  // beside it there. The phone sees when it drives a conversation, and can give it back to the chat.
+  'agentTerm.open': 'mac',
+  'agentTerm.visual': 'mac',
+  'agentTerm.takeOver': 'phone',
+  // Sentinel (docs/sentinel.md): the phone runs one, pauses or resumes it, reads its runs and
+  // reports, and answers a run waiting for a merge. Making and changing sentinels is the Mac's.
+  'sentinel.run': 'phone',
+  // Testing a sentinel's sources is setting it up: the Mac's.
+  'sentinel.test': 'mac',
+  'sentinel.pause': 'phone',
+  'sentinel.runs': 'phone',
+  'sentinel.runGet': 'phone',
+  'sentinel.decide': 'phone',
+  'sentinel.create': 'mac',
+  'sentinel.update': 'mac',
+  'sentinel.remove': 'mac',
+  'sentinel.runDelete': 'mac',
+  'sentinel.duplicate': 'mac',
+  'sentinel.stop': 'mac',
+  // Claude changing a sentinel (the page's box, Describe it) is the Mac's: the phone has no editor.
+  'sentinel.ask': 'mac',
+  'sentinel.recipes': 'mac',
+  'sentinel.setRunAtOnce': 'mac',
+  'sentinel.rotateSecret': 'mac',
+  'sentinel.webhookUrl': 'mac',
+  // Numbers and dashboards (docs/sentinel.md §10): the phone reads a number over time and pulls a
+  // dashboard to refresh it (Run Now on its sentinels); arranging dashboards is the Mac's.
+  'sentinel.metricRead': 'phone',
+  // A table's document chip (BLG-345): the phone reads the document through the Mac, and a storage
+  // chip's link is signed there (the key stays on the Mac). Opening it in a Mac app is the Mac's.
+  'sentinel.document': 'phone',
+  'sentinel.signStorage': 'phone',
+  'sentinel.documentOpen': 'phone',
+  'sentinel.storageDocument': 'mac',
+  'sentinel.storageOpen': 'phone',
+  'sentinel.dataList': 'phone',
+  'sentinel.runFile': 'mac',
+  'sentinel.runFileOpen': 'phone',
+  'sentinel.dataExport': 'mac',
+  'sentinel.dataReveal': 'mac',
+  // An action cell's button runs a sentinel with its row, as Run Now does from the phone.
+  'sentinel.runRow': 'phone',
+  'dashboard.refresh': 'phone',
+  'dashboard.create': 'mac',
+  'dashboard.update': 'mac',
+  'dashboard.remove': 'mac',
+  'dashboard.addTile': 'mac',
+  'dashboard.updateTile': 'mac',
+  'dashboard.removeTile': 'mac',
+  'dashboard.moveTile': 'mac',
+  'dashboard.ask': 'mac',
+  // The Sentinel chat (docs/sentinel.md §12): the phone writes and answers in the open one through
+  // companion.ask, as in any conversation it can write in; managing the chats is the Mac's.
+  'sentinel.chatNew': 'mac',
+  'sentinel.chatOpen': 'mac',
+  'sentinel.chatClear': 'mac',
+  'sentinel.chatDelete': 'mac',
 };
 
 /** A method the phone may call (unknown names are not). */

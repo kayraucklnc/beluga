@@ -41,9 +41,12 @@
 :root[data-theme='light'] {
   color-scheme: light;
   --bg: #ffffff;
-  --bg-sunken: #f6f6f7;
-  --bg-sidebar: rgba(236, 236, 239, 0.78);
-  --bg-sidebar-solid: #ececef;
+  --bg-sunken: #f8f9fb;
+  /* Opaque: the window's vibrancy follows the system appearance, not this theme, so even a nearly
+     opaque sidebar turned muddy grey over it (dark, with macOS in dark mode). A faint cool tint
+     instead, the same family as the panel's lists. */
+  --bg-sidebar: #f4f5f9;
+  --bg-sidebar-solid: #f4f5f9;
   --bg-raised: #ffffff;
   --bg-hover: rgba(0, 0, 0, 0.045);
   --bg-press: rgba(0, 0, 0, 0.08);
@@ -51,19 +54,28 @@
   --text: #1d1d1f;
   --text-2: #5d5d63;
   --text-3: #8e8e93;
-  --hairline: rgba(0, 0, 0, 0.09);
-  --hairline-strong: rgba(0, 0, 0, 0.16);
+  --hairline: rgba(0, 0, 0, 0.1);
+  --hairline-strong: rgba(0, 0, 0, 0.17);
   --shadow-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 8px 28px rgba(0, 0, 0, 0.14);
   --claude: #b4693f;
   --ok: #2f8a4c;
   --merge: #1a7f37;
+  /* A merged branch: GitHub's purple, softened. */
+  --merged: #8a63d2;
   --warn: #b36b00;
   --error: #c4352e;
   --info: #2f6cb3;
   /* Claude's sub-agents at work: violet, apart from the main Claude's copper. */
   --subagent: #7656c9;
+  /* The bigger work at work: a worktree in teal, a plan in pink (each with its own loader). */
+  --worktree: #24877f;
+  --plan: #b84d8a;
+  /* Epics (tasks with sub-tasks) on the board. */
+  --epic: #5a62cf;
   --code-bg: #f4f4f6;
   --term-bg: #fbfbfc;
+  /* Under the dot matrix's dots (components/dot-matrix.module.css); dark needs none. */
+  --dot-floor: rgba(0, 0, 0, 0.07);
 }
 
 /* Dark: graphite, not black. */
@@ -86,10 +98,14 @@
   --claude: #df946a;
   --ok: #6cc187;
   --merge: #238636;
+  --merged: #b294f0;
   --warn: #e3a64a;
   --error: #ef7a72;
   --info: #79aef0;
   --subagent: #ab93f3;
+  --worktree: #66c6bb;
+  --plan: #e892c3;
+  --epic: #a4aaf6;
   --code-bg: #242427;
   --term-bg: #17171a;
 }

@@ -64,7 +64,7 @@ describe('bounds and redaction', () => {
     expect(thinkingTitle(12_400, false)).toBe('Thought for 12s');
     expect(thinkingTitle(300, false)).toBe('Thought briefly');
     expect(thinkingTitle(75_000, false)).toBe('Thought for 1m 15s');
-    expect(thinkingTitle(5000, true)).toBe('Thinking (hidden by Claude)');
+    expect(thinkingTitle(5000, true)).toBe('Thinking (hidden by the agent)');
   });
 });
 
@@ -110,7 +110,7 @@ describe('StepRecorder (SDK messages → step records)', () => {
     rec.observe({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'redacted_thinking', data: 'xx' }] } });
     rec.observe({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'thinking', thinking: '' }] } });
     expect(out[0]).toMatchObject({ kind: 'thinking', title: 'Thought for 12s', text: 'I should read the README first.', durationMs: 12_000, status: 'done' });
-    expect(out[1]).toMatchObject({ kind: 'thinking', hidden: true, title: 'Thinking (hidden by Claude)' });
+    expect(out[1]).toMatchObject({ kind: 'thinking', hidden: true, title: 'Thinking (hidden by the agent)' });
     expect(out[1]?.text).toBeUndefined();
     expect(out[2]).toMatchObject({ hidden: true });
     expect(new Set(out.map((r) => r.id)).size).toBe(3);
@@ -313,7 +313,7 @@ describe('steps in words', () => {
 
   it("says Beluga's tools with who they involve, never a tool name or a task id", () => {
     expect(humanizeTool('mcp__beluga__who_can', {}).done).toBe('Looked for who can help');
-    expect(humanizeTool('mcp__beluga__ask_person', { person: 'bob', ask: 'Run the tests\nand report' })).toEqual({ done: 'Asked bob’s Claude: Run the tests', doing: 'Asking bob’s Claude: Run the tests', person: 'bob' });
+    expect(humanizeTool('mcp__beluga__ask_person', { person: 'bob', ask: 'Run the tests\nand report' })).toEqual({ done: 'Asked bob’s agent: Run the tests', doing: 'Asking bob’s agent: Run the tests', person: 'bob' });
     expect(humanizeTool('mcp__beluga__wait_for', { task: 't_1' })).toMatchObject({ wait: true, task: 't_1' });
     expect(humanizeTool('mcp__beluga__run_on', { person: 'bob', command: 'npm test' }).done).toBe('Ran on bob’s Mac: npm test');
     expect(humanizeTool('mcp__beluga__get_file', { person: 'mia', path: '~/notes/plan.md' }).done).toBe('Got plan.md from mia’s Mac');
@@ -326,7 +326,7 @@ describe('steps in words', () => {
   it('reads the one-line steps of older cards and other Claudes', () => {
     expect(humanizeLine('Bash npm test').done).toBe('Ran npm test');
     expect(humanizeLine('Grep "TODO"').done).toBe('Searched for ‘TODO’');
-    expect(humanizeLine('ask_person bob')).toMatchObject({ done: 'Asked bob’s Claude', person: 'bob' });
+    expect(humanizeLine('ask_person bob')).toMatchObject({ done: 'Asked bob’s agent', person: 'bob' });
     expect(humanizeLine('wait_for t_lbTQ6LYNbZrq')).toMatchObject({ doing: 'Waiting for an answer', task: 't_lbTQ6LYNbZrq', wait: true });
     expect(humanizeLine('24 passed').done).toBe('24 passed');
     expect(humanizeLine('Fixing the login bug').done).toBe('Fixing the login bug');

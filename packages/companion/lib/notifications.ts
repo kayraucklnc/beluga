@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { kv } from './kv';
 import { ink } from './theme';
 
@@ -23,7 +23,17 @@ export async function permission(ask: boolean): Promise<'granted' | 'denied' | '
   if (Platform.OS === 'web') return 'unsupported';
   try {
     const now = await Notifications.getPermissionsAsync();
-    if (now.granted || !ask) return now.granted ? 'granted' : 'denied';
+    if (now.granted) {
+      // Made once permission is there, whichever way it came (Android's settings too).
+      await channels();
+      return 'granted';
+    }
+    if (!ask) return 'denied';
+    // Turned off in Android's settings: it won't ask again, so take you there instead of doing nothing.
+    if (!now.canAskAgain) {
+      await Linking.openSettings();
+      return 'denied';
+    }
     const r = await Notifications.requestPermissionsAsync();
     if (r.granted) await channels();
     return r.granted ? 'granted' : 'denied';

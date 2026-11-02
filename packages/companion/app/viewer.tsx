@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { router, useFocusEffect } from 'expo-router';
-import { ArrowUpRight, FileJson, FileText, FileType, Film, Monitor, ScrollText, X } from 'lucide-react-native';
+import { ArrowUpRight, Download, FileJson, FileText, FileType, Film, Monitor, RotateCw, ScrollText, X } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { GestureDetector, usePanGesture, usePinchGesture, useSimultaneousGestures, useTapGesture } from 'react-native-gesture-handler';
@@ -9,8 +9,11 @@ import Animated, { Easing, interpolate, type SharedValue, useAnimatedStyle, useS
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 import { isText, sizeOf } from '../components/Outputs';
+import { VideoPage } from '../components/VideoPage';
 import { haptic, Press, T } from '../components/ui';
-import { useFile } from '../lib/hooks';
+import { useFile, useSaving } from '../lib/hooks';
+import { progressOf, progressText } from '../lib/pieces';
+import { saveOutput } from '../lib/saved';
 import type { OutputView } from '../lib/link/protocol';
 import { store } from '../lib/store';
 import { color, type } from '../lib/theme';
@@ -18,13 +21,16 @@ import { color, type } from '../lib/theme';
 /**
  * Outputs, full screen, one page each: everything in the list you opened it from (Home's strip,
  * a conversation, a sub-agent's grid), starting at the one you tapped. Pictures pinch to zoom and
- * double-tap for 2×; text files show their first lines with Open (the reader). Swipe sideways
+ * double-tap for 2× (GIFs animate); videos show their first frame and stream when you tap play
+ * (components/VideoPage.tsx); text files show their first lines with Open (the reader). Swipe sideways
  * between pages, swipe down to put it back.
  *
  * One pan does all three moves, so they never fight: at scale 1 it decides on its first movement
  * (sideways pages, down dismisses); zoomed, it pans the picture, and only what goes past the
  * picture's edge moves the pages. The taps fail as soon as a finger moves, so they never hold
  * the pan back. All of it runs on the UI thread.
+ *
+ * Save (top right, BLG-123) puts the page's picture, video or file on the phone (lib/saved.ts).
  */
 const SPRING = { stiffness: 260, damping: 28, mass: 0.9 };
 /** Pages kept rendered either side of the one shown (full images load only for these). */
@@ -34,7 +40,7 @@ const MAX_DOTS = 9;
 export default function Viewer() {
   const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { items, index: start, origin } = store.gallery;
+  const { items, index: start, origin, topic } = store.gallery;
   const n = items.length;
   const [index, setIndex] = useState(start);
   const [chrome, setChrome] = useState(true);
@@ -65,6 +71,12 @@ export default function Viewer() {
   const fitH = useSharedValue(H);
   const zoomable = useSharedValue(items[start]?.kind === 'image' ? 1 : 0);
   const mode = useSharedValue<0 | 1 | 2 | 3>(0); // 0 undecided, 1 paging, 2 dismissing, 3 panning a zoomed picture
+  // A video playing: the swipes and taps stand aside so its controls get every touch.
+  const free = useSharedValue(true);
+  const engage = (on: boolean) => {
+    free.value = !on;
+    if (on) setChrome(true);
+  };
 
   useEffect(() => {
     // Timed, not sprung: a spring can come to rest a hair short of 1, and the stage would let the
@@ -106,6 +118,7 @@ export default function Viewer() {
   };
 
   const pinch = usePinchGesture({
+    enabled: free,
     onUpdate: (e) => {
       'worklet';
       if (!zoomable.value || mode.value === 1 || mode.value === 2) return;
@@ -123,6 +136,7 @@ export default function Viewer() {
   });
 
   const pan = usePanGesture({
+    enabled: free,
     minDistance: 8,
     onActivate: () => {
       'worklet';
@@ -184,8 +198,18 @@ export default function Viewer() {
     },
   });
 
+  const shown = items[index];
+  const saving = useSaving(shown?.ref);
+  const busy = saving?.status === 'loading';
+  const save = () => {
+    if (!shown || busy) return;
+    haptic.tap();
+    void saveOutput(shown, topic);
+  };
+
   const toggle = () => setChrome((c) => !c);
   const doubleTap = useTapGesture({
+    enabled: free,
     numberOfTaps: 2,
     maxDistance: 20,
     onActivate: (e) => {
@@ -210,6 +234,7 @@ export default function Viewer() {
     },
   });
   const singleTap = useTapGesture({
+    enabled: free,
     maxDistance: 10,
     requireToFail: doubleTap,
     onActivate: () => {
@@ -255,7 +280,7 @@ export default function Viewer() {
         <Animated.View style={[{ flexDirection: 'row', width: W * n, height: H }, strip]}>
           {items.map((o, i) =>
             Math.abs(i - index) <= NEAR + 1 ? (
-              <Page key={o.ref} o={o} active={i === index} near={Math.abs(i - index) <= NEAR} first={i === start} W={W} H={H} top={room.top} bottom={room.bottom} origin={i === start ? origin : undefined} open={open} dragY={dragY} scale={scale} panX={panX} panY={panY} fitW={fitW} fitH={fitH} />
+              <Page key={o.ref} o={o} onEngage={engage} active={i === index} near={Math.abs(i - index) <= NEAR} first={i === start} W={W} H={H} top={room.top} bottom={room.bottom} origin={i === start ? origin : undefined} open={open} dragY={dragY} scale={scale} panX={panX} panY={panY} fitW={fitW} fitH={fitH} />
             ) : (
               <View key={o.ref} style={{ width: W, height: H }} />
             ),
@@ -277,7 +302,18 @@ export default function Viewer() {
               </T>
             ) : null}
           </View>
+          <View style={{ flex: 1 }} />
+          <Press onPress={save} disabled={busy} accessibilityLabel={`Save ${shown?.name ?? ''} to the phone`} style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: color.onStageChip }}>
+            {busy ? <ActivityIndicator color={color.onStage} size="small" /> : <Download color={color.onStage} size={19} />}
+          </Press>
         </Animated.View>
+      ) : null}
+      {busy && (saving?.size ?? 0) > 1024 * 1024 ? (
+        <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + 60, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: color.onStageChip }}>
+          <T v="caption" c={color.onStage} style={{ fontVariant: ['tabular-nums'] }}>
+            {progressOf('Saving', saving?.got ?? 0, saving?.size)}
+          </T>
+        </View>
       ) : null}
       {n > 1 && n <= MAX_DOTS && chrome ? (
         <Animated.View pointerEvents="none" style={[{ position: 'absolute', bottom: insets.bottom + 22, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 }, top]}>
@@ -292,6 +328,7 @@ export default function Viewer() {
 
 type PageProps = {
   o: OutputView;
+  onEngage: (on: boolean) => void;
   active: boolean;
   /** The page shown or a neighbour: full pictures load for these only. */
   near: boolean;
@@ -311,16 +348,18 @@ type PageProps = {
   fitH: SharedValue<number>;
 };
 
-function Page({ o, active, near, first, W, H, top, bottom, origin, open, dragY, scale, panX, panY, fitW: shownW, fitH: shownH }: PageProps) {
+function Page({ o, onEngage, active, near, first, W, H, top, bottom, origin, open, dragY, scale, panX, panY, fitW: shownW, fitH: shownH }: PageProps) {
   const image = o.kind === 'image';
+  const video = o.kind === 'video';
   const thumb = useFile(image ? o.ref : undefined, 'thumb');
+  // The full picture, in pieces (BLG-106); a GIF animates once it's all here.
   const full = useFile(image && near ? o.ref : undefined, 'full');
   const room = H - top - bottom;
   // A text page is a card of a fixed shape; a picture takes its own.
   const cardRatio = (W - 32) / Math.min(room, 620);
-  const [ratio, setRatio] = useState(image ? (origin ? origin.w / origin.h : 0.75) : cardRatio);
+  const [ratio, setRatio] = useState(image || (video && origin) ? (origin ? origin.w / origin.h : 0.75) : video ? 16 / 9 : cardRatio);
   // Fitted between the top controls (under the status bar) and the page dots: never under either.
-  const fitW = Math.min(image ? W : W - 32, room * ratio);
+  const fitW = Math.min(image ? W : video ? W - 16 : W - 32, room * ratio);
   const fitH = fitW / ratio;
   const fx = (W - fitW) / 2;
   const fy = top + (room - fitH) / 2;
@@ -352,7 +391,9 @@ function Page({ o, active, near, first, W, H, top, bottom, origin, open, dragY, 
   return (
     <View style={{ width: W, height: H }}>
       <Animated.View style={frame}>
-        {!image ? (
+        {video ? (
+          <VideoPage o={o} active={active} onEngage={onEngage} onRatio={(r) => Math.abs(r - ratio) > 0.01 && setRatio(r)} />
+        ) : !image ? (
           <FileCard o={o} active={active} />
         ) : uri ? (
           <Image
@@ -371,11 +412,25 @@ function Page({ o, active, near, first, W, H, top, bottom, origin, open, dragY, 
           </View>
         )}
       </Animated.View>
-      {active && image && !full?.uri && thumb?.uri ? (
+      {active && image && !full?.uri && full?.status === 'error' ? (
+        // Never an endless spinner (BLG-106): why, and Retry.
+        <View style={{ position: 'absolute', bottom: bottom + 4, alignSelf: 'center', flexDirection: 'row', gap: 10, alignItems: 'center', paddingLeft: 14, paddingRight: 6, paddingVertical: 6, borderRadius: 20, backgroundColor: color.onStageChip }}>
+          <T v="caption" c={color.onStage} numberOfLines={2} style={{ flexShrink: 1, maxWidth: W - 140 }}>
+            {thumb?.uri ? 'This is the preview. ' : ''}
+            {full.error ?? 'Couldn’t get the full picture.'}
+          </T>
+          <Press onPress={() => store.fetch(o.ref, 'full')} accessibilityLabel="Retry" style={{ height: 30, paddingHorizontal: 12, borderRadius: 15, flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: color.onStage }}>
+            <RotateCw color={color.stage} size={14} />
+            <T v="caption" c={color.stage} style={{ fontWeight: '700' }}>
+              Retry
+            </T>
+          </Press>
+        </View>
+      ) : active && image && !full?.uri && thumb?.uri ? (
         <View pointerEvents="none" style={{ position: 'absolute', bottom: bottom + 8, alignSelf: 'center', flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <ActivityIndicator color={color.onStageDim} size="small" />
-          <T v="caption" c={color.onStageDim}>
-            Getting the full picture
+          <T v="caption" c={color.onStageDim} style={{ fontVariant: ['tabular-nums'] }}>
+            {progressText(full?.got ?? 0, full?.size)}
           </T>
         </View>
       ) : null}

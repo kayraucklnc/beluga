@@ -113,6 +113,36 @@ describe('WorkspaceController', () => {
     expect(await ctl.branches(projectId())).toMatchObject({ base: 'origin/main', branches: expect.arrayContaining(['origin/main', 'feature']) });
   });
 
+  it('shows your first message while the worktree is made, then asks Claude under the same request (BLG-531)', async () => {
+    const said: Array<{ prompt: string; channel: string; shown?: string }> = [];
+    const c = new WorkspaceController({
+      manager: new WorkspaceManager(new WorkspaceStore(path.join(repo, '..', '..', 'home'))),
+      store,
+      shares,
+      selfId: () => 'me',
+      toast: (t) => void toasts.push(t),
+      intend: () => undefined,
+      showAsk: (prompt, channel) => {
+        store.dispatch({ type: 'chat', id: 'm1', from: 'me', text: prompt, ts: 1, byAgent: false, channel, request: 'r1' });
+        return 'r1';
+      },
+      askClaude: (prompt, channel, o) => void said.push({ prompt, channel, ...(o?.shown ? { shown: o.shown } : {}) }),
+      claudeHome: claude,
+    });
+    await c.refresh();
+    let shownBefore = false;
+    const unsub = store.subscribe(() => {
+      // The pending row is up: the message is on its page already.
+      const making = store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.pending);
+      if (making && store.getState().log.some((l) => l.channel === `ws:${making.id}` && 'text' in l && l.text === 'fix it')) shownBefore = true;
+    });
+    const ws = (await c.startWorktree(projectId(), 'fix it', async () => 'fix', { name: 'early' }))!;
+    unsub();
+    expect(shownBefore).toBe(true);
+    expect(said).toEqual([{ prompt: 'fix it', channel: `ws:${ws.id}`, shown: 'r1' }]);
+    expect(store.getState().log.filter((l) => l.channel === `ws:${ws.id}`)).toHaveLength(1);
+  });
+
   it('makes the worktree right away while a model names it, then takes that name', async () => {
     let name!: (n: string) => void;
     const naming = new Promise<string>((r) => (name = r));
@@ -146,6 +176,12 @@ describe('WorkspaceController', () => {
     place.onSession('sess-1');
     expect(ctl.place(`ws:${ws.id}`)?.resume).toBe('sess-1');
     expect(ctl.place('room')).toBeUndefined();
+    // An epic's worktree (BLG-561): the board names other worktrees it works in; ones gone from disk are left out.
+    const stop = ctl.setAlsoIn((id) => (id === ws.id ? [repo, path.join(repo, 'gone')] : []));
+    expect(ctl.place(`ws:${ws.id}`)).toMatchObject({ additionalDirectories: [repo], alsoEdit: [repo] });
+    stop();
+    expect(ctl.place(`ws:${ws.id}`)).toMatchObject({ additionalDirectories: [] });
+    expect(ctl.place(`ws:${ws.id}`)?.alsoEdit).toBeUndefined();
     store.dispatch({ type: 'chat', id: 'm1', from: 'me', text: 'build it', ts: 1, byAgent: false, channel: `ws:${ws.id}` });
     await waitFor(() => ctl.manager.loadHistory(ws.id).length === 1, 3000);
     ctl.stop();
@@ -259,6 +295,22 @@ describe('WorkspaceController', () => {
     expect(store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === kept.id)?.archived).toBeFalsy();
     expect(toasts.at(-1)).toBe("Couldn't archive: the disk is full. kept is back in the sidebar, as it was.");
     ctl.manager.archive = real;
+  });
+
+  it('a Restore while it’s still being archived waits for the archive, then brings it back', async () => {
+    const ws = (await ctl.newWorktree(projectId(), 'back'))!;
+    writeFileSync(path.join(ws.path, 'mine.txt'), 'uncommitted\n');
+    const archiving = ctl.archive(ws.id);
+    // It shows as archived already, so Restore is there to click.
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === ws.id)?.archived).toBe(true);
+    const restoring = ctl.restore(ws.id);
+    expect(await archiving).toBe(true);
+    await restoring;
+    expect(ctl.manager.find(ws.id)?.archived).toBe(false);
+    expect(readFileSync(path.join(ws.path, 'mine.txt'), 'utf8')).toBe('uncommitted\n');
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === ws.id)?.archived).toBeFalsy();
+    expect(screen.getState().view).toMatchObject({ kind: 'workspace', id: ws.id });
+    expect(toasts.some((t) => t.startsWith("Couldn't restore"))).toBe(false);
   });
 
   it('archives several in one repo one after another, each out of the sidebar at once', async () => {
@@ -426,5 +478,20 @@ describe('WorkspaceController', () => {
     expect(screen.getState().view.kind).toBe('overview');
     runCommand(session, 'room', [], here());
     expect(screen.getState().view.kind).toBe('room');
+  });
+
+  it('the main checkout is no conversation (BLG-70): opening it opens the project’s home, Claude never runs there, and New Chat makes a new chat each time', async () => {
+    const main = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.kind === 'main')!;
+    ctl.open(main.id);
+    expect(screen.getState().view).toEqual({ kind: 'project', id: projectId() });
+    expect(screen.getState().tabs).not.toContain(main.id);
+    expect(ctl.place(`ws:${main.id}`)).toBeUndefined();
+    expect(ctl.ensureLoaded(main.id)).toBeUndefined();
+    const a = await ctl.newChat(projectId(), 'first question');
+    const b = await ctl.newChat(projectId(), 'second question');
+    expect(a!.id).not.toBe(b!.id);
+    const chats = store.getState().projects.find((p) => p.root)!.workspaces.filter((w) => w.kind === 'chat');
+    expect(chats.map((w) => w.name).sort()).toEqual(['first question', 'second question']);
+    expect(ctl.place(`ws:${a!.id}`)?.cwd).toBe(repo);
   });
 });

@@ -1,5 +1,6 @@
 import type { Dm, DmStatus } from './dms.js';
 import { extrasFields } from './extras.js';
+import type { BelugaInfo } from './features.js';
 import type { FriendRecord } from './friends.js';
 import type { GroupEngine, ReadMessage } from './groups/engine.js';
 import type { JoinRequest } from './groups/joins.js';
@@ -17,18 +18,27 @@ export interface ViewContext {
   readonly nameOf: (peerId: string) => string;
   /** Messages from others you've read, per conversation. */
   readonly readCount: (conversation: string) => number;
+  /** What their Beluga said about itself on its last link (kept while they're away). */
+  readonly belugaOf?: (peerId: string) => BelugaInfo | undefined;
+  /** Your Macs speak different network versions: who needs to update. */
+  readonly updateOf?: (peerId: string) => 'them' | 'you' | undefined;
+  /** Their profile picture's checksum, once its bytes are here. */
+  readonly avatarOf?: (peerId: string) => string | undefined;
 }
 
 export function person(ctx: ViewContext, peerId: string, name: string): PersonView {
   const link = ctx.link(peerId);
   const presence = link ? (ctx.presenceOf(peerId) ?? ONLINE) : { state: 'offline' as const };
-  return { peerId, name, online: Boolean(link) && presence.state !== 'offline', presence, ...(link ? { via: link.via } : {}) };
+  const beluga = ctx.belugaOf?.(peerId);
+  const update = ctx.updateOf?.(peerId);
+  const avatar = ctx.avatarOf?.(peerId);
+  return { peerId, name, online: Boolean(link) && presence.state !== 'offline', presence, ...(link ? { via: link.via } : {}), ...(beluga ? { beluga } : {}), ...(update ? { update } : {}), ...(avatar ? { avatar } : {}) };
 }
 
 export function dmView(ctx: ViewContext, peerId: string, dm: Dm, status: DmStatus): MessageView {
   const mine = dm.from === ctx.me;
   const state = !mine ? undefined : status.delivered.has(dm.id) ? 'delivered' : status.expired.has(dm.id) ? 'expired' : 'waiting';
-  return { id: dm.id, conversation: dmConversation(peerId), from: dm.from, name: mine ? 'you' : ctx.nameOf(dm.from), text: dm.text, ts: dm.ts, mine, ...extrasFields(dm.x), ...(state ? { status: state } : {}) };
+  return { id: dm.id, conversation: dmConversation(peerId), from: dm.from, name: mine ? 'you' : ctx.nameOf(dm.from), text: dm.text, ts: dm.ts, mine, ...extrasFields(dm.x), ...(state ? { status: state } : {}), ...(dm.edited ? { edited: dm.edited } : {}) };
 }
 
 export function groupMessageView(ctx: ViewContext, groupId: string, m: ReadMessage): MessageView {
@@ -81,4 +91,5 @@ export const invitationView = (r: InvitationRecord): InvitationView => ({
   uses: r.uses,
   codeExpiresAt: r.codeExpiresAt,
   codeLink: codeLinkOf(r),
+  ...(r.for ? { for: r.for } : {}),
 });

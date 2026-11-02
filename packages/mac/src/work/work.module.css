@@ -1,0 +1,20 @@
+.frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.switch {
+  display: flex;
+  justify-content: center;
+  padding: 10px 16px 0;
+  flex: none;
+}
+
+.page {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}

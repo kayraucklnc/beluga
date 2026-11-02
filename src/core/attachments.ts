@@ -65,21 +65,25 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}M`;
 }
 
-/** The label shown in the chat for an image. */
-export const attachmentLabel = (a: Attachment): string => `📎 image ${a.n} (${path.extname(a.path).slice(1).toLowerCase() || 'image'}, ${formatBytes(a.size)})`;
+/** The label shown in the chat for an image (`shown`: the number it had in the box, else its own). */
+export const attachmentLabel = (a: Attachment, shown = a.n): string => `📎 image ${shown} (${path.extname(a.path).slice(1).toLowerCase() || 'image'}, ${formatBytes(a.size)})`;
 
 /**
  * Replace "[image N]" chips with Markdown links to the images. `publish` is told about each
  * image (to make it available to the room) and returns the file name to link to. `only`: the
  * images waiting in the box (an "[image 1]" typed after its picture was taken out stays words).
+ * `shown`: with `only`, the number each of them has in the box (the box counts the images of one
+ * message from 1, these numbers count for the whole session): its chip says that number, and so
+ * does its link.
  */
-export function expandChips(text: string, selfId: string, publish: (a: Attachment) => string = (a) => path.basename(a.path), only?: readonly number[]): { text: string; attachments: Attachment[] } {
+export function expandChips(text: string, selfId: string, publish: (a: Attachment) => string = (a) => path.basename(a.path), only?: readonly number[], shown?: readonly number[]): { text: string; attachments: Attachment[] } {
   const used: Attachment[] = [];
   const out = text.replace(CHIP, (chip, n: string) => {
-    const a = registry.get(Number(n));
+    const at = shown && only ? shown.indexOf(Number(n)) : -1;
+    const a = shown && only ? (at >= 0 ? registry.get(only[at]!) : undefined) : registry.get(Number(n));
     if (!a || (only && !only.includes(a.n))) return chip;
     used.push(a);
-    return `[${attachmentLabel(a)}](${ATTACHMENT_SCHEME}${selfId}/${publish(a)})`;
+    return `[${attachmentLabel(a, Number(n))}](${ATTACHMENT_SCHEME}${selfId}/${publish(a)})`;
   });
   return { text: out, attachments: used };
 }
@@ -258,7 +262,8 @@ export interface PathInfo {
 }
 
 export function pathInfo(p: string): PathInfo {
-  const abs = p.replace(/^~(?=$|\/)/, os.homedir());
+  // ~ and ~/x, or ~\x on Windows: the rest joined the system's way (C:\Users\you\x).
+  const abs = /^~(?=$|[\\/])/.test(p) ? path.join(os.homedir(), p.slice(1)) : p;
   const base = { path: abs, name: path.basename(abs), size: 0, image: IMAGE_EXT.test(abs) };
   if (!path.isAbsolute(abs)) return { ...base, kind: 'missing' };
   try {

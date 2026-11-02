@@ -1,0 +1,39 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Installing an APK the Mac built (the phone still shows its own Install prompt). -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+  <uses-permission android:name="android.permission.INTERNET" />
+  <!-- The Mac's live mirror (BLG-184): Android's screen capture runs in a foreground service. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+  <queries>
+    <!-- Listing installed apps (open by package) needs to see launcher activities on Android 11+. -->
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <!-- Beluga Link, the add-on with the Accessibility service (BLG-377). It's an app of
+         its own: Play Protect blocks a sideloaded app that declares one, so this one doesn't. -->
+    <package android:name="sh.ratel.beluga.control" />
+  </queries>
+
+  <application>
+    <!-- The Mac's live mirror: the capture and encoder, and the see-through screen that asks "Start now". -->
+    <service
+      android:name="sh.ratel.beluga.control.MirrorService"
+      android:exported="false"
+      android:foregroundServiceType="mediaProjection" />
+    <activity
+      android:name="sh.ratel.beluga.control.MirrorConsentActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+    <!-- The "Your Mac is using this phone" notification's Stop button comes back here. -->
+    <receiver
+      android:name="sh.ratel.beluga.control.ControlActionReceiver"
+      android:exported="false" />
+  </application>
+</manifest>

@@ -201,6 +201,9 @@
   width: 26px !important;
   height: 26px !important;
 }
+.iconDone {
+  color: var(--ok) !important;
+}
 .spinning svg {
   animation: spin 0.9s linear infinite;
 }
@@ -345,16 +348,19 @@
 }
 .toolbar {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 8px;
   padding: 8px 10px 0;
 }
 .search {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   width: min(260px, 100%);
   height: 26px;
+  box-sizing: border-box;
   padding: 0 8px;
   border-radius: 7px;
   color: var(--text-3);
@@ -369,17 +375,27 @@
 .search input {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
   border: 0;
   outline: 0;
   background: transparent;
+  /* WebKit's own search field draws a taller bezel that spills past the box: plain text instead. */
+  appearance: none;
+  -webkit-appearance: none;
   font: inherit;
   font-size: 12px;
+  line-height: 26px;
   color: var(--text);
+}
+.search input::-webkit-search-decoration {
+  -webkit-appearance: none;
 }
 .scroll {
   overflow: auto;
   max-height: 460px;
-  margin-top: 6px;
+  margin-top: 8px;
   transition: opacity var(--dur);
 }
 .tableFull .scroll {
@@ -1160,6 +1176,14 @@ th[style*='right'] .th {
   overflow: hidden;
   font-variant-numeric: tabular-nums;
 }
+/* Opened from the welcome (the tour's table): above it (onboarding.module.css .overlay is 85), under pop-ups (90).
+   Under it, the modal is hidden yet still takes every click, Continue's too. */
+.fullOverlay[data-over-welcome] {
+  z-index: 86;
+}
+.full[data-over-welcome] {
+  z-index: 87;
+}
 .fullBody {
   flex: 1;
   min-height: 0;
@@ -1352,4 +1376,381 @@ th[style*='right'] .th {
 }
 .bare .scroll {
   margin-top: 0;
+}
+
+/* ---------- a Markdown table that stays as written (it has links): Copy on hover */
+
+.plainTable {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+.plainTools {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  z-index: 3;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.plainTable:hover .plainTools,
+.plainTable:focus-within .plainTools {
+  opacity: 1;
+}
+
+/* ---------- gantt, heatmap, calendar: one tooltip that follows the mark */
+
+.hoverTip {
+  position: fixed;
+  z-index: 80;
+  min-width: 140px;
+  max-width: 280px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.card[data-type='gantt'] .chip {
+  color: #8a6fd6;
+  background: color-mix(in srgb, #8a6fd6 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #8a6fd6 24%, transparent);
+}
+.card[data-type='heatmap'] .chip {
+  color: #2a78d6;
+  background: color-mix(in srgb, #2a78d6 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #2a78d6 24%, transparent);
+}
+.card[data-type='calendar'] .chip {
+  color: #1baf7a;
+  background: color-mix(in srgb, #1baf7a 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #1baf7a 24%, transparent);
+}
+
+/* ---------- gantt */
+
+.gantt {
+  --gantt-label: 30%;
+  position: relative;
+  padding-bottom: 8px;
+}
+.ganttScroll {
+  max-height: 680px;
+  overflow-y: auto;
+}
+.ganttAxis {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  height: 28px;
+  background: var(--view-surface);
+  border-bottom: 1px solid var(--hairline);
+}
+.ganttCorner {
+  flex: 0 0 var(--gantt-label);
+}
+.ganttTrack {
+  position: relative;
+  flex: 1;
+  align-self: stretch;
+  margin: 0 18px 0 10px;
+}
+.ganttTick {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.ganttRows {
+  position: relative;
+  padding-top: 4px;
+}
+.ganttGrid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--gantt-label) + 10px);
+  right: 18px;
+  pointer-events: none;
+}
+.ganttLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--hairline);
+}
+.ganttToday {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  border-left: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
+}
+.ganttLane + .ganttLane {
+  margin-top: 4px;
+}
+.ganttLaneName {
+  display: flex;
+  align-items: flex-end;
+  height: 24px;
+  padding: 0 12px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.01em;
+}
+.ganttRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px;
+}
+.ganttRow:hover {
+  background: var(--bg-hover);
+}
+.ganttLabel {
+  flex: 0 0 var(--gantt-label);
+  min-width: 0;
+  padding: 0 8px 0 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text);
+}
+.ganttBar,
+.ganttMilestone {
+  --tone-soft: #e2dcf7;
+  --tone-strong: #a897e3;
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+}
+.ganttBar {
+  height: 14px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--tone-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone-strong) 45%, transparent);
+}
+.ganttBar:hover,
+.ganttMilestone:hover {
+  filter: saturate(1.15) brightness(0.98);
+}
+.ganttProgress {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--tone-strong);
+}
+.ganttMilestone {
+  width: 11px;
+  height: 11px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 2px;
+  background: var(--tone-strong);
+  box-shadow: 0 0 0 2px var(--view-surface);
+}
+.ganttBar[data-tone='mint'],
+.ganttMilestone[data-tone='mint'] {
+  --tone-soft: #cfeedd;
+  --tone-strong: #7cc9a0;
+}
+.ganttBar[data-tone='sky'],
+.ganttMilestone[data-tone='sky'] {
+  --tone-soft: #d3e6fa;
+  --tone-strong: #86b6ea;
+}
+.ganttBar[data-tone='rose'],
+.ganttMilestone[data-tone='rose'] {
+  --tone-soft: #f8d6d9;
+  --tone-strong: #e79aa2;
+}
+.ganttBar[data-tone='butter'],
+.ganttMilestone[data-tone='butter'] {
+  --tone-soft: #f7e8b8;
+  --tone-strong: #e3c167;
+}
+.ganttBar[data-tone='neutral'],
+.ganttMilestone[data-tone='neutral'] {
+  --tone-soft: #e6e7ea;
+  --tone-strong: #b4b7be;
+}
+:global([data-theme='dark']) .ganttBar,
+:global([data-theme='dark']) .ganttMilestone {
+  --tone-soft: #352f52;
+  --tone-strong: #a291e0;
+}
+:global([data-theme='dark']) .ganttBar[data-tone='mint'],
+:global([data-theme='dark']) .ganttMilestone[data-tone='mint'] {
+  --tone-soft: #24443a;
+  --tone-strong: #6cc49a;
+}
+:global([data-theme='dark']) .ganttBar[data-tone='sky'],
+:global([data-theme='dark']) .ganttMilestone[data-tone='sky'] {
+  --tone-soft: #22384f;
+  --tone-strong: #78a9e0;
+}
+:global([data-theme='dark']) .ganttBar[data-tone='rose'],
+:global([data-theme='dark']) .ganttMilestone[data-tone='rose'] {
+  --tone-soft: #4a2a30;
+  --tone-strong: #e08b94;
+}
+:global([data-theme='dark']) .ganttBar[data-tone='butter'],
+:global([data-theme='dark']) .ganttMilestone[data-tone='butter'] {
+  --tone-soft: #4a3f22;
+  --tone-strong: #d9b65e;
+}
+:global([data-theme='dark']) .ganttBar[data-tone='neutral'],
+:global([data-theme='dark']) .ganttMilestone[data-tone='neutral'] {
+  --tone-soft: #34363b;
+  --tone-strong: #8d9098;
+}
+
+/* ---------- heatmap */
+
+.heat,
+.cal {
+  padding: 10px 12px 8px;
+}
+.heatScroll {
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.heatGrid {
+  display: grid;
+  gap: 2px;
+  align-items: end;
+}
+.heatX,
+.heatXTall {
+  min-width: 0;
+  padding-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.heatXTall {
+  max-height: 64px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: left;
+  justify-self: center;
+  padding: 3px 0 0;
+}
+.heatY {
+  align-self: center;
+  min-width: 0;
+  padding-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.heatCell {
+  aspect-ratio: 1;
+  min-height: 10px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+.heatCell:hover,
+.calCell:hover {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 45%, transparent);
+}
+.heatLegend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.heatRamp {
+  width: 120px;
+  height: 8px;
+  border-radius: 99px;
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+
+/* ---------- calendar */
+
+.calGrid {
+  display: grid;
+  grid-template-rows: auto repeat(7, auto);
+  gap: 3px;
+}
+.calMonth {
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: visible;
+  padding-bottom: 2px;
+}
+.calDay {
+  align-self: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-3);
+}
+.calCell,
+.calOut {
+  aspect-ratio: 1;
+  min-height: 9px;
+  border-radius: 3px;
+}
+.calCell {
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+}
+:global([data-theme='dark']) .calCell,
+:global([data-theme='dark']) .heatCell {
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.04);
+}
+.calNote {
+  margin-top: 4px;
+  color: var(--text-2);
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+.calFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.calScale {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+}
+.calSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+.calScale .calSwatch:first-of-type {
+  margin-left: 4px;
+}
+.calScale .calSwatch:last-of-type {
+  margin-right: 4px;
 }

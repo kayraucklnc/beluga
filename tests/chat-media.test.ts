@@ -13,12 +13,21 @@ describe('images in a message', () => {
     expect(parseAttachmentHref('https://x.dev/a.png')).toBeUndefined();
   });
 
-  it('shows images below the words, dropping links that open or close the message', () => {
-    const out = splitImages(`${link(1)} what is wrong here?`);
+  it('shows images below the words, dropping the links that close the message (or are all of it)', () => {
+    const out = splitImages(`what is wrong here? ${link(1)}`);
     expect(out.text).toBe('what is wrong here?');
     expect(out.images).toEqual([{ href: 'klaud-attachment:kay/shot-1.png', owner: 'kay', file: 'shot-1.png', label: 'image 1', detail: 'png, 120K' }]);
-    expect(splitImages(`compare ${link(1)} ${link(2)}`).text).toBe('compare');
+    expect(splitImages(`compare\n\n${link(1)} ${link(2)}`).text).toBe('compare');
     expect(splitImages(`${link(1)}\n${link(2)}`)).toMatchObject({ text: '', images: [{ label: 'image 1' }, { label: 'image 2' }] });
+  });
+
+  it('keeps an image that starts the message in the words, where it was put (BLG-72)', () => {
+    // What Kayra sent: image 1 was dropped from the words while image 2 stayed a chip.
+    const text = `${link(1, 'kay', '20261024-161513-2699.png')}  we have this visual problem connecting to phone.\n\n${link(2, 'kay', '20261024-161529-nvrp.png')}  I just realized`;
+    const out = splitImages(text);
+    expect(out.text).toBe('[image 1](klaud-attachment:kay/20261024-161513-2699.png)  we have this visual problem connecting to phone.\n\n[image 2](klaud-attachment:kay/20261024-161529-nvrp.png)  I just realized');
+    expect(out.images.map((i) => i.label)).toEqual(['image 1', 'image 2']);
+    expect(splitImages(`${link(1)} what is wrong here?`).text).toBe('[image 1](klaud-attachment:kay/shot-1.png) what is wrong here?');
   });
 
   it('keeps a short link where an image sits mid-sentence', () => {

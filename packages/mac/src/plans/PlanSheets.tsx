@@ -1,6 +1,8 @@
 import { type KeyboardEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, TESTS_AT, TESTS_AT_INFO, type TestsAt } from '@beluga/core/plans/model.js';
+import { agentForChoice } from '@beluga/ui/agent-choice.js';
 import { Field, FormSheet, Popup, TextArea } from '../components/FormSheet.js';
+import { YOUR_AGENT, useAgentEntries } from '../components/agent-options.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
@@ -8,12 +10,14 @@ import { useTasksPrefs } from '../tasks/use-tasks.js';
 import { modeChange } from './plans-model.js';
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
+import { chordLabel } from '../lib/shortcuts-model.js';
 
 const AUTONOMY_ICON: Record<Autonomy, IconName> = { step: 'hand', gated: 'flag', autopilot: 'wand' };
 
 /**
  * A new plan: what it's for (Claude plans from it, reading the code) and how far it runs on its
- * own. Opened from a project it's that project's (no picker).
+ * own. Opened from a project it's that project's (no picker). More options: who works its
+ * milestones and tasks (BLG-497; your default agent unless you pick another).
  */
 export function NewPlanSheet({ projectId, close }: { projectId?: string; close: () => void }) {
   const prefs = useTasksPrefs();
@@ -25,20 +29,24 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
   const [project, setProject] = useState((known ? projectId : projects.some((p) => p.id === prefs.project) ? prefs.project : projects[0]?.id) ?? '');
   const [autonomy, setAutonomy] = useState<Autonomy>(DEFAULT_AUTONOMY);
   const [testsAt, setTestsAt] = useState<TestsAt>('milestone');
+  const agents = useAgentEntries();
+  const runtimes = useApp((s) => s.runtimes);
+  const [agent, setAgent] = useState(YOUR_AGENT);
+  const [more, setMore] = useState(false);
   if (!projects.length) return <FormSheet title="New Plan" intro="Plans belong to a project. Add a project first (File › Add Project…)." submitLabel="OK" hideSubmit onSubmit={close} onCancel={close} />;
   const name = projects.find((p) => p.id === project)?.name;
   return (
     <FormSheet
       title={name ? `Plan in ${name}` : 'New Plan'}
       icon="flag"
-      intro="Say what you want built. Claude reads the code and cuts it into milestones and tasks; you talk it through, and nothing reaches the board until you approve."
-      submitLabel="Plan with Claude"
+      intro="Say what you want built. Your agent reads the code and cuts it into milestones and tasks; you talk it through, and nothing reaches the board until you approve."
+      submitLabel="Plan with Your Agent"
       width={600}
       canSubmit={Boolean(goal.trim() && project)}
       onCancel={close}
       onSubmit={async () => {
         close();
-        await act(() => api.create({ projectId: project, goal: goal.trim(), autonomy, testsAt }));
+        await act(() => api.create({ projectId: project, goal: goal.trim(), autonomy, testsAt, ...(agent !== YOUR_AGENT ? { agent: agentForChoice(agent, runtimes) } : {}) }));
       }}
     >
       <div className={p.newPlan}>
@@ -46,7 +54,7 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
           Goal
         </label>
         <GoalBox value={goal} onChange={setGoal} />
-        <div className={p.newPlanHint}>What it’s for and what done looks like. ⌘↩ starts planning.</div>
+        <div className={p.newPlanHint}>What it’s for and what done looks like. {chordLabel('Cmd+Enter')} starts planning.</div>
         {known ? null : (
           <div className={p.newPlanRow}>
             <span className={p.newPlanLabel}>Project</span>
@@ -62,6 +70,19 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
           <Popup label="When to run tests" value={testsAt} options={TESTS_AT.map((t) => ({ value: t, label: TESTS_AT_INFO[t].label }))} onChange={setTestsAt} />
         </div>
         <div className={p.newPlanHint}>{TESTS_AT_INFO[testsAt].hint}.</div>
+        <button type="button" className={p.newPlanMore} aria-expanded={more} onClick={() => setMore(!more)}>
+          <Icon name={more ? 'chevronDown' : 'chevronRight'} size={10} />
+          More options
+        </button>
+        {more ? (
+          <>
+            <div className={p.newPlanRow}>
+              <span className={p.newPlanLabel}>Agent</span>
+              <Popup label="Agent" value={agent} options={agents} onChange={setAgent} />
+            </div>
+            <div className={p.newPlanHint}>Who works its milestones and tasks: each worktree runs this agent and model.</div>
+          </>
+        ) : null}
       </div>
     </FormSheet>
   );
@@ -182,7 +203,7 @@ export function PlanStyleSheet({ close }: { close: () => void }) {
     <FormSheet
       title="Planning Style"
       icon="flag"
-      intro="How you like plans cut: task size, when to add a review, what every milestone must prove. Claude follows it whenever it plans."
+      intro="How you like plans cut: task size, when to add a review, what every milestone must prove. Your agent follows it whenever it plans."
       submitLabel="Save"
       onCancel={close}
       onSubmit={async () => {
@@ -206,8 +227,8 @@ export function SendBackSheet({ planId, milestone, close }: { planId: string; mi
     <FormSheet
       title={`Not Yet: ${title}`}
       icon="flag"
-      intro="Say what’s missing. Claude adds the tasks that fix it to this milestone, for you to approve."
-      submitLabel="Send to Claude"
+      intro="Say what’s missing. Your agent adds the tasks that fix it to this milestone, for you to approve."
+      submitLabel="Send to Your Agent"
       canSubmit={Boolean(note.trim())}
       onCancel={close}
       onSubmit={async () => {

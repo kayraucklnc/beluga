@@ -17,6 +17,7 @@ import { TerminalEmulator, TerminalManager } from '../../src/terminal/index.js';
 import { WorkspaceManager } from '../../src/workspaces/manager.js';
 import { WorkspaceStore } from '../../src/workspaces/store.js';
 import { waitFor } from '../helpers.js';
+import { posixSh } from '../../src/terminal/pty.js';
 
 /**
  * The same behavior, whichever way a screen is attached: in the core's own process (the terminal
@@ -49,7 +50,7 @@ async function core(): Promise<Core> {
   const wsStore = new WorkspaceStore(path.join(base, 'home'));
   wsStore.saveConfig({ roots: [], projects: [], hidden: [] });
   // A plain shell keeps terminal tests light (a login shell would load your whole profile).
-  const store = new Store(initialState('test', 'ask', { shell: '/bin/sh' }));
+  const store = new Store(initialState('test', 'ask', { shell: posixSh() ?? '/bin/sh' }));
   const terminals = new TerminalManager();
   const asked: string[] = [];
   const session = new Session({

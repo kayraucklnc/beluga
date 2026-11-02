@@ -26,12 +26,15 @@ function ago(ts: number, now: number): string {
 
 const needsYou = (t: TaskView): boolean => (t.direction === 'sent' && t.state === 'confirm') || (t.direction === 'received' && t.state === 'awaiting_approval');
 
+/** Still open: waiting for you or on its way. Answered ones (done, declined, failed) are tucked away. */
+const pending = (t: TaskView): boolean => !isFinal(t.state);
+
 /** How many tasks wait for you (the sidebar's badge). */
 export const waitingForYou = (tasks: readonly TaskView[]): number => tasks.filter(needsYou).length;
 
 function Row({ task, open, onToggle }: { task: TaskView; open: boolean; onToggle: () => void }) {
   const tone = stateTone(task);
-  const who = task.direction === 'sent' ? targetLabel(task) : `${task.peerName}${task.by === 'agent' ? '’s Claude' : ''}`;
+  const who = task.direction === 'sent' ? targetLabel(task) : `${task.peerName}${task.by === 'agent' ? '’s agent' : ''}`;
   return (
     <>
       <div
@@ -48,7 +51,7 @@ function Row({ task, open, onToggle }: { task: TaskView; open: boolean; onToggle
           }
         }}
       >
-        <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} size={20} />
+        <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} agent={task.kind === 'ask' ? task.result?.agent : undefined} size={20} />
         <span className={s.rowWho}>{who}</span>
         <span className={s.rowAsk}>{task.kind === 'run' && task.command ? `$ ${task.command}` : oneLine(task.ask, 140)}</span>
         <span className={`${s.status} ${s[`tone_${tone}`]}`}>
@@ -79,7 +82,7 @@ function Note() {
       .setNote(text)
       .then(() => {
         setText(undefined);
-        client.store.dispatch({ type: 'toast', text: 'Saved. Friends’ Claudes see it on your card', level: 'success' });
+        client.store.dispatch({ type: 'toast', text: 'Saved. Friends’ agents see it on your card', level: 'success' });
       })
       .catch((err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't save it: ${message(err)}`, level: 'error' }));
   };
@@ -88,7 +91,7 @@ function Note() {
       <span>Ask me for</span>
       <input
         aria-label="Ask me for"
-        placeholder="what your Claude is good for here (friends’ Claudes see this)"
+        placeholder="what your agent is good for here (friends’ agents see this)"
         value={value}
         maxLength={280}
         onChange={(e) => setText(e.target.value)}
@@ -121,12 +124,12 @@ function Compose({ onDone }: { onDone: () => void }) {
   };
   if (!list.length) return <div className={s.compose}>Nobody to ask yet: add a friend, or invite someone to your room.</div>;
   return (
-    <div className={s.compose} role="group" aria-label="Ask someone's Claude">
+    <div className={s.compose} role="group" aria-label="Ask someone's agent">
       <div className={s.composeRow}>
         <span>To</span>
-        <Select label="Whose Claude" value={to} onChange={setTo} options={list.map((p) => ({ value: p.id, label: `${p.name}’s Claude`, icon: <Avatar name={p.name} id={p.id} size={16} /> }))} />
+        <Select label="Whose agent" value={to} onChange={setTo} options={list.map((p) => ({ value: p.id, label: `${p.name}’s agent`, icon: <Avatar name={p.name} id={p.id} size={16} /> }))} />
       </div>
-      <textarea className={s.edit} aria-label="What to ask" placeholder="What should their Claude do? They see only this." value={ask} onChange={(e) => setAsk(e.target.value)} autoFocus />
+      <textarea className={s.edit} aria-label="What to ask" placeholder="What should their agent do? They see only this." value={ask} onChange={(e) => setAsk(e.target.value)} autoFocus />
       <div className={s.actions}>
         <Button variant="primary" disabled={!ask.trim()} onClick={send}>
           Ask
@@ -144,11 +147,14 @@ export function RequestsView() {
   const [tab, setTab] = useState<Tab>(() => (gateway.tasks.some((t) => t.direction === 'received' && t.state === 'awaiting_approval') ? 'received' : 'sent'));
   const [open, setOpen] = useState<string | undefined>();
   const [composing, setComposing] = useState(false);
+  const [answered, setAnswered] = useState(false);
   if (!gateway.enabled) {
-    return <Empty icon="hand" title="Requests need the Beluga app" detail="Tasks between Claudes run in the Beluga app's daemon." />;
+    return <Empty icon="hand" title="Requests need the Beluga app" detail="Tasks between agents run in the Beluga app's daemon." />;
   }
-  const list = gateway.tasks.filter((t) => t.direction === tab).slice().reverse();
-  const count = (d: Tab): number => gateway.tasks.filter((t) => t.direction === d).length;
+  const mine = gateway.tasks.filter((t) => t.direction === tab);
+  const done = mine.filter((t) => !pending(t)).length;
+  const list = (answered ? mine : mine.filter(pending)).slice().reverse();
+  const count = (d: Tab): number => gateway.tasks.filter((t) => t.direction === d && pending(t)).length;
   return (
     <div className={s.page}>
       <div className={s.inner}>
@@ -168,7 +174,7 @@ export function RequestsView() {
           <span className={s.grow} />
           {composing ? null : (
             <Button icon="claude" onClick={() => setComposing(true)}>
-              Ask Someone’s Claude…
+              Ask Someone’s Agent…
             </Button>
           )}
         </div>
@@ -190,10 +196,15 @@ export function RequestsView() {
             ))
           ) : (
             <div className={s.empty}>
-              {tab === 'sent' ? 'Nothing sent yet. Ask your Claude to get something from a friend’s Claude (“ask bob to run the tests”).' : 'Nothing received yet. When a friend’s Claude asks yours for something, it shows here.'}
+              {done ? 'Nothing waiting. Everything here has been answered.' : tab === 'sent' ? 'Nothing sent yet. Ask your agent to get something from a friend’s agent (“ask bob to run the tests”).' : 'Nothing received yet. When a friend’s agent asks yours for something, it shows here.'}
             </div>
           )}
         </div>
+        {done ? (
+          <Button variant="quiet" onClick={() => setAnswered(!answered)}>
+            {answered ? 'Hide answered' : `Show answered · ${done}`}
+          </Button>
+        ) : null}
       </div>
     </div>
   );

@@ -22,6 +22,8 @@ export interface Outgoing {
   readonly expiresAt: number;
   /** When it was last handed to a link or the room (resent if no ack comes). */
   readonly sentAt?: number;
+  /** When it went to their mailbox (BLG-272: they and you weren't online together). */
+  readonly mailedAt?: number;
 }
 
 const TasksFile = z.object({ version: z.literal(1), tasks: z.array(z.unknown()), cards: z.record(z.string(), z.unknown()).default({}), pending: z.record(z.string(), z.unknown()).default({}) });
@@ -102,6 +104,11 @@ export class TaskBook {
     this.saveOutbox(this.outbox.map((o) => (o.frame.f === frameId ? { ...o, sentAt: at } : o)));
   }
 
+  /** It's in their mailbox. */
+  mailed(frameId: string, at = Date.now()): void {
+    this.saveOutbox(this.outbox.map((o) => (o.frame.f === frameId ? { ...o, mailedAt: at } : o)));
+  }
+
   /** They got it. */
   acked(from: string, frameId: string): Outgoing | undefined {
     const hit = this.outbox.find((o) => o.frame.f === frameId && o.to === from);
@@ -114,6 +121,16 @@ export class TaskBook {
     const gone = this.outbox.filter((o) => o.expiresAt <= now);
     if (gone.length) this.saveOutbox(this.outbox.filter((o) => o.expiresAt > now));
     return gone;
+  }
+
+  /** Forget a task: it, anything still waiting to go for it, and a result waiting for its files. */
+  remove(taskId: string): void {
+    this.dropTask(taskId);
+    this.setPending(taskId, undefined);
+    const next = this.tasks.filter((t) => t.id !== taskId);
+    if (next.length === this.tasks.length) return;
+    this.tasks = next;
+    this.save();
   }
 
   /** Drop what's waiting for one task (it was cancelled before it left). */

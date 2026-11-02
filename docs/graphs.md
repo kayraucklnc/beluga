@@ -1,25 +1,25 @@
 # Graphs (`beluga-graph`, Mac app)
 
-Claude can draw. When a picture explains better than prose, Claude adds a fenced block tagged `beluga-graph` with JSON in it, and the Mac app draws it as an interactive diagram. Examples: architecture, how parts talk, a request or data flow, a pipeline, a data model, dependencies, a plan, what a change touched.
+Your agent can draw. When a picture explains better than prose, it adds a fenced block tagged `beluga-graph` with JSON in it, and the Mac app draws it as an interactive diagram. Examples: architecture, how parts talk, a request or data flow, a pipeline, a data model, dependencies, a plan, what a change touched.
 
-- **How to ask:** `/visualize <what>` (or ⌘K › *Draw This as a Graph*). Words like "visualize", "diagram" or "map out" in any message work too, and Claude also draws on its own when it helps.
+- **How to ask:** `/visualize <what>` (or ⌘K › *Draw This as a Graph*). Words like "visualize", "diagram" or "map out" in any message work too, and the agent also draws on its own when it helps.
 - **Where graphs show:** answers in any conversation, reports, and Markdown files opened in Beluga.
 
 ## What you can do with one
 
 - **Point** at a node: it and everything it touches light up, and the rest fades.
 - **Click** a node for its details:
-  - Claude's notes (Markdown)
+  - the agent's notes (Markdown)
   - a database's fields
   - links: files open in Beluga, pages in the browser
   - its connections: click one to go there
-- **Walk Me Through It** (▶) steps through the walkthrough Claude wrote. Each step frames a few nodes, with a caption. Use ← and → to move, Esc to leave.
+- **Walk Me Through It** (▶) steps through the walkthrough the agent wrote. Each step frames a few nodes, with a caption. Use ← and → to move, Esc to leave.
 - **Turn the layout** between left-to-right and top-to-bottom.
 - **Drag** nodes around. Their lines follow.
 - **Open in Full Window:** room to explore, a minimap, zoom buttons, two-finger scroll to pan, pinch to zoom. Esc closes.
 - **Copy as JSON** (also in the right-click menu).
 
-In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag to pan. A graph is laid out the way that reads biggest in its frame: as Claude drew it if it fits, else turned top-to-bottom, and a very long chain wraps onto more rows. The card's height follows the graph.
+In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag to pan. A graph is laid out the way that reads biggest in its frame: as the agent drew it if it fits, else turned top-to-bottom, and a very long chain wraps onto more rows. The card's height follows the graph.
 
 ## The format
 
@@ -72,7 +72,8 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
 | `links` | up to 8 `{label, href}`: a URL, an absolute path, or a path in the workspace |
 | `emphasis` | `true` marks what matters (an accent ring) |
 | `fields` | a database's columns: `{name, type?, key?: "pk" \| "fk", note?}` |
-| `image` | an `image` node's picture: an absolute path on this Mac (shown only in your own and your Claude's messages) |
+| `items` | a node's own steps, drawn inside it in order: `{label, status?, note?}` (a CI job's steps, a pipeline stage's tasks); up to 40 |
+| `image` | an `image` node's picture: an absolute path on this Mac (shown only in your own and your agent's messages) |
 | `value` | a `metric` node's number ("87%") |
 
 **Kinds:**
@@ -106,23 +107,24 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
 
 - Small mistakes are left out, and the card says how many: a duplicate id, an edge to a node that doesn't exist, a `group` that isn't a group or would contain itself.
 - A block that can't be drawn shows what's wrong and its JSON.
-- While Claude is still writing the block, the card says *Drawing a graph…*.
+- While the agent is still writing the block, the card says *Drawing a graph…*.
 
 ## How it works
 
 - **Format:** `src/shared/graph-spec.ts` (zod, browser-safe). The JSON is only data: nothing in it runs, and Markdown in `details` goes through the chat's renderer.
-- **Teaching Claude:** `src/agent/graph-prompt.ts` is added to every run's system prompt.
+- **Teaching the agent:** `src/agent/graph-prompt.ts` is added to every run's system prompt.
 - **`/visualize`:** `runCommand` in `src/core/commands.ts` (`visualizePrompt`).
 - **Drawing:** `packages/mac/src/components/graph/`:
   - `GraphBlock.tsx`: the card, the errors, the full window
   - `FlowGraph.tsx`: React Flow (`@xyflow/react`); it measures nodes out of sight, lays them out, then shows them
-  - `layout.ts`: ELK (`elkjs`), layered, groups as compound nodes, orthogonal lines that ELK routes. `FlowGraph.tsx` tries both ways round, plainly and wrapped to the frame's shape, and keeps the one that reads biggest (`bestLayout` in `graph-model.ts`)
+  - `layout.ts`: ELK (`elkjs`), layered, groups as compound nodes, orthogonal lines that ELK routes. A line that would close a loop (an answer to a call) is handed to ELK turned back, in the order lines were written (`backEdges`), so the flow reads one way. Every label gets room of its own on its line, and `placeLabels` moves any that would still cover a node or another label. `FlowGraph.tsx` tries both ways round, plainly and wrapped to the frame's shape, and keeps the one that reads biggest (`bestLayout` in `graph-model.ts`; wrapping, whose lines loop back across the graph, only when it reads far bigger)
   - `graph-model.ts`: the pure parts, tested in `tests/mac-graph.test.ts`
   - `nodes.tsx`, `edges.tsx`, `Inspector.tsx`, `Walkthrough.tsx`
 - **Load time:** React Flow and ELK load the first time a graph shows.
+- **Mermaid, drawn our way:** a ```` ```mermaid ```` block is read into this format (`src/shared/render/mermaid.ts`) and drawn as a graph: flowcharts (shapes become kinds: `[(db)]` a database, `{x}` a decision; names like "Postgres" or "User" pick a kind too; subgraphs become groups; `:::done` a status), state diagrams, ER diagrams (entities as tables with their fields), class diagrams and sequence diagrams (each message a numbered line and a step of the walkthrough). A `pie` becomes a donut chart and a `gantt` a gantt view (docs/views.md). Anything else (mindmaps, journeys…) is left to Mermaid itself on the Mac.
 - **Where blocks are found:** the chat's Markdown (`chat/Markdown.tsx`) and the document reader (`components/markdown/MarkdownDoc.tsx`) both hand ```` ```beluga-graph ```` blocks to `GraphBlock`.
 - **Demo:** the demo daemon (`npm run dev` at the repo root) answers "visualize…" with a payment-flow graph (`src/agent/mock-graphs.ts`).
 
-For tables, charts, stat tiles, code and colors (live from a file, database, web address or command), see [Views](views.md). Claude's `show` tool makes graphs too.
+For tables, charts, stat tiles, code and colors (live from a file, database, web address or command), see [Views](views.md). The agent's `show` tool makes graphs too.
 
 Graphs are the drawing engine for [Tasks and Plans](tasks-and-plans.md): plans, dependency graphs and milestone recaps are drawn with them.

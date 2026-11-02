@@ -1,5 +1,5 @@
 import { type MouseEvent, useState } from 'react';
-import { type Issue, type Proof, STATUS_INFO, blocking, childrenOf, issueById, progressOf } from '@beluga/core/board/model.js';
+import { type Issue, type Proof, STATUS_INFO, blocking, childrenOf, issueById, progressOf, taskFiles, taskProof } from '@beluga/core/board/model.js';
 import { Thumb } from '../chat/ChatImages.js';
 import { localImage } from '../chat/md-images.js';
 import { GraphBlock } from '../components/graph/GraphBlock.js';
@@ -15,8 +15,9 @@ import { ago } from './tasks-model.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
+import { primaryKey, primaryLabel } from '../lib/shortcuts-model.js';
 
-/** A task page's lists: its sub-tasks, what waits on what, and the proof that it works. */
+/** A task page's lists: its sub-tasks, what waits on what, the files added for the work, and the proof that it works. */
 
 function TaskLine({ issue, onRemove, removeLabel }: { issue: Issue; onRemove?: () => void; removeLabel?: string }) {
   const selfId = useSelfId();
@@ -123,21 +124,51 @@ export function Relations({ issue }: { issue: Issue }) {
   );
 }
 
-async function pickFile(title: string): Promise<string | undefined> {
-  if (!inApp()) return undefined;
+async function pickFiles(title: string, multiple = false): Promise<string[]> {
+  if (!inApp()) return [];
   const { open } = await import('@tauri-apps/plugin-dialog');
-  const picked = await open({ multiple: false, title });
-  return typeof picked === 'string' ? picked : undefined;
+  const picked = await open({ multiple, title });
+  return picked === null ? [] : Array.isArray(picked) ? picked : [picked];
 }
 
 const IMAGE = /\.(png|jpe?g|gif|webp|heic|svg)$/i;
+
+/**
+ * Files someone added for the work (dropped on the task, its card or its row, or picked with +):
+ * Beluga keeps a copy, they open in place, and the Claude doing the task gets their paths.
+ */
+export function FilesList({ issue }: { issue: Issue }) {
+  const { api, act } = useTaskActions();
+  const files = taskFiles(issue);
+  const add = async (): Promise<void> => {
+    for (const path of await pickFiles('Add files to this task', true)) {
+      const name = path.split('/').pop() ?? path;
+      await act(() => api.addProof(issue.id, { kind: IMAGE.test(path) ? 'image' : 'file', title: name.slice(0, 120), path, context: true }));
+    }
+  };
+  return (
+    <section className={t.block} aria-label="Files">
+      <header className={t.blockHead}>
+        <h3 className={t.sectionTitle}>Files</h3>
+        {files.length ? <span className={t.sectionCount}>{files.length}</span> : null}
+        <span className={t.grow} />
+        {inApp() ? <IconButton icon="plus" label="Add Files" onClick={() => void add()} /> : null}
+      </header>
+      {files.length ? (
+        <ProofItems issue={issue} items={files} />
+      ) : (
+        <div className={t.relationEmpty}>{inApp() ? 'Drop files here, or on the task’s card, for the work to use. Your agent gets them too.' : 'Files added for the work show here.'}</div>
+      )}
+    </section>
+  );
+}
 
 /** Proof: screenshots, pages, files, graphs and results that show the work, people's and Claude's. */
 export function ProofList({ issue }: { issue: Issue }) {
   const { api, act } = useTaskActions();
   const [link, setLink] = useState<string>();
   const addFile = async (): Promise<void> => {
-    const path = await pickFile('Add proof to this task');
+    const [path] = await pickFiles('Add proof to this task');
     if (!path) return;
     const name = path.split('/').pop() ?? path;
     await act(() => api.addProof(issue.id, { kind: IMAGE.test(path) ? 'image' : 'file', title: name, path }));
@@ -185,24 +216,24 @@ export function ProofList({ issue }: { issue: Issue }) {
           />
         </div>
       ) : null}
-      {issue.proof.length ? (
+      {taskProof(issue).length ? (
         <ProofItems issue={issue} />
       ) : link === undefined ? (
-        <div className={t.relationEmpty}>Screenshots, pages and results that show it works. Claude adds them as it goes.</div>
+        <div className={t.relationEmpty}>Screenshots, pages and results that show it works. The agent adds them as it goes.</div>
       ) : null}
     </section>
   );
 }
 
-/** A task's proof, newest first (on its page, and in a plan's task details). */
+/** A task's proof (or its files: `items`), newest first (on its page, and in a plan's task details). */
 /** `readOnly`: shown elsewhere (a plan's details), so without a remove button. */
-export function ProofItems({ issue, readOnly = false }: { issue: Issue; readOnly?: boolean }) {
+export function ProofItems({ issue, items = taskProof(issue), readOnly = false }: { issue: Issue; items?: readonly Proof[]; readOnly?: boolean }) {
   const { api, act } = useTaskActions();
   // A gone file isn't asked for (it would only fail): it shows as gone, and the lightbox skips it.
-  const images = issue.proof.filter((p) => p.kind === 'image' && p.path && !p.gone).map((p) => localImage(p.path!, p.title));
+  const images = items.filter((p) => p.kind === 'image' && p.path && !p.gone).map((p) => localImage(p.path!, p.title));
   return (
     <div className={t.proof}>
-      {issue.proof
+      {items
         .slice()
         .reverse()
         .map((p) => (
@@ -215,7 +246,7 @@ export function ProofItems({ issue, readOnly = false }: { issue: Issue; readOnly
 function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnType<typeof localImage>[]; onRemove: (() => void) | undefined }) {
   const actions = useActions();
   const [preview, setPreview] = useState(false);
-  const by = `${proof.by.kind === 'claude' ? 'Claude' : proof.by.kind === 'person' ? proof.by.name : 'Beluga'} · ${ago(proof.at)}`;
+  const by = `${proof.by.kind === 'claude' ? 'Agent' : proof.by.kind === 'person' ? proof.by.name : 'Beluga'} · ${ago(proof.at)}`;
   const remove = onRemove ? <IconButton icon="x" label={`Remove ${proof.title}`} className={t.proofRemove} onClick={onRemove} /> : null;
   if (proof.kind === 'graph' && proof.body) {
     return (
@@ -280,13 +311,13 @@ function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnTy
   // A file opens over this page at once; ⌘-click shows it in the Files view (as it used to).
   const open = (e: MouseEvent): void => {
     if (url) actions.openLink({ kind: 'url', url });
-    else if (path && e.metaKey) actions.openLink({ kind: 'local', path, dir: false });
+    else if (path && primaryKey(e)) actions.openLink({ kind: 'local', path, dir: false });
     else if (path) setPreview(true);
   };
   return (
     <figure className={cx(t.proofItem, t.proofCard)}>
       {preview && path ? <ProofPreview proof={{ ...proof, path }} onClose={() => setPreview(false)} /> : null}
-      <Tip label={url ?? (path ? `${path} · ⌘-click to show in Files` : proof.title)}>
+      <Tip label={url ?? (path ? `${path} · ${primaryLabel()}-click to show in Files` : proof.title)}>
         <button type="button" className={t.proofLink} onClick={open} onPointerEnter={path && !url ? preloadReader : undefined}>
           <Icon name={url ? 'globe' : 'file'} size={14} />
           <span className={t.proofTitle}>{proof.title}</span>

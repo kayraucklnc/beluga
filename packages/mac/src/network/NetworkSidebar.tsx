@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FriendView, GroupView } from '@beluga/net/mesh/views.js';
+import type { FriendOfferView, FriendView, GroupView } from '@beluga/net/mesh/views.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { Avatar, Badge, Button, IconButton, Tip, cx } from '../components/ui.js';
+import { useActions } from '../lib/actions.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { sameDeep } from '../lib/stable.js';
 import { Row, Section } from '../layout/sidebar-parts.js';
+import { optionIndex } from '../dialogs/native/parts.js';
+import { openPerson } from '../dialogs/native/PersonPopover.js';
+import { PersonContextMenu } from '../dialogs/native/PersonMenu.js';
+import { PersonButton } from './PersonProfile.js';
 import { GroupAvatar, PersonAvatar } from './Avatars.js';
-import { dmId, groupId, membersLine, openGroupInvitation, presenceLine, shownState, sortFriends, sortGroups } from './net-model.js';
+import { type RoomBits, type RoomPerson, dmId, groupId, incomingOffers, membersLine, notFriendsYet, offerSent, openGroupInvitation, presenceLine, roomBits, shownState, sortFriends, sortGroups } from './net-model.js';
 import { openNet } from './net-sheets.js';
-import { errorText, openDm, openGroup, quietly, useNetwork, useSay } from './use-net.js';
+import { answerOffer, befriend, errorText, openDm, openFriendCard, openGroup, quietly, useNetwork, useSay } from './use-net.js';
 import { channelName, isMain } from './chat-model.js';
 import { openMain } from './ChatTabs.js';
 import side from '../layout/Sidebar.module.css';
@@ -64,10 +70,24 @@ function Welcome() {
   );
 }
 
-function friendItems(f: FriendView, groups: readonly GroupView[], ctx: { open: () => void; say: (t: string) => void; addTo: (g: GroupView) => void }): ActionItem[] {
+/** A friend who's in your room too: following their screen, and their room card (sharing, workspaces). */
+interface RoomCtx {
+  readonly bits: RoomBits;
+  readonly follow: () => void;
+  readonly roomCard: () => void;
+}
+
+function friendItems(f: FriendView, groups: readonly GroupView[], ctx: { open: () => void; card: () => void; say: (t: string) => void; addTo: (g: GroupView) => void; room?: RoomCtx | undefined }): ActionItem[] {
   const mine = sortGroups(groups).filter((g) => g.active && g.admin && !g.members.some((m) => m.peerId === f.peerId));
   return [
     { label: 'Message', icon: 'chat', onSelect: ctx.open },
+    { label: `${f.name}’s Card…`, icon: 'person', onSelect: ctx.card },
+    ...(ctx.room
+      ? [
+          { label: ctx.room.bits.following ? `Stop Following ${f.name}` : `Follow ${f.name}’s Screen`, icon: 'eye' as const, separate: true, onSelect: ctx.room.follow },
+          { label: 'In This Room…', icon: 'people' as const, onSelect: ctx.room.roomCard },
+        ]
+      : []),
     {
       label: 'Add to Channel',
       icon: 'people',
@@ -83,9 +103,12 @@ function friendItems(f: FriendView, groups: readonly GroupView[], ctx: { open: (
 }
 
 function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] }) {
-  const { client } = useBeluga();
+  const { client, ui } = useBeluga();
+  const actions = useActions();
   const say = useSay();
   const selected = useApp((st) => st.view.kind === 'conversation' && st.view.id === dmId(f.peerId));
+  // In your room too: the room's bits join their friend row (there's no second list of people).
+  const bits = useApp((st) => roomBits(st.peers, f.peerId, st.follow), sameDeep);
   const state = shownState(f);
   const note = state !== 'offline' ? f.presence.note?.trim() : undefined;
   const addTo = (g: GroupView): void => {
@@ -94,12 +117,29 @@ function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] 
       () => undefined,
     );
   };
+  const room: RoomCtx | undefined = bits
+    ? {
+        bits,
+        follow: () => {
+          const menu = { kind: 'person', index: bits.index } as const;
+          const i = optionIndex(client.store.getState(), menu, bits.following ? 'unfollow' : 'follow');
+          if (i >= 0) actions.pick(menu, i);
+        },
+        roomCard: () => openPerson(ui, bits.index),
+      }
+    : undefined;
+  const roomLine = bits ? ` · in your room${bits.claude ? ' · agent on' : ''}${bits.following ? ' · you follow their screen' : ''}` : '';
   return (
-    <ActionsContext items={() => friendItems(f, groups, { open: () => openDm(client, f.peerId), say, addTo })}>
+    <ActionsContext items={() => friendItems(f, groups, { open: () => openDm(client, f.peerId), card: () => openFriendCard(client, f.peerId), say, addTo, room })}>
       <Row
         data-friend-row={f.peerId}
+        data-person-row={bits ? f.peerId : undefined}
         selected={selected}
-        icon={<PersonAvatar name={f.name} id={f.peerId} state={state} size={18} />}
+        icon={
+          <PersonButton peerId={f.peerId} name={f.name}>
+            <PersonAvatar name={f.name} id={f.peerId} state={state} size={18} />
+          </PersonButton>
+        }
         aria-label={`${f.name}, ${presenceLine(f)}${f.unread ? `, ${f.unread} unread` : ''}`}
         label={
           <span className={s.who}>
@@ -107,10 +147,20 @@ function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] 
             {note ? <span className={s.whoNote}>{note}</span> : null}
           </span>
         }
-        detail={`${f.name} · ${presenceLine(f)}${f.via === 'relay' ? ' · connected through another Mac' : ''}`}
+        detail={`${f.name} · ${presenceLine(f)}${f.via === 'relay' ? ' · connected through another Mac' : ''}${roomLine}`}
         onClick={() => openDm(client, f.peerId)}
         trailing={
           <>
+            {bits?.following ? (
+              <Tip label="Following their screen">
+                <Icon name="eye" size={12} />
+              </Tip>
+            ) : null}
+            {bits?.claude ? (
+              <Tip label={`${f.name}’s agent is on in this room`}>
+                <Icon name="claude" size={12} className={side.claudeMark} />
+              </Tip>
+            ) : null}
             {f.via === 'relay' && f.online ? (
               <Tip label="Connected through another member’s Mac (still end-to-end encrypted)">
                 <span className={s.relay}>
@@ -220,13 +270,74 @@ function GroupRow({ g }: { g: GroupView }) {
   );
 }
 
-/** Friends: everyone you've added, with their status; or the card that turns the network on. */
+/** Someone in your room asks to be friends: one main action (Accept); Not Now on right-click. */
+function OfferRow({ o }: { o: FriendOfferView }) {
+  const { client } = useBeluga();
+  return (
+    <ActionsContext
+      items={() => [
+        { label: 'Accept', icon: 'check', onSelect: () => void answerOffer(client, o.peerId, o.name, true) },
+        { label: 'Not Now', icon: 'x', separate: true, onSelect: () => void answerOffer(client, o.peerId, o.name, false) },
+      ]}
+    >
+      <Row
+        data-offer-row={o.peerId}
+        icon={<Avatar name={o.name} id={o.peerId} size={18} />}
+        aria-label={o.via ? `${o.name} from the ${o.via} team wants to add you as a friend` : `${o.name} wants to add you as a friend`}
+        label={<span className={s.whoName}>{o.name} wants to add you</span>}
+        detail={o.via ? `${o.name} is on the ${o.via} team with you and asks to be friends on the Beluga network` : `${o.name} is in your room and asks to be friends on the Beluga network`}
+        onClick={() => void answerOffer(client, o.peerId, o.name, true)}
+        trailing={
+          <Button size="small" variant="primary" onClick={(e) => (e.stopPropagation(), void answerOffer(client, o.peerId, o.name, true))}>
+            Accept
+          </Button>
+        }
+      />
+    </ActionsContext>
+  );
+}
+
+/** Someone in your room who isn't a friend yet: their room card on click, and one action, Add as Friend. */
+function RoomPersonRow({ p, sent }: { p: RoomPerson & { index: number }; sent: boolean }) {
+  const { client, ui } = useBeluga();
+  return (
+    <PersonContextMenu index={p.index}>
+      <Row
+        data-person-row={p.peerId}
+        icon={<Avatar name={p.name} id={p.peerId} size={18} />}
+        label={<span className={s.whoName}>{p.name}</span>}
+        detail={`${p.name} · in your room${p.agent ? ' · agent on' : ''}${sent ? ' · friend request sent' : ''}`}
+        onClick={() => openPerson(ui, p.index, document.querySelector<HTMLElement>(`[data-person-row="${CSS.escape(p.peerId)}"]`))}
+        trailing={
+          sent ? (
+            <Tip label="Waiting for them to accept">
+              <Icon name="clock" size={12} />
+            </Tip>
+          ) : (
+            <Tip label={`Add ${p.name} as a friend`}>
+              <Button size="small" variant="quiet" icon="plus" aria-label={`Add ${p.name} as a friend`} onClick={(e) => (e.stopPropagation(), void befriend(client, p.peerId, p.name))}>
+                Add
+              </Button>
+            </Tip>
+          )
+        }
+      />
+    </PersonContextMenu>
+  );
+}
+
+/** Friends: everyone you've added, with their status; or the card that turns the network on. Then people in your room who aren't friends yet. */
 export function FriendsSection() {
   const net = useNetwork();
   const friends = sortFriends(net.friends);
+  const offers = incomingOffers(net.offers);
+  const strangers = useApp((st) => notFriendsYet(st.peers, { selfId: st.self?.peerId, friends: st.network.friends, guests: st.guests }), sameDeep);
   return (
     <Section id="friends" title="Friends" action={net.enabled ? <IconButton icon="plus" label="Add a friend" onClick={() => openNet({ kind: 'add_friend' })} /> : undefined}>
       <div className={s.sidebarList}>
+        {offers.map((o) => (
+          <OfferRow key={o.peerId} o={o} />
+        ))}
         {!net.enabled ? (
           <Welcome />
         ) : (
@@ -234,12 +345,22 @@ export function FriendsSection() {
             {friends.map((f) => (
               <FriendRow key={f.peerId} f={f} groups={net.groups} />
             ))}
-            {friends.length ? null : <Row className={side.hintRow} icon={<Icon name="plus" size={13} />} label="Add a friend…" detail="Send them a link or a code; they’re a friend once they use it" onClick={() => openNet({ kind: 'add_friend' })} />}
+            {friends.length || strangers.length ? null : <Row className={side.hintRow} icon={<Icon name="plus" size={13} />} label="Add a friend…" detail="Send them a link or a code; they’re a friend once they use it" onClick={() => openNet({ kind: 'add_friend' })} />}
             {net.pendingJoins.map((p) => (
               <Row key={p.groupId} className={side.hintRow} icon={<Icon name="clock" size={13} />} label={`Asked to join ${p.name}`} detail="Waiting for an admin of the group to let you in" />
             ))}
           </>
         )}
+        {strangers.length ? (
+          <>
+            <div className={s.subhead} role="presentation">
+              Not friends yet
+            </div>
+            {strangers.map((p) => (
+              <RoomPersonRow key={p.peerId} p={p} sent={offerSent(net.offers, p.peerId)} />
+            ))}
+          </>
+        ) : null}
       </div>
     </Section>
   );

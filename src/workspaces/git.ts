@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { PROJECT_DIR } from '../shared/scratch-dir.js';
 import { limiter } from './limit.js';
@@ -10,10 +10,10 @@ export class GitError extends Error {}
 /** Git must never ask for a password on Beluga's screen: fail instead, and say why. */
 const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
 
-/** Run git in a directory; resolves stdout, rejects with git's own message. */
-export function git(cwd: string, args: readonly string[], timeoutMs = 60_000): Promise<string> {
+/** Run git in a directory; resolves stdout, rejects with git's own message. `env`: more of git's environment (GIT_INDEX_FILE…). */
+export function git(cwd: string, args: readonly string[], timeoutMs = 60_000, env?: Readonly<Record<string, string>>): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', [...args], { cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env: GIT_ENV }, (err, stdout, stderr) => {
+    execFile('git', [...args], { cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env: env ? { ...GIT_ENV, ...env } : GIT_ENV }, (err, stdout, stderr) => {
       if (err) reject(new GitError((stderr || err.message).trim()));
       else resolve(stdout);
     });
@@ -30,15 +30,21 @@ export interface WorktreeEntry {
   readonly bare: boolean;
 }
 
+/**
+ * A path as git prints it, the way this system writes paths: git for Windows says
+ * C:/Users/you/app, which Windows (and every path Beluga keeps) writes C:\Users\you\app.
+ */
+export const fromGit = (p: string, platform: NodeJS.Platform = process.platform): string => (platform === 'win32' && p ? path.win32.normalize(p) : p);
+
 export function parseWorktreeList(porcelain: string): WorktreeEntry[] {
   return porcelain
-    .split('\n\n')
+    .split(/\r?\n\r?\n/)
     .map((block) => block.trim())
     .filter(Boolean)
     .map((block) => {
       const fields = new Map(block.split('\n').map((l) => [l.split(' ')[0] ?? '', l.slice(l.indexOf(' ') + 1)] as const));
       const branch = fields.get('branch')?.replace(/^refs\/heads\//, '');
-      return { path: fields.get('worktree') ?? '', head: fields.get('HEAD'), branch, detached: fields.has('detached'), bare: fields.has('bare') };
+      return { path: fromGit(fields.get('worktree') ?? ''), head: fields.get('HEAD'), branch, detached: fields.has('detached'), bare: fields.has('bare') };
     })
     .filter((w) => w.path);
 }
@@ -54,7 +60,8 @@ export async function isGitRepo(dir: string): Promise<boolean> {
 /** The main checkout of the repo `dir` belongs to (works from inside a worktree too). */
 export async function mainCheckout(dir: string): Promise<string | undefined> {
   const common = (await tryGit(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']))?.trim();
-  return common?.endsWith('/.git') ? common.slice(0, -5) : undefined;
+  const gitDir = common ? fromGit(common) : undefined;
+  return gitDir && path.basename(gitDir) === '.git' ? path.dirname(gitDir) : undefined;
 }
 
 /** origin's default branch, e.g. "origin/main"; falls back to a local main/master. */
@@ -123,6 +130,41 @@ export interface Status {
   readonly behind: number;
   /** Without a base (the main checkout): the branch it tracks and how it compares, as of the last fetch. */
   readonly upstream?: { readonly name: string; readonly ahead: number; readonly behind: number };
+  /**
+   * Its commits are already in the base (or what the base tracks, e.g. origin/main): merged
+   * there by a pull request, squashed, or merged by hand outside Beluga.
+   */
+  readonly landed?: true;
+}
+
+/** Whether a branch's work is in a base, by (HEAD, base) commit: the answer never changes for the same two. */
+const landedCache = new Map<string, boolean>();
+
+/**
+ * Whether HEAD's work is already in `into`: HEAD is part of it, or every file the branch changed
+ * reads the same there (a squash merge). Read-only git calls.
+ */
+async function landedIn(dir: string, head: string, into: string): Promise<boolean> {
+  const key = `${head}:${into}`;
+  const known = landedCache.get(key);
+  if (known !== undefined) return known;
+  let landed = await git(dir, ['merge-base', '--is-ancestor', head, into], 15_000).then(() => true, () => false);
+  if (!landed) {
+    const files = (await tryGit(dir, ['diff', '--name-only', '--no-renames', `${into}...${head}`]))?.split('\n').filter(Boolean) ?? [];
+    if (files.length && files.length <= 2000) landed = await git(dir, ['diff', '--quiet', '--no-renames', into, head, '--', ...files], 15_000).then(() => true, () => false);
+  }
+  if (landedCache.size > 2000) landedCache.clear();
+  landedCache.set(key, landed);
+  return landed;
+}
+
+/** Whether a branch ahead of `base` has already landed in it, or in what it tracks. */
+async function hasLanded(dir: string, base: string): Promise<boolean> {
+  const sha = (ref: string): Promise<string | undefined> => tryGit(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).then((s) => s?.trim() || undefined);
+  const [head, ...intos] = await Promise.all(['HEAD', base, `${base}@{upstream}`].map(sha));
+  if (!head) return false;
+  for (const into of new Set(intos)) if (into && (await landedIn(dir, head, into))) return true;
+  return false;
 }
 
 /** Status reads run a few at a time (each is one or two git processes): a refresh of many worktrees never forks dozens at once. */
@@ -133,23 +175,110 @@ export function status(dir: string, base?: string): Promise<Status> {
   return statusSlots(() => readStatus(dir, base));
 }
 
+/**
+ * A worktree's commits against its base, by what git keeps its branches in (BLG-407): HEAD, every
+ * ref and the files that say how refs and history read. The same mark means the same answer.
+ */
+interface RefsCounts {
+  readonly mark: string;
+  readonly at: number;
+  readonly ahead: number;
+  readonly behind: number;
+  readonly landed: boolean;
+}
+const refsCounts = new Map<string, RefsCounts>();
+/** Counted again at least this often, mark or not. */
+export const REFS_RECOUNT_MS = 5 * 60_000;
+/** A file changed this recently may change again without its time moving (a disk that keeps whole seconds): not trusted yet. */
+const RACY_MS = 2_000;
+/** More refs than this: just ask git each time. */
+const MAX_MARKED = 5_000;
+
+/** The git folders of a checkout: its own (HEAD) and the shared one (refs, config). */
+async function gitDirsOf(dir: string): Promise<{ own: string; common: string } | undefined> {
+  const dotGit = path.join(dir, '.git');
+  const st = await stat(dotGit).catch(() => undefined);
+  if (!st) return undefined;
+  if (st.isDirectory()) return { own: dotGit, common: dotGit };
+  const line = /^gitdir: (.+)$/m.exec(await readFile(dotGit, 'utf8').catch(() => ''))?.[1]?.trim();
+  if (!line) return undefined;
+  const own = path.resolve(dir, line);
+  const common = (await readFile(path.join(own, 'commondir'), 'utf8').catch(() => undefined))?.trim();
+  return { own, common: common ? path.resolve(own, common) : own };
+}
+
+/**
+ * The mark of everything a `base...HEAD` count reads besides the commits themselves (which never
+ * change): HEAD, every loose ref and the folders they sit in, packed-refs, config, shallow and
+ * grafts. Undefined when it can't be trusted (refs kept elsewhere, too many, or one just changed).
+ */
+export async function refsMark(dir: string): Promise<string | undefined> {
+  const dirs = await gitDirsOf(dir);
+  if (!dirs) return undefined;
+  const { own, common } = dirs;
+  if (await stat(path.join(common, 'reftable')).then(() => true, () => false)) return undefined;
+  const files = [path.join(own, 'HEAD'), path.join(own, 'config.worktree'), path.join(common, 'config'), path.join(common, 'packed-refs'), path.join(common, 'shallow'), path.join(common, 'info', 'grafts')];
+  const home = process.env.HOME;
+  if (home) files.push(path.join(home, '.gitconfig'), path.join(process.env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'git', 'config'));
+  const refDirs = [...new Set([path.join(common, 'refs'), path.join(own, 'refs')])];
+  const walked: string[] = [];
+  const walk = async (d: string): Promise<boolean> => {
+    walked.push(d);
+    const entries = await readdir(d, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (walked.length + files.length > MAX_MARKED) return false;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) {
+        if (!(await walk(p))) return false;
+      } else files.push(p);
+    }
+    return true;
+  };
+  for (const d of refDirs) if (!(await walk(d))) return undefined;
+  const now = Date.now();
+  const parts = await Promise.all(
+    [...walked, ...files].map(async (p) => {
+      const s = await stat(p, { bigint: true }).catch(() => undefined);
+      if (!s) return `${p}:-`;
+      if (now - Number(s.mtimeMs) < RACY_MS || now - Number(s.ctimeMs) < RACY_MS) return undefined;
+      return `${p}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+    }),
+  );
+  if (parts.some((p) => p === undefined)) return undefined;
+  return parts.join('\n');
+}
+
+/** Commits ahead of and behind `base`, and whether they landed there: git asked only when its refs moved (or every few minutes). */
+async function countAgainst(dir: string, base: string): Promise<{ ahead: number; behind: number; landed: boolean }> {
+  const key = `${dir}\0${base}`;
+  // Marked before git counts, so a ref that moves while it counts shows as a change next time.
+  const mark = await refsMark(dir).catch(() => undefined);
+  const known = refsCounts.get(key);
+  if (mark && known && known.mark === mark && Date.now() - known.at < REFS_RECOUNT_MS) return known;
+  const counts = (await tryGit(dir, ['rev-list', '--left-right', '--count', `${base}...HEAD`]))?.trim().split(/\s+/);
+  const behind = Number(counts?.[0] ?? 0) || 0;
+  const ahead = Number(counts?.[1] ?? 0) || 0;
+  const landed = ahead > 0 && (await hasLanded(dir, base));
+  if (refsCounts.size > 2000) refsCounts.clear();
+  if (mark) refsCounts.set(key, { mark, at: Date.now(), ahead, behind, landed });
+  else refsCounts.delete(key);
+  return { ahead, behind, landed };
+}
+
 async function readStatus(dir: string, base?: string): Promise<Status> {
   // Never take the index lock just to look: a commit (yours or Claude's) may be running.
+  // Always asked: files you edit, and new ones, change nothing git's refs or index would show.
   const out = await git(dir, ['--no-optional-locks', 'status', '--porcelain=v1', '-b']);
   const [head = '', ...files] = out.split('\n').filter(Boolean);
   const branch = /^## (?:No commits yet on )?([^.\s]+)/.exec(head)?.[1];
-  let ahead = 0;
-  let behind = 0;
   if (base) {
-    const counts = (await tryGit(dir, ['rev-list', '--left-right', '--count', `${base}...HEAD`]))?.trim().split(/\s+/);
-    behind = Number(counts?.[0] ?? 0) || 0;
-    ahead = Number(counts?.[1] ?? 0) || 0;
-    return { branch, changed: files.length, ahead, behind };
+    const { ahead, behind, landed } = await countAgainst(dir, base);
+    return { branch, changed: files.length, ahead, behind, ...(landed ? { landed: true as const } : {}) };
   }
   // "## main...origin/main [ahead 1, behind 2]": how the checkout compares to what it tracks.
   const name = /^## [^.\s]+\.\.\.(\S+)/.exec(head)?.[1];
   const upstream = name ? { name, ahead: Number(/ahead (\d+)/.exec(head)?.[1] ?? 0), behind: Number(/behind (\d+)/.exec(head)?.[1] ?? 0) } : undefined;
-  return { branch, changed: files.length, ahead, behind, ...(upstream ? { upstream } : {}) };
+  return { branch, changed: files.length, ahead: 0, behind: 0, ...(upstream ? { upstream } : {}) };
 }
 
 export interface ChangedFile {

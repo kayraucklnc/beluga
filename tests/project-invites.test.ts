@@ -212,7 +212,7 @@ describe('inviting someone into one project by link', () => {
     // The link was single-use: a second person is turned away at the door.
     const zed = person('zed', { secret });
     await waitFor(() => zed.state().log.some((l) => l.type === 'system' && /expired|used|turned off/.test(l.text)));
-  }, 20_000);
+  }, process.platform === 'win32' ? 60_000 : 20_000); // making the demo's repositories with git is slow on Windows' runners
 
   it('decline turns them away; invite to everything makes them a member', async () => {
     hub = await startHub({ keys: roomKeys, hostId: HOST.peerId });

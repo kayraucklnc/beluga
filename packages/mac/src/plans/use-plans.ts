@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Plan, PlansState } from '@beluga/core/plans/model.js';
 import { type PlanView, liveFrom, planView } from '@beluga/core/plans/progress.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
@@ -113,4 +113,52 @@ export function usePlanActions() {
       openWorktree: (workspaceId: string): void => actions.run({ type: 'open_ws', id: workspaceId, tab: 'chat' }),
     };
   }, [api, client, actions]);
+}
+
+/**
+ * A plan's big steps (Open PR, Merge, Resolve Conflicts, Pass): what's under way (its button says so
+ * and waits), and what went wrong (kept on the page, with Try Again, until you dismiss it or it works).
+ * Kept per plan outside the page, so leaving and coming back mid-merge still shows it.
+ */
+export interface PlanTrouble {
+  /** What was being done ("Merge #7 on GitHub"). */
+  readonly what: string;
+  /** Why it didn't happen, in GitHub's or git's words made plain. */
+  readonly why: string;
+  readonly retry?: () => void;
+}
+interface StepState {
+  readonly busy?: string;
+  readonly trouble?: PlanTrouble;
+}
+const steps = new Map<string, StepState>();
+const stepSubs = new Set<() => void>();
+const setStep = (planId: string, next: StepState): void => {
+  steps.set(planId, next);
+  stepSubs.forEach((f) => f());
+};
+const subscribeSteps = (f: () => void): (() => void) => (stepSubs.add(f), () => void stepSubs.delete(f));
+const NO_STEP: StepState = {};
+
+export function usePlanStep(planId: string) {
+  const { client } = useBeluga();
+  const state = useSyncExternalStore(subscribeSteps, () => steps.get(planId) ?? NO_STEP);
+  const run = useCallback(
+    async (what: string, doing: string, task: () => Promise<unknown>, done?: string): Promise<boolean> => {
+      if (steps.get(planId)?.busy) return false;
+      setStep(planId, { busy: doing });
+      try {
+        await task();
+        setStep(planId, {});
+        if (done) toast(client, done, 'success');
+        return true;
+      } catch (err) {
+        setStep(planId, { trouble: { what, why: message(err), retry: () => void run(what, doing, task, done) } });
+        return false;
+      }
+    },
+    [planId, client],
+  );
+  const dismiss = useCallback(() => setStep(planId, {}), [planId]);
+  return { busy: state.busy, trouble: state.trouble, run, dismiss };
 }

@@ -91,6 +91,37 @@
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
   white-space: nowrap;
 }
+/* A label from the set: its icon in its color on a soft wash of it. One outside the set: outlined, a plain tag. */
+.labelKnown {
+  box-shadow: none;
+  background: hsl(var(--hue) var(--sat) 50% / 0.11);
+  color: var(--text);
+}
+.labelIcon {
+  flex: none;
+  color: hsl(var(--hue) var(--sat) 45%);
+}
+:global([data-theme='dark']) .labelIcon,
+:global([data-theme='dark']) .labelMark {
+  color: hsl(var(--hue) var(--sat) 68%);
+}
+:global([data-theme='dark']) .labelKnown {
+  background: hsl(var(--hue) var(--sat) 60% / 0.16);
+}
+.labelOther .labelIcon {
+  color: var(--text-3);
+}
+/* On a card: just the icon (its name in the tooltip). */
+.labelIconOnly {
+  width: 20px;
+  padding: 0;
+  justify-content: center;
+}
+.labelMark {
+  display: inline-grid;
+  place-items: center;
+  color: hsl(var(--hue) var(--sat) 45%);
+}
 .labelDot,
 .labelDotAlone {
   width: 7px;
@@ -203,8 +234,17 @@
   place-items: center;
   width: 16px;
 }
-[data-highlighted] .pickMark {
+/* On the lit row, one-colour marks (status, priority, a label's dot, an icon) turn white; pictures
+   (a repo's icon, someone's avatar) keep their colours, or they'd be white blobs. */
+[data-highlighted] .pickMark > svg,
+[data-highlighted] .pickMark > .labelMark,
+[role='menuitem']:not([data-disabled]):hover .pickMark > svg,
+[role='menuitem']:not([data-disabled]):hover .pickMark > .labelMark {
   filter: brightness(0) invert(1);
+}
+[data-highlighted] .pickMark,
+[role='menuitem']:not([data-disabled]):hover .pickMark {
+  --repo-ring: var(--accent);
 }
 .pickCheck {
   color: var(--accent);
@@ -230,10 +270,12 @@
   overflow: hidden;
   container: tasks / inline-size;
 }
+/* One row at every width: as the panel narrows, the pickers shrink, then the counts, the filter
+   and New Task's word go (container queries below), rather than the bar breaking onto two rows. */
 .bar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px 16px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--hairline);
@@ -243,12 +285,29 @@
 .barGroup {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   min-width: 0;
 }
 .barGroup > * {
   flex-shrink: 0;
+}
+/* The who / worktree pickers give way first. */
+.barGroup > button[aria-haspopup='listbox'] {
+  flex-shrink: 1;
+  min-width: 56px;
+}
+/* Narrower than everything at its smallest: the filters slide sideways under the actions, never over them. */
+.barFilters {
+  flex: 0 1 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* Room for the focus rings the scroll box would clip. */
+  padding: 3px;
+  margin: -3px;
+}
+.barFilters::-webkit-scrollbar {
+  display: none;
 }
 .barActions {
   margin-left: auto;
@@ -262,6 +321,7 @@
 }
 .barActions {
   flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 .find {
   display: flex;
@@ -317,6 +377,17 @@
   font-size: 11px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
+}
+.footLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.footLink:hover {
+  text-decoration: underline;
 }
 
 /* ---------- List ---------- */
@@ -561,6 +632,7 @@
   gap: 6px;
 }
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -598,6 +670,17 @@
 .cardTop .key {
   min-width: 0;
 }
+/* The avatar on a card is a button: its press area reaches past the row without making it taller. */
+.cardAssignee {
+  display: inline-flex;
+  margin: -3px -3px -3px 0;
+}
+.cardAssignee .iconHit {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  padding: 0;
+}
 .cardTitle {
   font-size: 13px;
   font-weight: 500;
@@ -616,6 +699,271 @@
 .card .meta:empty {
   display: none;
 }
+/* Who's on it now (BLG-278): their faces under the card, a ring turning round each whose Claude
+   is at work, and a soft line moving along the card's bottom edge while any is. No glow. */
+.onIt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 1px -11px -10px;
+  padding: 5px 10px 6px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.onItFaces {
+  display: inline-flex;
+  flex: none;
+}
+.onItFace {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+.onItFace + .onItFace {
+  margin-left: -6px;
+}
+.onItFace > span {
+  box-shadow: 0 0 0 1.5px var(--bg-raised);
+}
+.onItLive::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0turn, color-mix(in srgb, var(--claude) 12%, transparent) 0 30%, var(--claude) 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  animation: onItTurn 1.6s linear infinite;
+}
+.onItWords {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onItSheen {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.onItSheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--claude) 70%, transparent), transparent);
+  animation: onItSlide 2.2s var(--ease-out) infinite;
+}
+@keyframes onItTurn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@keyframes onItSlide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onItLive::before {
+    animation: none;
+    background: color-mix(in srgb, var(--claude) 60%, transparent);
+  }
+  .onItSheen::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+/*
+ * An epic (a task with sub-tasks) is a little deck: two card edges peek out under it, an Epic tag
+ * by its key, a stronger title and a bar of its sub-tasks done across the bottom. The card and its
+ * edges carry a soft tint of the epic colour (BLG-320), so the deck reads as one thing, apart from
+ * the plain cards round it. A tint, never a glow.
+ */
+.cardEpic {
+  --epic-face: color-mix(in srgb, var(--epic) 7%, var(--bg-raised));
+  --epic-under: color-mix(in srgb, var(--epic) 4%, var(--bg-raised));
+  --epic-line: color-mix(in srgb, var(--epic) 30%, var(--hairline-strong));
+  --epic-line-soft: color-mix(in srgb, var(--epic) 20%, var(--hairline-strong));
+  margin-bottom: 7px;
+  background: var(--epic-face);
+  box-shadow:
+    0 0 0 1px var(--epic-line),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 0 -2px var(--epic-under),
+    0 4px 0 -1px var(--epic-line-soft),
+    0 8px 0 -4px var(--epic-under),
+    0 8px 0 -3px var(--epic-line-soft);
+}
+.cardEpic:hover,
+.boardDragging .cardEpic:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--epic) 45%, var(--hairline-strong)),
+    0 4px 0 -2px var(--epic-under),
+    0 4px 0 -1px var(--epic-line),
+    0 8px 0 -4px var(--epic-under),
+    0 8px 0 -3px var(--epic-line-soft),
+    0 10px 18px -10px rgba(0, 0, 0, 0.18);
+}
+.cardEpic:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 4px 0 -2px var(--epic-under),
+    0 4px 0 -1px var(--epic-line-soft),
+    0 8px 0 -4px var(--epic-under),
+    0 8px 0 -3px var(--epic-line-soft);
+}
+.cardEpic .cardTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.epicTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 17px;
+  padding: 0 6px 0 5px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--epic);
+  background: color-mix(in srgb, var(--epic) 12%, transparent);
+}
+.epicBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.epicTrack {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--epic) 14%, transparent);
+  overflow: hidden;
+}
+.epicFill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--epic);
+  transition: width var(--dur) var(--ease-out);
+}
+.epicCount {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* The eye on an epic: its sub-tasks shown, or tucked under it (tinted, with how many). */
+.tuck {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  min-width: 22px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.tuck:hover {
+  color: var(--epic);
+  background: color-mix(in srgb, var(--epic) 10%, transparent);
+}
+.tuck:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.tuckAway {
+  color: var(--epic);
+  background: color-mix(in srgb, var(--epic) 12%, transparent);
+}
+.tuckAway:hover {
+  background: color-mix(in srgb, var(--epic) 18%, transparent);
+}
+/*
+ * Sub-tasks opened out of their epic pop in one after another (tik, tik, tik): each drops a touch
+ * and settles with a small overshoot. Only the start is held through the wait, so hover still lifts.
+ */
+.pop {
+  animation: pop-in 360ms cubic-bezier(0.34, 1.45, 0.64, 1) backwards;
+  animation-delay: calc(min(var(--pop, 0), 14) * 60ms);
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.92);
+  }
+}
+/* Tucked back: the same played backwards, quicker and without the bounce, then they leave the board. */
+.tuckOut {
+  animation: tuck-out 240ms cubic-bezier(0.4, 0, 0.9, 0.6) forwards;
+  animation-delay: calc(min(var(--pop, 0), 14) * 45ms);
+  pointer-events: none;
+}
+@keyframes tuck-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.92);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pop,
+  .tuckOut {
+    animation: none;
+  }
+}
+/* A sub-task says which epic it's in. */
+.epicOf {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--epic) 80%, var(--text-2));
+  font-variant-numeric: tabular-nums;
+}
+/* In the list and on its page: the epic's mark beside the title. */
+.epicMark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  color: var(--epic);
+}
+.pageEpic {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--epic);
+}
+.pageEpic .epicCount {
+  font-weight: 400;
+}
+
 /* The drag: the lifted card under the pointer, and the room the others make for it. */
 .cardSlot {
   position: relative;
@@ -877,6 +1225,103 @@
   flex-direction: column;
   gap: 4px;
   margin-bottom: 22px;
+}
+/*
+ * A task its agent is still writing (BLG-598): the goal and criteria in outline, each line coming
+ * in after the one before, and a soft light passing over them (a transform, so only the light moves).
+ */
+.writingStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  margin-bottom: 2px;
+  color: var(--claude);
+  font-size: 12.5px;
+}
+.briefWriting .section:hover {
+  background: none;
+}
+.ghostLines {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-width: var(--prose);
+  padding-top: 4px;
+}
+.ghostCheck {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  animation: ghostIn 420ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+.ghostBox {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px var(--hairline-strong);
+}
+.ghostLine {
+  position: relative;
+  display: block;
+  height: 9px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--hairline);
+  animation: ghostIn 420ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+.ghostCheck .ghostLine {
+  animation: none;
+}
+.ghostLine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--claude) 16%, var(--hairline-strong)), transparent);
+  transform: translateX(-100%);
+  animation: ghostSweep 1.8s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+@keyframes ghostIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@keyframes ghostSweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+/* The written brief takes the skeleton's place with a short fade. */
+.briefArrived {
+  animation: ghostIn 360ms var(--ease-out);
+}
+/* Its title is a stand-in until the agent names it: quieter, and not for typing in. */
+.pageTitleWriting,
+.pageTitleWriting:hover,
+.pageTitleWriting:focus {
+  background: none;
+  box-shadow: none;
+  color: var(--text-3);
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ghostLine,
+  .ghostCheck,
+  .ghostLine::after,
+  .briefArrived {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .ghostLine,
+:root[data-motion='reduce'] .ghostCheck,
+:root[data-motion='reduce'] .ghostLine::after,
+:root[data-motion='reduce'] .briefArrived {
+  animation: none;
 }
 .section {
   padding: 10px 12px 12px;
@@ -1464,8 +1909,20 @@
 .commentBox:focus-within {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent);
 }
+.commentInput {
+  position: relative;
+}
+/* The pills' layer under the box: the same type, so each "@name" sits under its words. */
+.commentLayer {
+  font-size: 13px;
+  line-height: 1.5;
+}
 .commentBox textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
   width: 100%;
+  padding: 0;
   border: 0;
   outline: none;
   resize: none;
@@ -1682,6 +2139,49 @@
     display: none;
   }
 }
+/* As the panel narrows: first the filter folds to its glass and New Task to its plus, then the
+   counts and the project's name go (its icon still opens the menu), then the tabs tighten. */
+@container tasks (max-width: 1000px) {
+  .bar {
+    gap: 8px 10px;
+  }
+  .newTask {
+    padding: 0 7px;
+  }
+  .newTask > span {
+    display: none;
+  }
+  .barGroup > .find {
+    flex: 0 0 auto;
+    min-width: 0;
+    width: 30px;
+    padding: 0 8px;
+    transition: width 160ms var(--ease-out);
+  }
+  .barGroup > .find > svg {
+    flex: none;
+  }
+  .barGroup > .find:focus-within,
+  .barGroup > .find:has(input:not(:placeholder-shown)) {
+    width: 130px;
+  }
+  .barGroup > .find input::placeholder {
+    color: transparent;
+  }
+}
+@container tasks (max-width: 760px) {
+  .bar [data-count],
+  .projectName {
+    display: none;
+  }
+  .projectSwitch {
+    padding: 0 6px;
+    margin-right: 0;
+  }
+  .bar [role='tablist'] > button {
+    padding: 0 7px;
+  }
+}
 @container tasks (max-width: 600px) {
   .row .meta .label,
   .row .key {
@@ -1832,4 +2332,280 @@
 .swipeArmed {
   background: var(--accent);
   color: white;
+}
+
+/* How the project syncs with Linear, in the bar (TasksView's SyncPill). */
+.syncPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.syncPill:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.syncPillProblem {
+  color: var(--warn);
+}
+.syncSpin {
+  animation: syncSpin 1.2s linear infinite;
+}
+@keyframes syncSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .syncSpin {
+    animation: none;
+  }
+}
+
+/* Files dragged from Finder over a task (its page, card or row): dropping adds them to it. */
+.fileDrop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  pointer-events: none;
+}
+.fileDrop::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--accent) 7%, color-mix(in srgb, var(--bg) 70%, transparent));
+}
+.fileDropSmall {
+  padding: 2px;
+}
+.fileDropSmall::before {
+  inset: -2px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.fileDropLabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 1px var(--hairline), 0 6px 20px rgb(0 0 0 / 0.18);
+  color: var(--accent);
+  font-weight: 600;
+}
+.fileDropSmall .fileDropLabel {
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
+/* Private (BLG-501): only you see it. A dashed edge and a face a shade back from the shared
+   cards, with a small lock by its key; it reads as "not sent" without shouting. */
+.cardPrivate {
+  background: color-mix(in srgb, var(--bg-sunken) 55%, var(--bg-raised));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+.cardPrivate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px dashed color-mix(in srgb, var(--text) 26%, transparent);
+  pointer-events: none;
+}
+.cardPrivate:hover {
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.14);
+}
+.cardPrivate:hover::before {
+  border-color: color-mix(in srgb, var(--text) 38%, transparent);
+}
+.privateTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-3);
+}
+.privateTag.labelled {
+  height: 17px;
+  padding: 0 6px 0 5px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* Boards and repos (many to many): a board of several repos shows its repos' icons a little stacked. */
+.repoStack {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.repoStackItem {
+  display: inline-flex;
+  border-radius: calc(var(--repo-size) * 0.3);
+  box-shadow: 0 0 0 1.5px var(--bg);
+  background: var(--bg);
+}
+.repoStackItem + .repoStackItem {
+  margin-left: calc(var(--repo-size) * -0.12);
+}
+/* The same, folded into one icon's square for a menu: one repo tucked behind the other, corner to corner. */
+.repoPair {
+  position: relative;
+  display: inline-block;
+  flex: none;
+}
+.repoPairItem {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  border-radius: 3px;
+}
+.repoPairFront {
+  top: auto;
+  left: auto;
+  right: 0;
+  bottom: 0;
+  box-shadow: 0 0 0 1.5px var(--repo-ring, var(--bg-raised));
+  background: var(--repo-ring, var(--bg-raised));
+}
+
+/* Which repos' tasks a board of several shows: all of them, or the ones you ticked (tinted then). */
+.repoFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.repoFilter:hover,
+.repoFilter[data-state='open'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.repoFilter > svg {
+  color: var(--text-3);
+}
+.repoFilterOn {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--text);
+}
+
+/* The repo a task runs in, on its card or row (boards of several repos only). */
+.repoChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 140px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.repoChipName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repoChipCompact {
+  max-width: 110px;
+}
+/* A task a repo's board shows from another board: the board it lives on, a click away. */
+.onBoardChip {
+  padding: 1px 6px 1px 4px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.onBoardChip:hover {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+  color: var(--text-2);
+}
+/* Its card a shade back: it's here because it runs in this repo, not because it's on this board. */
+.cardVisiting {
+  background: color-mix(in srgb, var(--bg-sunken) 40%, var(--bg-raised));
+}
+
+/* New Board / a board's settings: the repos it covers, each a row to tick. */
+.repoList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+}
+.repoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.repoRow:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.repoRow > svg {
+  color: var(--text-3);
+}
+.repoRowOn {
+  color: var(--text);
+}
+.repoRowOn > svg {
+  color: var(--accent);
+}
+.repoRow:disabled {
+  cursor: default;
+}
+.repoRowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repoRowNote {
+  font-size: 11.5px;
+  color: var(--text-3);
 }

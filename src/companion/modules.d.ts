@@ -48,3 +48,23 @@ declare module 'b4a' {
   };
   export default b4a;
 }
+
+declare module 'streamx' {
+  /** streamx's Duplex (what hyperdht and secret-stream are built on); the parts the relay uses. */
+  export class Duplex {
+    constructor(opts?: {
+      open?: (this: Duplex, cb: (err?: Error | null) => void) => void;
+      write?: (this: Duplex, data: Uint8Array, cb: (err?: Error | null) => void) => void;
+      final?: (this: Duplex, cb: (err?: Error | null) => void) => void;
+      destroy?: (this: Duplex, cb: (err?: Error | null) => void) => void;
+      read?: (this: Duplex, cb: (err?: Error | null) => void) => void;
+    });
+    push(data: Uint8Array | null): boolean;
+    write(data: Uint8Array): boolean;
+    end(): void;
+    destroy(err?: Error): void;
+    readonly destroyed: boolean;
+    on(event: string, fn: (...args: never[]) => void): this;
+    once(event: string, fn: (...args: never[]) => void): this;
+  }
+}

@@ -1,18 +1,21 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useState } from 'react';
+import type { View } from '@beluga/core/store.js';
+import type { Method } from '@beluga/ipc/api.js';
 import type { Notice } from '@beluga/core/work-store.js';
-import { unreadCount } from '@beluga/core/work-store.js';
 import { dndActive, dndLabel } from '@beluga/shared/quiet.js';
 import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, foldPlanNotices, groupNotices, noticeAgo, noticeLook } from '@beluga/ui/notice-models.js';
 import { planTitle } from '@beluga/core/plans/model.js';
 import { Icon, type IconName } from '../components/Icon.js';
-import { IconButton, Tip, cx } from '../components/ui.js';
+import { Button, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import { brandNotice } from '../lib/brand.js';
-import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
+import { toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { macNoticeTarget, openNoticeTarget } from '../lib/notices.js';
+import { sameDeep, sameFields } from '../lib/stable.js';
+import { type Waiting, type WaitingAction, bellCount, isCovered, noticeNeedView, waitingList } from './waiting-model.js';
 import s from './notifications.module.css';
 
 /** A few marks the shared icon set doesn't have, drawn the same way (16 grid, 1.5 strokes). */
@@ -129,9 +132,93 @@ function PlanFold({ plan, notices, now, onOpen }: { plan: string; notices: reado
   );
 }
 
+/** What a request is, for its icon. */
+function waitingIcon(w: Waiting): IconName {
+  const id = w.item.id;
+  if (id.startsWith('friend:') || id.startsWith('knock:') || id.startsWith('join:')) return 'person';
+  if (id.startsWith('team:')) return 'people';
+  if (id.startsWith('team-task:')) return 'task';
+  if (id.startsWith('sentinel:')) return 'merge';
+  if (w.item.kind === 'question' || w.item.kind === 'confirm') return 'chat';
+  if (w.item.kind === 'decision') return 'flag';
+  return 'hand';
+}
+
+/** Go to a page: a workspace or a shared one opens the way the sidebar opens it. */
+function useGo(): (view: View) => void {
+  const actions = useActions();
+  return (view) => {
+    if (view.kind === 'workspace') actions.run({ type: 'open_ws', id: view.id, tab: view.tab });
+    else if (view.kind === 'shared') actions.run({ type: 'open_shared', owner: view.owner, id: view.id, tab: view.tab });
+    else actions.run({ type: 'view', view });
+  };
+}
+
+/** Something waiting for you: who and where, answered right here, or opened where it lives. */
+function WaitingRow({ w, now, close }: { w: Waiting; now: number; close: () => void }) {
+  const { client } = useBeluga();
+  const api = useApi();
+  const go = useGo();
+  const [busy, setBusy] = useState(false);
+  const { item } = w;
+  const answer = (a: WaitingAction): void => {
+    setBusy(true);
+    (client.call as (m: Method, ...args: unknown[]) => Promise<unknown>)(a.method as Method, ...a.args).then(
+      () => setBusy(false),
+      (e: unknown) => {
+        setBusy(false);
+        toast(client, e instanceof Error ? e.message : String(e), 'error');
+      },
+    );
+  };
+  const open = (): void => {
+    if (!w.view) return;
+    go(w.view);
+    close();
+  };
+  const meta = [...new Set([item.from ?? '', w.place ?? ''])].filter(Boolean).join(' · ');
+  const items: ActionItem[] = [
+    ...(w.view ? [{ label: w.place ? `Open in ${w.place}` : 'Open', onSelect: open }] : []),
+    ...[...w.surface, ...w.more].map((a, i) => ({ label: a.label, ...(a.tone === 'danger' ? { danger: true } : {}), ...(i === 0 ? { separate: true } : {}), onSelect: () => answer(a) })),
+    // Off every list (here and the phone) without answering it (BLG-359).
+    { label: 'Dismiss', separate: true, onSelect: () => void api.needs.dismiss(item.id) },
+  ];
+  // A question that takes words or several picks is answered where it was asked.
+  const typed = !w.surface.length;
+  return (
+    <ActionsContext items={items}>
+      <li className={cx(s.row, s.unread, s.waiting)} data-need={item.id}>
+        <button type="button" className={s.rowMain} onClick={open} disabled={!w.view} aria-label={`${item.title}${w.place ? `, in ${w.place}` : ''}`}>
+          <span className={cx(s.tile, s.tone_warn)}>
+            <Icon name={waitingIcon(w)} size={14} />
+          </span>
+          <span className={s.text}>
+            <span className={s.title}>{item.title}</span>
+            {meta ? <span className={s.where}>{meta}</span> : null}
+          </span>
+          <span className={s.time}>{item.askedAt ? noticeAgo(item.askedAt, now) : 'now'}</span>
+        </button>
+        <span className={s.answers}>
+          {typed ? (
+            <Button size="small" variant="primary" disabled={!w.view} onClick={open}>
+              Answer
+            </Button>
+          ) : (
+            w.surface.map((a) => (
+              <Button key={a.label} size="small" variant={a.tone === 'main' ? 'primary' : 'plain'} disabled={busy} onClick={() => answer(a)}>
+                {a.label}
+              </Button>
+            ))
+          )}
+        </span>
+      </li>
+    </ActionsContext>
+  );
+}
+
 function Empty({ filter, any }: { filter: NoticeFilter; any: boolean }) {
   const title = !any ? 'You’re all caught up' : filter === 'unread' ? 'Nothing unread' : filter === 'needsYou' ? 'Nothing waiting for you' : 'No mentions';
-  const detail = !any ? 'Beluga lists here when Claude finishes or needs you, and when friends come and go.' : 'The rest are under All.';
+  const detail = !any ? 'Beluga lists here when your agent finishes or needs you, and when friends come and go.' : 'The rest are under All.';
   return (
     <div className={s.empty}>
       <Icon name="bell" size={20} />
@@ -148,14 +235,27 @@ function Center({ close }: { close: () => void }) {
   const { ui, client } = useBeluga();
   const inbox = useApp((st) => st.inbox);
   const notify = useApp((st) => st.prefs.notify);
-  const places = useApp((st) => st);
+  // What waits for you, drawn again only when it changes (not on every streamed step).
+  const waiting = useApp(waitingList, sameDeep);
   const [filter, setFilter] = useState<NoticeFilter>('all');
   const now = useNow();
   const unread = inbox.filter((n) => !n.read).length;
-  const groups = groupNotices(filterNotices(inbox, filter), now);
+  const history = inbox.filter((n) => !isCovered(n, waiting));
+  const shownWaiting = filter === 'mentions' ? [] : waiting;
+  const groups = groupNotices(filterNotices(history, filter), now);
+  const go = useGo();
   const quiet = dndActive(notify, now);
 
   const open = (n: Notice): void => {
+    const places = client.store.getState();
+    // About a request: where it's answered (a team-up opens Tasks, a friend's request Requests).
+    const page = noticeNeedView(places, n);
+    if (page) {
+      if (!n.read) void api.inbox.read({ id: n.id });
+      go(page);
+      close();
+      return;
+    }
     const target = macNoticeTarget(places, n.channel, n.plan ? { id: n.plan, ...(n.planTask ? { task: n.planTask } : {}) } : undefined);
     if (!n.read) void api.inbox.read({ id: n.id });
     if (!target) return;
@@ -200,6 +300,18 @@ function Center({ close }: { close: () => void }) {
         ))}
       </div>
       <div className={s.scroll}>
+        {shownWaiting.length ? (
+          <section className={s.group} aria-label="Waiting for you">
+            <h3 className={s.groupTitle}>
+              Waiting for you <span className={s.count}>{shownWaiting.length}</span>
+            </h3>
+            <ul className={s.list}>
+              {shownWaiting.map((w) => (
+                <WaitingRow key={w.item.id} w={w} now={now} close={close} />
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {groups.length ? (
           groups.map((g) => (
             <section key={g.label} className={s.group} aria-label={g.label}>
@@ -211,7 +323,7 @@ function Center({ close }: { close: () => void }) {
               </ul>
             </section>
           ))
-        ) : (
+        ) : shownWaiting.length ? null : (
           <Empty filter={filter} any={inbox.length > 0} />
         )}
       </div>
@@ -223,13 +335,17 @@ function Center({ close }: { close: () => void }) {
 export function NotificationBell() {
   const { ui } = useBeluga();
   const open = useUi((u) => u.notices);
-  const unread = useApp((st) => unreadCount(st));
+  // Just the two counts: the bell is drawn again only when one of them changes.
+  const { waiting, unread } = useApp((st) => {
+    const list = waitingList(st);
+    return { waiting: list.length, unread: bellCount(st, list) - list.length };
+  }, sameFields);
   const quiet = useApp((st) => dndActive(st.prefs.notify));
-  const label = `Notifications${unread ? ` · ${unread} new` : ''}${quiet ? ' · Do Not Disturb' : ''}`;
+  const label = `Notifications${waiting ? ` · ${waiting} waiting for you` : ''}${unread ? ` · ${unread} new` : ''}${quiet ? ' · Do Not Disturb' : ''}`;
   return (
     <Popover.Root open={open} onOpenChange={(o) => ui.patch({ notices: o })}>
       <Popover.Trigger asChild>
-        <IconButton icon="bell" label={label} active={open} badge={unread} className={cx(quiet && s.bellQuiet)} />
+        <IconButton icon="bell" label={label} active={open} badge={waiting + unread} className={cx(quiet && s.bellQuiet)} />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={s.popover} align="end" sideOffset={6} collisionPadding={12} aria-label="Notifications">

@@ -1,10 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Source, ViewPage } from '../src/shared/view-spec.js';
 import { bind, fetchSource, needsYes } from '../src/core/views/sources.js';
+import { forgetKept } from '../src/core/views/kept.js';
+import { forgetViews } from '../src/core/views/forget.js';
 import { ViewShelf, showView } from '../src/agent/view-tools.js';
 import { decideTool } from '../src/agent/policy.js';
 
@@ -21,6 +23,7 @@ const hasSqlite = (() => {
 
 beforeAll(() => {
   process.env.BELUGA_HOME = path.join(dir, 'home');
+  process.env.BELUGA_CACHE_DIR = path.join(dir, 'cache');
   writeFileSync(path.join(dir, 'sales.csv'), 'day,amount\n2026-10-01,10\n2026-10-02,30\n2026-10-03,20\n');
   mkdirSync(path.join(dir, 'pics'));
   writeFileSync(path.join(dir, 'pics', 'a.png'), 'x');
@@ -28,6 +31,7 @@ beforeAll(() => {
   if (hasSqlite) execFileSync('sqlite3', [path.join(dir, 'app.db'), "create table users(id integer, email text); insert into users values (1,'ann@x.dev'),(2,'bob@x.dev'),(3,'cy@y.dev');"]);
 });
 afterAll(() => {
+  delete process.env.BELUGA_CACHE_DIR;
   if (before === undefined) delete process.env.BELUGA_HOME;
   else process.env.BELUGA_HOME = before;
 });
@@ -35,6 +39,7 @@ afterAll(() => {
 const page = async (source: Source, q: Partial<Parameters<typeof fetchSource>[1]> = {}, opts: Parameters<typeof fetchSource>[2] = {}): Promise<ViewPage> => {
   const r = await fetchSource(source, { offset: 0, limit: 10, ...q }, opts);
   if ('needsApproval' in r) throw new Error(`needs approval: ${r.what}`);
+  if ('notKept' in r) throw new Error('nothing kept');
   return r;
 };
 
@@ -96,6 +101,44 @@ describe('view sources', () => {
     expect(bind(source, { min: "1 or 1=1" })).toMatchObject({ query: "select * from users where id >= '1 or 1=1'" });
   });
 
+  it('keeps what a source brought: shown again without running it, until Refresh', async () => {
+    const counter = path.join(dir, 'runs.txt');
+    writeFileSync(counter, '');
+    const source: Source = { kind: 'command', command: `echo x >> '${counter}'; wc -l < '${counter}' | tr -d ' '`, format: 'lines' };
+    const runs = (): number => Number(readFileSync(counter, 'utf8').split('\n').filter(Boolean).length);
+    expect(await fetchSource(source, { offset: 0, limit: 5 }, { cwd: dir, cache: 'only' })).toEqual({ notKept: true });
+    expect(runs()).toBe(0);
+    const first = await page(source, {}, { cwd: dir, confirm: true, cache: 'prefer' });
+    expect(runs()).toBe(1);
+    // A new day (the daemon started again): what's kept on disk still does.
+    forgetKept();
+    const again = await page(source, {}, { cwd: dir, cache: 'prefer' });
+    expect(runs()).toBe(1);
+    expect(again.at).toBe(first.at);
+    expect((await page(source, {}, { cwd: dir, cache: 'only' })).rows).toEqual(first.rows);
+    // Refresh runs it, and that's what's kept from then on.
+    const fresh = await page(source, {}, { cwd: dir, fresh: true, cache: 'prefer' });
+    expect(runs()).toBe(2);
+    expect((await page(source, {}, { cwd: dir, cache: 'only' })).at).toBe(fresh.at);
+  });
+
+  it.skipIf(!hasSqlite)('keeps each page of a database it was asked for', async () => {
+    const source: Source = { kind: 'sqlite', path: path.join(dir, 'app.db'), query: 'select * from users' };
+    const sorted = { sort: { key: 'id', dir: 'desc' as const }, limit: 1 };
+    expect(await fetchSource(source, { offset: 0, ...sorted }, { cache: 'only' })).toEqual({ notKept: true });
+    const p = await page(source, sorted, { cache: 'prefer' });
+    expect((await page(source, sorted, { cache: 'only' })).rows).toEqual(p.rows);
+    expect(await fetchSource(source, { offset: 1, ...sorted }, { cache: 'only' })).toEqual({ notKept: true });
+  });
+
+  it('a source that refreshes itself keeps its rows only that long', async () => {
+    const source: Source = { kind: 'command', command: 'echo "a,b\n1,2"', format: 'csv', refresh: 1 };
+    await page(source, {}, { cwd: dir, confirm: true });
+    expect('rows' in (await fetchSource(source, { offset: 0, limit: 10 }, { cwd: dir, cache: 'only' }))).toBe(true);
+    await new Promise((r) => setTimeout(r, 1100));
+    expect(await fetchSource(source, { offset: 0, limit: 10 }, { cwd: dir, cache: 'only' })).toEqual({ notKept: true });
+  });
+
   it('never reads credential files', async () => {
     await expect(page({ kind: 'file', path: path.join(dir, '.env'), format: 'auto' })).rejects.toThrow(/credential/);
     await expect(page({ kind: 'command', command: 'cat ~/.ssh/id_rsa', format: 'auto' }, {}, { confirm: true })).rejects.toThrow(/credential/);
@@ -130,6 +173,34 @@ describe('the show tool', () => {
     expect(shelf.finish('Next turn.')).toBe('Next turn.');
   });
 
+  it('drops a token it has no view for, its line with it, even when the run showed none (BLG-182)', async () => {
+    const shelf = new ViewShelf();
+    expect(shelf.finish('Here is the GIF:\n\n[[view:1]]')).toBe('Here is the GIF:');
+    expect(shelf.expand('Before.\n\n[[view:2]]\n\nAfter.')).toBe('Before.\n\nAfter.');
+    expect(shelf.expand('Before.\n  [[view:2]]  \nAfter.')).toBe('Before.\nAfter.');
+    expect(shelf.finish('Two files: [[view:3]] and that is all.')).toBe('Two files: and that is all.');
+    expect(shelf.finish('It ends here [[view:3]].')).toBe('It ends here.');
+    // The made-up token wasn't a placement: the run's first real view still goes at the end.
+    await showView(shelf, dir, { type: 'stats', items: [{ label: 'Up', value: 3 }] });
+    expect(shelf.finish('All good.')).toMatch(/^All good\.\n\n```beluga-view\n.*\n```$/);
+    const other = new ViewShelf();
+    await showView(other, dir, { type: 'stats', items: [{ label: 'Up', value: 3 }] });
+    expect(other.finish('[[view:1]]\n\n[[view:2]]\n\nDone.')).toMatch(/^```beluga-view\n.*\n```\n\nDone\.$/);
+  });
+
+  it('leaves a token Claude writes about (in code) as it is, and places a real one it quoted', async () => {
+    const shelf = new ViewShelf();
+    await showView(shelf, dir, { type: 'stats', items: [{ label: 'Up', value: 3 }] });
+    const code = 'A stray `[[view:9]]` was text, like this:\n\n```ts\nshelf.finish("[[view:1]]");\n```';
+    const answer = shelf.finish(`${code}\n\nNow: \`[[view:1]]\``);
+    expect(answer).toMatch(/^A stray `\[\[view:9\]\]` was text, like this:\n\n```ts\nshelf\.finish\("\[\[view:1\]\]"\);\n```\n\nNow:\n\n```beluga-view\n.*\n```$/);
+    // Only in code, it isn't placed: the view goes at the end.
+    const quoted = new ViewShelf();
+    await showView(quoted, dir, { type: 'stats', items: [{ label: 'Up', value: 3 }] });
+    expect(quoted.finish(code)).toMatch(/```\n\n```beluga-view\n.*\n```$/);
+    expect(quoted.finish(code).startsWith(code)).toBe(true);
+  });
+
   it('draws graphs too, and says what is wrong', async () => {
     const shelf = new ViewShelf();
     await showView(shelf, dir, { type: 'graph', nodes: [{ id: 'a', label: 'A' }] });
@@ -148,5 +219,55 @@ describe('the show tool', () => {
     expect(show({ kind: 'file', path: path.join(dir, '.env') })).toBe('deny');
     expect(show({ kind: 'http', url: 'https://example.com/a.json' })).toBe('allow');
     expect(show({ kind: 'http', url: 'https://example.com/a.json', headers: { Authorization: 'Bearer $TOKEN' } })).toBe('ask');
+    expect(show({ kind: 'script', language: 'python', code: 'print(1)' })).toBe('ask');
+    expect(show({ kind: 'script', code: 'cat .env' })).toBe('deny');
+    expect(decideTool('mcp__beluga_view__show', { view: { type: 'table', source: { kind: 'script', code: 'echo hi' } } }, { ...ctx, askOnly: true })).toBe('deny');
+  });
+
+  it('runs a script Claude wrote for the view, kept under a name made from its code', async () => {
+    const shelf = new ViewShelf();
+    const code = 'import json, sys\nn = int(sys.argv[1]) if len(sys.argv) > 1 else 2\nprint(json.dumps([{"n": i, "sq": i * i} for i in range(n)]))\n';
+    const said = await showView(shelf, dir, {
+      type: 'table',
+      source: { kind: 'script', language: 'py', code, args: '{{count}}', format: 'json' },
+      controls: [{ id: 'count', type: 'number', default: 3 }],
+    });
+    expect(said).toContain('Columns: n, sq');
+    const json = JSON.parse(/```beluga-view\n(.*)\n```/.exec(shelf.finish('[[view:1]]'))![1]!);
+    expect(json.source.kind).toBe('command');
+    const file = /'([^']+\.py)'/.exec(json.source.command)![1]!;
+    expect(file.startsWith(path.join(dir, 'home', 'view-scripts'))).toBe(true);
+    expect(readFileSync(file, 'utf8')).toBe(code);
+    expect(json.data).toEqual([{ n: 0, sq: 0 }, { n: 1, sq: 1 }, { n: 2, sq: 4 }]);
+    // The window runs it from then on (it was allowed), whatever the control fills in.
+    expect((await page(json.source, { params: { count: 4 } }, { cwd: dir })).rows).toHaveLength(4);
+    await expect(showView(shelf, dir, { type: 'table', source: { kind: 'script', code: 'cat .env' } })).rejects.toThrow('credential files');
+    await expect(showView(shelf, dir, { type: 'table', source: { kind: 'script', language: 'cobol', code: 'x' } })).rejects.toThrow('Scripts run as');
+  });
+
+  it('archiving a conversation forgets its views’ rows, keeping what brings them; deleting it removes that too', async () => {
+    const shelf = new ViewShelf();
+    await showView(shelf, dir, { type: 'table', source: { kind: 'script', language: 'sh', code: 'echo "a,b"; echo "1,{{n}}"', args: '', format: 'csv' } });
+    await showView(shelf, dir, { type: 'table', data: Array.from({ length: 250 }, (_, i) => ({ i })) });
+    const answer = shelf.finish('[[view:1]]\n\n[[view:2]]');
+    const [script, dumped] = [...answer.matchAll(/```beluga-view\n(.*)\n```/g)].map((m) => (JSON.parse(m[1]!) as { source: Source }).source);
+    const file = /'([^']+)'/.exec((script as Extract<Source, { kind: 'command' }>).command)![1]!;
+    const data = (dumped as Extract<Source, { kind: 'file' }>).path;
+    const kept = async (s: Source): Promise<boolean> => 'rows' in (await fetchSource(s, { offset: 0, limit: 10 }, { cache: 'only' }));
+    await page(dumped!, {}, { cache: 'prefer' });
+    expect(await kept(script!)).toBe(true);
+    expect(await kept(dumped!)).toBe(true);
+
+    expect(forgetViews([answer], 'archived')).toEqual({ rows: 2, files: 0 });
+    expect(await kept(script!)).toBe(false);
+    expect(await kept(dumped!)).toBe(false);
+    expect(existsSync(file) && existsSync(data)).toBe(true);
+
+    // Another conversation still shows the script: only the handed-over rows go.
+    expect(forgetViews([answer], 'deleted', () => [`elsewhere: ${file}`])).toEqual({ rows: 0, files: 1 });
+    expect(existsSync(file)).toBe(true);
+    expect(existsSync(data)).toBe(false);
+    expect(forgetViews([answer], 'deleted')).toMatchObject({ files: 1 });
+    expect(existsSync(file)).toBe(false);
   });
 });

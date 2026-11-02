@@ -7,13 +7,13 @@ import type { LogItem } from '../core/store.js';
  */
 
 /** What a steered message's card says while it waits in the running turn for Claude's next step. */
-export const READS_AFTER_STEP = 'Claude reads this after its current step';
+export const READS_AFTER_STEP = 'Your agent reads this after its current step';
 
 /** What a steered message's card says while Claude's turn is being stopped so it reads it next (a long step, Send now). */
-export const STOPPING_FOR = 'Claude stops its current step to read this';
+export const STOPPING_FOR = 'Your agent stops its current step to read this';
 
 /** What a queued message's card says when Claude took it in while it worked (see AgentHost.steer). */
-export const STEERED_IN = 'Claude read this while it worked; the answer above covers it.';
+export const STEERED_IN = 'Your agent read this while it worked; the answer above covers it.';
 
 /**
  * A steered message Claude hasn't read yet (BLG-54): its card is only a note, waiting in the
@@ -58,6 +58,56 @@ export function steeredMessages(items: readonly LogItem[]): { readonly waiting: 
   // Sent to steer, its card not here yet: not read (so the line under it doesn't appear a moment later).
   for (const l of items) if (l.type === 'chat' && l.steer && l.request && !cards.has(l.request)) waiting.set(l.id, { request: l.request, waiting: 'next_step' });
   return { waiting, notes };
+}
+
+type AgentCard = Extract<LogItem, { type: 'agent' }>;
+
+/** What a queued message's card says once it came out of the queue unsent (Stop, Remove, Edit: see AgentHost). */
+const NOT_SENT = /^(Taken out of the queue|Cancelled before it started)/;
+
+/** Rows moved to when they ran, the same object each time while it's the same row (so a row's memo holds). */
+const ranAt = new WeakMap<LogItem, LogItem>();
+function at(item: LogItem, ts: number): LogItem {
+  const was = ranAt.get(item);
+  if (was?.ts === ts) return was;
+  const row = { ...item, ts };
+  ranAt.set(item, row);
+  return row;
+}
+
+/**
+ * A conversation's items as the chat draws them around the queue above the box (BLG-317). A
+ * message waiting its turn is in the queue, not the chat: it and its card aren't drawn, nor once
+ * it came out of the queue unsent (it went back to the box, or was dropped). Once it runs, both
+ * are drawn where it ran (when it left the queue: after what Claude said meanwhile), not back
+ * where it was typed. A message waiting for a free Claude (nothing runs here) stays in the chat,
+ * where it can start now. `inQueue`: a card the queue above the box shows while it waits.
+ */
+export function asSent(items: readonly LogItem[], inQueue: (card: AgentCard) => boolean): readonly LogItem[] {
+  const hidden = new Set<string>();
+  const ran = new Map<string, number>();
+  for (const l of items) {
+    if (l.type !== 'agent' || !inQueue(l)) continue;
+    if ((l.status === 'queued' && !l.slotWait) || (l.status === 'error' && l.queuedUntil !== undefined && NOT_SENT.test(l.text))) hidden.add(l.requestId);
+    else if (l.queuedUntil !== undefined && l.status !== 'queued') ran.set(l.requestId, l.queuedUntil);
+  }
+  if (!hidden.size && !ran.size) return items;
+  const requestOf = (l: LogItem): string | undefined => (l.type === 'agent' ? l.requestId : l.type === 'chat' ? l.request : undefined);
+  const moved = new Map<string, LogItem[]>();
+  const rows: LogItem[] = [];
+  for (const l of items) {
+    const request = requestOf(l);
+    if (request === undefined || !(hidden.has(request) || ran.has(request))) rows.push(l);
+    else if (ran.has(request)) moved.set(request, [...(moved.get(request) ?? []), at(l, ran.get(request)!)]);
+  }
+  // Each in the order it ran, after everything said before then.
+  for (const [request, when] of [...ran].sort((a, b) => a[1] - b[1])) {
+    const these = moved.get(request);
+    if (!these) continue;
+    const i = rows.findIndex((r) => r.ts > when);
+    rows.splice(i < 0 ? rows.length : i, 0, ...these);
+  }
+  return rows;
 }
 
 /**

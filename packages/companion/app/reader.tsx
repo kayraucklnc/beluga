@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowDownToLine, ChevronDown, ChevronUp, Search, WrapText, X } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, ScrollView, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Prose } from '../components/Conv';
 import { sizeOf } from '../components/Outputs';
@@ -147,7 +147,7 @@ export default function Reader() {
   return (
     <Screen>
       <Header scrolled={scrolled} back title={name ?? 'File'} eyebrow={`${isMd ? 'Markdown' : isJson ? 'JSON' : 'Text'} · ${sizeOf(size)}${more ? ` · ${sizeOf(got)} shown` : ''}`} />
-      <Animated.View entering={FadeInDown.springify()} style={{ paddingHorizontal: 16, paddingBottom: 10, gap: 10 }}>
+      <Animated.View entering={FadeIn.duration(180)} style={{ paddingHorizontal: 16, paddingBottom: 10, gap: 10 }}>
         {searching ? (
           <Card r={18} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 42, gap: 8 }}>
             <Search color={color.text2} size={16} />

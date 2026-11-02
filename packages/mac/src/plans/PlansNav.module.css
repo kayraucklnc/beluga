@@ -18,5 +18,5 @@
 }
 /* Claude is working on its tasks: the ring in Claude's color (the row's dot matrix is what moves; KLD-40). */
 .ringLive .ringFill {
-  stroke: var(--claude);
+  stroke: var(--plan);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contrast, formatBytes, formatCell, headingOf, inkOn, parseColor, toCsv, toHex, toneOf } from '../packages/mac/src/components/views/format.js';
+import { contrast, formatBytes, formatCell, headingOf, inkOn, parseColor, toCsv, toHex, toHtmlTable, toMarkdownTable, toneOf } from '../packages/mac/src/components/views/format.js';
 import { readInline } from '../packages/mac/src/components/views/inline-model.js';
 import { tableRows, tableView } from '../packages/mac/src/components/views/md-table.js';
 import { planChart } from '../packages/mac/src/components/views/chart-model.js';
@@ -24,6 +24,15 @@ describe('how cells read', () => {
     expect(headingOf({ key: 'totalCount' })).toBe('Total Count');
     expect([toneOf('Failed'), toneOf('paid'), toneOf('pending'), toneOf('blue')]).toEqual(['critical', 'good', 'warning', 'neutral']);
     expect(toCsv([{ a: 'x, y', b: 1 }], [col('a', 'text'), col('b')])).toBe('a,b\n"x, y",1');
+  });
+
+  it('a table copies as Markdown and HTML, the way it reads', () => {
+    const cols = [col('name', 'text'), col('revenue', 'currency'), col('ok', 'bool')];
+    const rows = [{ name: 'a | b', revenue: 48210, ok: true }, { name: '<x>', revenue: null, ok: false }];
+    expect(toMarkdownTable(rows, cols)).toBe(['| Name | Revenue | Ok |', '| --- | ---: | :---: |', `| a \\| b | ${formatCell(48210, cols[1]!)} | Yes |`, '| <x> |  | No |'].join('\n'));
+    const html = toHtmlTable(rows, cols);
+    expect(html).toMatch(/^<table><thead><tr><th>Name<\/th><th style="text-align:right">Revenue<\/th>/);
+    expect(html).toContain('<td>&lt;x&gt;</td><td style="text-align:right"></td>');
   });
 
   it('colors', () => {
@@ -112,5 +121,22 @@ describe('a plain Markdown table', () => {
     const linked = el('table', [el('thead', [tr('th', ['a', 'b'])]), el('tbody', [tr('td', ['1', '2']), el('tr', [el('td', [el('a', [txt('x')])]), el('td', [txt('y')])])])]);
     expect(tableRows(linked as never)).toBeUndefined();
     expect(tableRows(el('table', [el('thead', [tr('th', ['a', 'b'])]), el('tbody', [tr('td', ['1', '2'])])]) as never)).toBeUndefined();
+  });
+
+  // A comparison as Claude wrote it in wt-voice-dictation: the phone showed its pipes, as no view took the empty corner.
+  it('a comparison with an empty corner is a view, its corner left blank', () => {
+    const view = tableView({
+      columns: ['', 'Phone (Settings › Voice)', 'Mac app (Settings › Voice)'],
+      rows: [
+        ['Applies to', "The microphone in the phone's Ask sheet", "The Mac's mic button and talk shortcut"],
+        ["Where it's saved", 'On the phone', 'In the Mac app, on that Mac'],
+      ],
+    })!;
+    expect(view.columns.map((c) => c.key)).toEqual(['Column 1', 'Phone (Settings › Voice)', 'Mac app (Settings › Voice)']);
+    expect(view.columns.map(headingOf)).toEqual(['', 'Phone (Settings › Voice)', 'Mac app (Settings › Voice)']);
+    expect(view.rows[1]).toMatchObject({ 'Column 1': "Where it's saved", 'Phone (Settings › Voice)': 'On the phone' });
+    // Two blank headings stay apart; a heading never given still reads from its key.
+    expect(tableView({ columns: ['', '', 'n'], rows: [['a', 'b', '1']] })!.columns.map((c) => c.key)).toEqual(['Column 1', 'Column 2', 'n']);
+    expect(headingOf({ key: 'created_at' })).toBe('Created at');
   });
 });

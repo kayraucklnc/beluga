@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from '../src/config.js';
-import { Settings, loadSettings, saveSettings, settingsPath } from '../src/core/settings.js';
+import { Settings, chosenAgent, loadSettings, publishedAgents, saveSettings, settingsPath } from '../src/core/settings.js';
+import { CLAUDE_AGENT } from '../src/protocol.js';
 import { PALETTES, applyTheme, colorFor, theme } from '../src/ui/theme.js';
 
 const tmpFile = () => path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-settings-')), 'settings.json');
@@ -24,7 +25,8 @@ describe('settings', () => {
     const next = saveSettings({ theme: 'mono', policy: 'auto' }, file);
     expect(next).toMatchObject({ name: 'kay', theme: 'mono', policy: 'auto' });
     expect(JSON.parse(readFileSync(file, 'utf8')).name).toBe('kay');
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(() => saveSettings({ name: 'bad name!' }, file)).toThrow();
   });
 
@@ -46,7 +48,8 @@ describe('settings', () => {
     expect(loadSettings(file).autoCompact).toBe(false);
   });
 
-  it('respects BELUGA_HOME', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('respects BELUGA_HOME', () => {
     const before = process.env.BELUGA_HOME;
     process.env.BELUGA_HOME = '/tmp/kh';
     expect(settingsPath()).toBe('/tmp/kh/settings.json');
@@ -81,5 +84,32 @@ describe('themes', () => {
     expect(PALETTES.light.people).toContain(colorFor('bob'));
     applyTheme('calm');
     expect(theme.text).toBe(PALETTES.calm.text);
+  });
+});
+
+describe('default agent (BLG-444)', () => {
+  const opus = { runtime: 'claude', model: 'opus', label: 'Claude' } as const;
+  const sonnet = { runtime: 'claude', model: 'sonnet', label: 'Claude' } as const;
+
+  it('survives a restart, and a project\'s own wins over yours', () => {
+    const file = tmpFile();
+    expect(chosenAgent(loadSettings(file))).toEqual(CLAUDE_AGENT);
+    saveSettings({ defaultAgent: opus, projectAgents: { api: sonnet } }, file);
+    const again = loadSettings(file);
+    expect(chosenAgent(again)).toEqual(opus);
+    expect(chosenAgent(again, 'api')).toEqual(sonnet);
+    expect(chosenAgent(again, 'web')).toEqual(opus);
+  });
+
+  it('keeps the rest of the file when an agent in it is broken', () => {
+    const file = tmpFile();
+    writeFileSync(file, JSON.stringify({ theme: 'calm', defaultAgent: { runtime: 'NOT OK' } }));
+    expect(loadSettings(file)).toMatchObject({ theme: 'calm' });
+    expect(loadSettings(file).defaultAgent).toBeUndefined();
+  });
+
+  it('the card lists the default first, each agent once, Claude always', () => {
+    expect(publishedAgents({})).toEqual([CLAUDE_AGENT]);
+    expect(publishedAgents({ defaultAgent: opus, projectAgents: { a: sonnet, b: opus } })).toEqual([opus, sonnet, CLAUDE_AGENT]);
   });
 });

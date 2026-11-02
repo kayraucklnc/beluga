@@ -34,6 +34,8 @@ export interface PopupRequest {
   readonly where: string;
   readonly back: string;
   readonly askedAt: number;
+  /** A file request for a secret ("your private SSH key id_ed25519"): the card says so, and offers only Allow once / Decline. */
+  readonly secret?: string;
 }
 
 /** Requests one card shows at once (the rest: "2 more waiting"). */
@@ -44,7 +46,7 @@ export const whereLine = (t: TaskView): string =>
   t.kind === 'file' ? (t.path ?? 'a file') : t.project ? `In your project ${t.project}` : t.kind === 'run' ? (t.folder ?? t.cwd ?? 'Your shared folder (or home, with full trust)') : 'A new scratch folder, just for this request';
 
 /** What goes back to them, in words. */
-export const backLine = (t: TaskView): string => (t.kind === 'run' ? 'The output and exit code' : t.kind === 'file' ? 'The file' : t.expects === 'files' ? 'Files' : t.expects ? 'Structured data (JSON)' : 'A summary of what your Claude did');
+export const backLine = (t: TaskView): string => (t.kind === 'run' ? 'The output and exit code' : t.kind === 'file' ? 'The file' : t.expects === 'files' ? 'Files' : t.expects ? 'Structured data (JSON)' : 'A summary of what your agent did');
 
 /** The sender chooses the summary, so a command or a file is named as it is, never by their words alone. */
 const gistOf = (t: TaskView): string => {
@@ -90,6 +92,7 @@ export function popupRequests(approvals: readonly Approval[], tasks: readonly Ta
         where: whereLine(t),
         back: backLine(t),
         askedAt: a.askedAt ?? t.createdAt,
+        ...(t.secret ? { secret: t.secret.label } : {}),
       };
       return [item];
     })
@@ -97,7 +100,7 @@ export function popupRequests(approvals: readonly Approval[], tasks: readonly Ta
 }
 
 /** "Mia's Claude wants to" / "Mia wants to" (the card's first line). */
-export const popupWho = (r: Pick<PopupRequest, 'peerName' | 'claude'>): string => `${r.peerName}${r.claude ? '’s Claude' : ''}`;
+export const popupWho = (r: Pick<PopupRequest, 'peerName' | 'claude'>): string => `${r.peerName}${r.claude ? '’s agent' : ''}`;
 
 /** What a button on the card does (answered by the main window, like a notification's). */
 export const POPUP_BUTTONS: ReadonlyArray<{ readonly action: RequestAction; readonly label: string }> = [
@@ -106,8 +109,9 @@ export const POPUP_BUTTONS: ReadonlyArray<{ readonly action: RequestAction; read
   { action: 'approve', label: 'Allow' },
 ];
 
-/** The buttons one request gets: a file is allowed one at a time here (Always for files, with its folder spelled out, is on the request sheet). */
-export const popupButtons = (r: Pick<PopupRequest, 'kind'>): typeof POPUP_BUTTONS => (r.kind === 'file' ? POPUP_BUTTONS.filter((b) => b.action !== 'allow_always') : POPUP_BUTTONS);
+/** The buttons one request gets: a file is allowed one at a time here (Always for files, with its folder spelled out, is on the request sheet; a secret never has one). */
+export const popupButtons = (r: Pick<PopupRequest, 'kind'> & { readonly secret?: string }): typeof POPUP_BUTTONS =>
+  r.secret ? POPUP_BUTTONS.filter((b) => b.action !== 'allow_always').map((b) => (b.action === 'approve' ? { ...b, label: 'Allow Once' } : b)) : r.kind === 'file' ? POPUP_BUTTONS.filter((b) => b.action !== 'allow_always') : POPUP_BUTTONS;
 
 // ------------------------------------------------------------------ when your own Claude needs you
 
@@ -201,7 +205,7 @@ export function popupNeeds(state: NeedState, opts: { readonly quiet: boolean; re
       task: '',
       tag: 'milestone',
       title: `${planTitle(plan)}: “${oneLine(m.milestone.title, 60)}”`,
-      body: m.run.check?.verdict === 'pass' ? 'Claude checked it: pass it to go on' : 'Its tasks are finished: pass it to go on',
+      body: m.run.check?.verdict === 'pass' ? 'The agent checked it: pass it to go on' : 'Its tasks are finished: pass it to go on',
       channel: plan.home,
       plan: plan.id,
     });

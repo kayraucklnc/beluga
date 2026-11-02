@@ -7,7 +7,8 @@
   background: var(--bg-sidebar);
   border-right: 0.5px solid var(--hairline);
 }
-:global(html:not([data-app])) .sidebar {
+:global(html:not([data-app])) .sidebar,
+:global(html[data-transparency='reduce']) .sidebar {
   background: var(--bg-sidebar-solid);
 }
 
@@ -22,6 +23,10 @@
 .trafficSpace {
   width: 78px;
   height: 100%;
+}
+/* Linux and Windows draw their own title bar above the window: no traffic lights to make room for. */
+:global(html:not([data-os='mac'])) .trafficSpace {
+  width: 8px;
 }
 
 .scroll {
@@ -136,6 +141,10 @@
 .projectRow .rowIcon {
   width: auto;
   color: var(--text-3);
+}
+/* A row with a disclosure before its icon (a sentinel under Sentinel, BLG-570): the icon slot widens for both. */
+.foldRow .rowIcon {
+  width: auto;
 }
 /* The disclosure triangle, then the project's icon (like Finder's sidebar and Xcode's navigator). */
 .projectIcon {
@@ -279,4 +288,55 @@
   .making {
     animation-duration: 2400ms;
   }
+}
+
+/* A worktree's sub-agents fold under it: the arrow sits in the gutter left of its icon (its icon
+   stays in line with its neighbours'), quiet until you point at the row. */
+.foldIcon {
+  position: relative;
+  display: inline-flex;
+}
+.agentFold {
+  position: absolute;
+  left: -15px;
+  top: 50%;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+  margin-top: -9px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  cursor: default;
+}
+.agentFold:hover {
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+.agentDisclosure {
+  opacity: 0.55;
+  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast);
+}
+.row:hover .agentDisclosure,
+.agentFold:focus-visible .agentDisclosure {
+  opacity: 1;
+}
+.agentDisclosureOpen {
+  transform: rotate(90deg);
+}
+.agentCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+  color: var(--text-3);
+  font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
+}
+.agentCount svg {
+  color: var(--claude);
+  opacity: 0.7;
 }

@@ -1,8 +1,8 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { FileJson, FileText, FileType, Film, ImageIcon, ScrollText } from 'lucide-react-native';
-import { useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, View, type ViewStyle } from 'react-native';
+import { FileJson, FileText, FileType, Film, ImageIcon, Play, ScrollText } from 'lucide-react-native';
+import { createContext, useContext, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useFile } from '../lib/hooks';
 import type { OutputView } from '../lib/link/protocol';
 import { store } from '../lib/store';
@@ -10,12 +10,16 @@ import { color, elevation, radius } from '../lib/theme';
 import { IconBadge, Press, T } from './ui';
 
 /**
- * Outputs: pictures as thumbnails (fetched by ref, thumb first; the full image only when opened)
- * and text files as tiles that open in the reader. Never source code: the Mac only hands out what
+ * Outputs: pictures as thumbnails (fetched by ref, thumb first; the full image only when opened),
+ * videos as their first frame with a play mark (streamed only when played, in the viewer), and
+ * text files as tiles that open in the reader. Never source code: the Mac only hands out what
  * `isArtifact` calls an output.
  */
 
 export type Origin = { x: number; y: number; w: number; h: number };
+
+/** The conversation the outputs on screen are from: what's saved from them goes with it (BLG-124). */
+export const OutputsTopic = createContext<string | undefined>(undefined);
 
 export const isText = (o: OutputView): boolean => o.kind === 'text' || o.kind === 'json' || o.kind === 'markdown';
 
@@ -24,10 +28,10 @@ export const isText = (o: OutputView): boolean => o.kind === 'text' || o.kind ==
  * in (pictures, and text files as previews with Open), starting at it and growing from its place.
  * A text file on its own goes straight to the reader.
  */
-export function openOutput(o: OutputView, group: readonly OutputView[], origin?: Origin): void {
+export function openOutput(o: OutputView, group: readonly OutputView[], origin?: Origin, topic?: string): void {
   const items = group.some((g) => g.ref === o.ref) ? [...group] : [o];
-  if (o.kind === 'image' || items.length > 1) {
-    store.gallery = { items, index: Math.max(0, items.findIndex((g) => g.ref === o.ref)), origin };
+  if (o.kind === 'image' || o.kind === 'video' || items.length > 1) {
+    store.gallery = { items, index: Math.max(0, items.findIndex((g) => g.ref === o.ref)), origin, ...(topic ? { topic: topic as never } : {}) };
     router.push('/viewer');
     return;
   }
@@ -44,11 +48,14 @@ export const sizeOf = (n?: number): string => (n === undefined ? '' : n < 1024 ?
 export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; readonly group: readonly OutputView[]; readonly w: number; readonly h: number; readonly style?: ViewStyle }) {
   const ref = useRef<React.ComponentRef<typeof View>>(null);
   const image = o.kind === 'image';
-  const file = useFile(image ? o.ref : undefined, 'thumb');
+  const video = o.kind === 'video';
+  // A video's thumbnail is its first frame (a Mac that can't make one says so: then it's a tile).
+  const file = useFile(image || video ? o.ref : undefined, 'thumb');
   const Icon = iconOf(o);
+  const topic = useContext(OutputsTopic);
   const open = () => {
-    if (!ref.current) return openOutput(o, group);
-    ref.current.measureInWindow((x: number, y: number, mw: number, mh: number) => openOutput(o, group, { x, y, w: mw, h: mh }));
+    if (!ref.current) return openOutput(o, group, undefined, topic);
+    ref.current.measureInWindow((x: number, y: number, mw: number, mh: number) => openOutput(o, group, { x, y, w: mw, h: mh }, topic));
   };
   return (
     <Press onPress={open} accessibilityLabel={o.name} style={[{ width: w, height: h, borderRadius: radius.m, overflow: 'hidden', backgroundColor: elevation.raised.surface, borderWidth: 1, borderColor: elevation.raised.border }, style]}>
@@ -59,6 +66,11 @@ export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; reado
           ) : (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>{file?.status === 'error' ? <ImageIcon color={color.text3} size={22} /> : <ActivityIndicator color={color.text3} />}</View>
           )
+        ) : video && file?.uri ? (
+          <View style={{ flex: 1 }}>
+            <Image source={{ uri: file.uri }} style={{ flex: 1 }} contentFit="cover" transition={260} />
+            <PlayMark size={Math.min(40, Math.round(Math.min(w, h) * 0.34))} />
+          </View>
         ) : (
           <View style={{ flex: 1, padding: 12, justifyContent: 'space-between' }}>
             <IconBadge Icon={Icon} tone={o.kind === 'json' ? 'butter' : o.kind === 'markdown' ? 'lavender' : 'sky'} size={34} square />
@@ -74,6 +86,17 @@ export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; reado
         )}
       </View>
     </Press>
+  );
+}
+
+/** A video's mark over its first frame: a quiet round chip, no glow. */
+export function PlayMark({ size = 40 }: { readonly size?: number }) {
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+      <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: color.onStageChip }}>
+        <Play color={color.onStage} fill={color.onStage} size={Math.round(size * 0.42)} style={{ marginLeft: size * 0.06 }} />
+      </View>
+    </View>
   );
 }
 
@@ -101,5 +124,38 @@ export function OutputGrid({ items, cols = 3, gap = 8 }: { readonly items: reado
     <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
       {width ? items.map((o) => <Thumb key={o.ref} o={o} group={items} w={w} h={Math.round(w * (o.kind === 'image' ? 1.3 : 0.8))} />) : null}
     </View>
+  );
+}
+
+/** A turn's outputs, compact (BLG-71): images and files are a row of small cards. */
+const TURN_H = 84;
+
+/**
+ * What one answer made, as one strip you swipe sideways: pictures as ~110 px thumbnails, text and
+ * logs as small cards (an icon, the name, the size). A tap opens the viewer, which swipes through
+ * this answer's outputs.
+ */
+export function TurnOutputs({ items }: { readonly items: readonly OutputView[] }) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+      {items.map((o) => (o.kind === 'image' || o.kind === 'video' ? <Thumb key={o.ref} o={o} group={items} w={110} h={TURN_H} /> : <FileCard key={o.ref} o={o} group={items} />))}
+    </ScrollView>
+  );
+}
+
+/** A text output in a turn's strip: its icon, name and size on one small card. */
+function FileCard({ o, group }: { readonly o: OutputView; readonly group: readonly OutputView[] }) {
+  const Icon = iconOf(o);
+  const topic = useContext(OutputsTopic);
+  return (
+    <Press onPress={() => openOutput(o, group, undefined, topic)} accessibilityLabel={o.name} style={{ width: 156, height: TURN_H, borderRadius: radius.m, padding: 10, justifyContent: 'space-between', backgroundColor: elevation.raised.surface, borderWidth: 1, borderColor: elevation.raised.border }}>
+      <IconBadge Icon={Icon} tone={o.kind === 'json' ? 'butter' : o.kind === 'markdown' ? 'lavender' : 'sky'} size={28} square />
+      <View>
+        <T v="caption" c={color.text} numberOfLines={1} ellipsizeMode="middle" style={{ fontWeight: '600' }}>
+          {o.name}
+        </T>
+        <T v="caption" style={{ fontSize: 11.5 }}>{sizeOf(o.size)}</T>
+      </View>
+    </Press>
   );
 }

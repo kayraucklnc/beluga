@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
 import { currentQuestion } from '@beluga/ui/collab-actions.js';
 import { isDecisionQid } from '@beluga/core/plans/decisions.js';
 import { TRUST_INFO } from '@beluga/core/trust.js';
+import { defaultAgentOf } from '@beluga/protocol.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { agentName } from '../lib/agent-words.js';
 import { brandText } from '../lib/brand.js';
+import { sameDeep, sameFields } from '../lib/stable.js';
+import { hostToBefriend } from '../network/net-model.js';
+import { befriend } from '../network/use-net.js';
 import { Markdown } from './Markdown.js';
 import { useNow } from './Items.js';
 import s from './attention.module.css';
@@ -16,22 +21,28 @@ import s from './attention.module.css';
  * What needs you right now, just above the box you type in: an approval, Claude's question or
  * plan, someone at the door, a new person to choose a trust level for.
  */
-export function Attention() {
+export function Attention({ channel }: { channel?: string } = {}) {
   // People at the door and new people to trust belong to the room; approvals reach you anywhere.
   const inRoom = useApp((st) => st.view.kind === 'room');
   return (
     <div className={s.stack}>
-      <Approvals />
-      <Question />
+      <Approvals {...(channel ? { channel } : {})} />
+      <Question {...(channel ? { channel } : {})} />
       {inRoom ? <Knock /> : null}
+      {inRoom ? <BefriendHost /> : null}
       {inRoom ? <TrustPrompt /> : null}
     </div>
   );
 }
 
-function Approvals() {
+/**
+ * `channel`: in a friends' chat (BLG-207), only what holds up your Claude there; a friend's request
+ * is answered on its card in the chat instead.
+ */
+function Approvals({ channel }: { channel?: string }) {
   const api = useApi();
-  const approvals = useApp((st) => st.approvals);
+  const all = useApp((st) => st.approvals);
+  const approvals = useMemo(() => (channel ? all.filter((a) => a.channel === channel && !a.task) : all), [all, channel]);
   const first = approvals[0];
   const now = useNow(Boolean(first?.askedAt));
   const [showAll, setShowAll] = useState(false);
@@ -59,7 +70,7 @@ function Approvals() {
             Allow once
           </Button>
           {first.project ? (
-            <Tip label="Your Claude reads this project’s .env files without asking. Change it in Settings › Environment.">
+            <Tip label="Your agent reads this project’s .env files without asking. Change it in Settings › Environment.">
               <Button onClick={() => void api.host.answerApproval('project', first.id)}>Always for {first.project}</Button>
             </Tip>
           ) : null}
@@ -70,6 +81,16 @@ function Approvals() {
           </Tip>
           <Button variant="quiet" onClick={() => void api.host.answerApproval('no', first.id)}>
             Don’t allow
+          </Button>
+        </div>
+      ) : first.once ? (
+        // A friend's request for a secret: asked each time, so there's no Always.
+        <div className={s.actions}>
+          <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>
+            Allow once
+          </Button>
+          <Button variant="quiet" onClick={() => void api.host.answerApproval('no', first.id)}>
+            Decline
           </Button>
         </div>
       ) : (
@@ -105,19 +126,23 @@ function Approvals() {
   );
 }
 
-function Question() {
+function Question({ channel }: { channel?: string }) {
   const actions = useActions();
   const { ui } = useBeluga();
-  const state = useApp((st) => st);
-  const q = state.questions[0];
-  if (!q || q.channel !== channelOf(state.view)) return null;
-  const owner = state.peers.find((p) => p.peerId === q.owner)?.name;
+  // Only the question shown and who asked, so other events don't draw the card again.
+  const { q, owner, agent, selfId } = useApp((st) => {
+    const first = st.questions[0];
+    const q = channel ? st.questions.find((x) => x.channel === channel) : first?.channel === channelOf(st.view) ? first : undefined;
+    const peer = q ? st.peers.find((p) => p.peerId === q.owner) : undefined;
+    return { q, owner: peer?.name, agent: agentName(peer ? defaultAgentOf(peer) : defaultAgentOf(st.self)), selfId: st.selfId };
+  }, sameFields);
+  if (!q) return null;
   if (q.question.kind === 'plan') {
     return (
       <div className={s.card}>
         <div className={s.head}>
           <Icon name="wand" size={13} className={s.claude} />
-          <span className={s.title}>{owner && q.owner !== state.selfId ? `${owner}'s Claude` : 'Claude'} has a plan</span>
+          <span className={s.title}>{owner && q.owner !== selfId ? `${owner}'s ${agent}` : agent} has a plan</span>
           <Button size="small" variant="quiet" onClick={() => ui.patch({ planFull: q.qid })}>
             Read in full
           </Button>
@@ -143,7 +168,7 @@ function Question() {
     <div className={s.card}>
       <div className={s.head}>
         <Icon name="claude" size={13} className={s.claude} />
-        <span className={s.title}>{current.header || 'Claude asks'}</span>
+        <span className={s.title}>{current.header || `${agent} asks`}</span>
         {total > 1 ? <span className={s.more}>{index + 1} of {total}</span> : null}
         {/* A decision of yours in a plan waits until you answer it (core/plans/decisions.ts). */}
         {isDecisionQid(q.qid) ? null : (
@@ -182,11 +207,12 @@ function Question() {
 
 function Knock() {
   const actions = useActions();
-  const state = useApp((st) => st);
-  const knock = state.knocks.find((k) => state.peers.some((p) => p.peerId === k.peerId));
+  const { knock, who, link } = useApp((st) => {
+    const knock = st.knocks.find((k) => st.peers.some((p) => p.peerId === k.peerId));
+    if (!knock) return { knock, who: undefined, link: undefined };
+    return { knock, who: st.peers.find((p) => p.peerId === knock.peerId)?.name ?? 'Someone', link: st.links.find((l) => l.id === knock.linkId) };
+  }, sameFields);
   if (!knock) return null;
-  const who = state.peers.find((p) => p.peerId === knock.peerId)?.name ?? 'Someone';
-  const link = state.links.find((l) => l.id === knock.linkId);
   return (
     <div className={s.card}>
       <div className={s.head}>
@@ -208,12 +234,55 @@ function Knock() {
   );
 }
 
+/** Hosts you said Not Now to ("Add kay as a friend?"), remembered on this Mac. */
+const BEFRIEND_KEY = 'beluga.befriend.notNow';
+const notNow = (): Set<string> => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(BEFRIEND_KEY) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+};
+
+/**
+ * You joined someone's room with an old room link: rooms fold into friends (BLG-202), so their
+ * host is offered as a friend, once. The room itself works as before.
+ */
+function BefriendHost() {
+  const { client } = useBeluga();
+  const [dismissed, setDismissed] = useState(notNow);
+  const host = useApp((st) => hostToBefriend({ peers: st.peers, selfId: st.self?.peerId, friends: st.network.friends, ...(st.network.offers ? { offers: st.network.offers } : {}), dismissed }), sameDeep);
+  if (!host) return null;
+  const later = (): void => {
+    const next = new Set([...dismissed, host.peerId]);
+    localStorage.setItem(BEFRIEND_KEY, JSON.stringify([...next].slice(-200)));
+    setDismissed(next);
+  };
+  return (
+    <div className={s.card} role="group" aria-label={`Add ${host.name} as a friend`}>
+      <div className={s.head}>
+        <Icon name="person" size={13} />
+        <span className={s.title}>Add {host.name} as a friend?</span>
+      </div>
+      <div className={s.actions}>
+        <Button variant="primary" onClick={() => void befriend(client, host.peerId, host.name)}>
+          Add as Friend
+        </Button>
+        <Button variant="quiet" onClick={later}>
+          Not Now
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function TrustPrompt() {
   const actions = useActions();
-  const state = useApp((st) => st);
-  const peerId = state.trustPrompts.find((id) => state.peers.some((p) => p.peerId === id));
+  const { peerId, who } = useApp((st) => {
+    const peerId = st.trustPrompts.find((id) => st.peers.some((p) => p.peerId === id));
+    return { peerId, who: peerId ? (st.peers.find((p) => p.peerId === peerId)?.name ?? 'Someone') : undefined };
+  }, sameFields);
   if (!peerId) return null;
-  const who = state.peers.find((p) => p.peerId === peerId)?.name ?? 'Someone';
   return (
     <div className={s.card}>
       <div className={s.head}>

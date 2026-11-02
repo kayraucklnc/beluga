@@ -3,11 +3,13 @@ import { type AppState, type LogItem, type ReviewState, type SharedTab, type Wor
 import type { TrustLevel } from '../core/settings.js';
 import { describePr } from '../shared/format.js';
 import { formatBytes } from '../shared/format.js';
+import { fallbackFor, runtimeHere } from '../shared/runtime-fallbacks.js';
 import type { Project, Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate } from './text.js';
 import { SPINNER, glyph, theme } from './theme.js';
+import { handoffPeople, worktreeShareRows } from './worktree-share.js';
 
 /** Something clickable, in coordinates relative to the model's own top-left corner. */
 export interface Zone {
@@ -217,13 +219,17 @@ export function stateOf(state: AppState, ws: Workspace, frame: number, now = Dat
   if (act.awaiting) return { label: 'Needs your approval', color: theme.warn, icon: glyph.wait, tone: 'warn' };
   if (act.running) {
     const extra = act.subagents ? ` · ${act.subagents} sub-agent${act.subagents > 1 ? 's' : ''} running` : act.background ? ' · background task' : '';
-    return { label: `Claude working${act.startedAt ? ` ${formatDuration(now - act.startedAt)}` : ''}${extra}`, color: theme.claude, icon: spin, tone: 'claude' };
+    return { label: `Agent working${act.startedAt ? ` ${formatDuration(now - act.startedAt)}` : ''}${extra}`, color: theme.claude, icon: spin, tone: 'claude' };
   }
   if (ws.archived) return { label: 'Archived', color: theme.muted, icon: glyph.ring, tone: 'muted' };
   if (ws.kind === 'chat') return { label: act.lastTs ? `Chat · ${ago(act.lastTs, now)}` : 'New chat', color: theme.muted, icon: '◇', tone: 'muted' };
   const st = ws.status;
-  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.warn, icon: glyph.dot, tone: 'warn' };
+  // Work in progress, not a problem: quiet, like the branch pill (no warning dot on the row).
+  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.muted, icon: glyph.dot, tone: 'muted' };
   if (ws.kind === 'worktree' && state.prs[ws.id]?.state === 'MERGED') return { label: 'Merged on GitHub', color: theme.ok, icon: glyph.dot, tone: 'ok' };
+  // Continued after a merged PR (prDone): what's landed is that PR's work, so nothing new yet (not Merged again).
+  if (ws.kind === 'worktree' && st?.landed && ws.prDone !== undefined && !state.prs[ws.id]) return { label: 'Up to date', color: theme.ok, icon: glyph.dot, tone: 'ok' };
+  if (ws.kind === 'worktree' && st?.landed && state.prs[ws.id]?.state !== 'OPEN') return { label: 'Merged', color: theme.ok, icon: glyph.dot, tone: 'ok' };
   if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot, tone: 'info' };
   return { label: ws.kind === 'main' ? 'Main folder' : 'Up to date', color: theme.ok, icon: glyph.dot, tone: 'ok' };
 }
@@ -305,9 +311,9 @@ export function projectsModel(state: AppState, toggled: ReadonlySet<string>, fra
 
   // CHATS
   const chats = state.projects.find((p) => !p.root);
-  addWithButtons(section('CHATS', theme.claude), [{ label: '+ new', color: theme.claude, action: { type: 'new_chat', projectId: 'chats' }, hint: 'Start a Claude chat that is not tied to any project' }], { type: 'none' }, '');
+  addWithButtons(section('CHATS', theme.claude), [{ label: '+ new', color: theme.claude, action: { type: 'new_chat', projectId: 'chats' }, hint: 'Start an agent chat that is not tied to any project' }], { type: 'none' }, '');
   const liveChats = chats?.workspaces.filter((w) => !w.archived) ?? [];
-  if (!liveChats.length) add(plain('  Talk to Claude about anything', { color: theme.border }));
+  if (!liveChats.length) add(plain('  Talk to your agent about anything', { color: theme.border }));
   for (const ws of liveChats) wsRow(ws, ' ');
   lines.push([]);
 
@@ -333,7 +339,7 @@ export function projectsModel(state: AppState, toggled: ReadonlySet<string>, fra
       ],
       [
         { label: `+${BRANCH}`, color: theme.info, action: { type: 'new_worktree', projectId: p.id }, hint: `New worktree in ${p.name} from the latest origin` },
-        { label: '+◇', color: theme.claude, action: { type: 'new_chat', projectId: p.id }, hint: `New Claude chat in ${p.name}'s main folder` },
+        { label: '+◇', color: theme.claude, action: { type: 'new_chat', projectId: p.id }, hint: `New agent chat in ${p.name}'s main folder` },
         { label: '⋯', color: theme.muted, action: { type: 'project_menu', id: p.id }, hint: `More for ${p.name}: groups, hide, Finder` },
       ],
       { type: 'toggle_project', id: p.id },
@@ -411,11 +417,11 @@ export function topTabs(state: AppState): TopTab[] {
   const files = newShares(state);
   const news = state.view.kind === 'overview' ? { count: 0, urgent: false } : overviewNews(state);
   const tabs: TopTab[] = [
-    { kind: 'room', label: solo ? 'Chat' : 'Group chat', short: 'Chat', hint: solo ? 'Talk with your Claude, or @a-workspace to reach the Claude working there' : 'Chat with everyone in the room and their Claudes', badge: state.unread.room ?? 0 },
-    { kind: 'files', label: 'Shared files', short: 'Files', hint: files ? `${files} new shared folder${files === 1 ? '' : 's'}: browse what people in the room share` : 'Browse folders people in the room share', badge: files },
+    { kind: 'room', label: solo ? 'Chat' : 'Group chat', short: 'Chat', hint: solo ? 'Talk with your agent, or @a-workspace to reach the agent working there' : 'Chat with everyone in the room and their agents', badge: state.unread.room ?? 0 },
+    { kind: 'files', label: 'Shared files', short: 'Files', hint: files ? `${files} new shared folder${files === 1 ? '' : 's'}: browse what friends and the room share` : 'Browse folders friends and the room share', badge: files },
     { kind: 'overview', label: 'Overview', short: 'Overview', hint: news.count ? `${news.count} workspace${news.count === 1 ? '' : 's'} to look at${news.urgent ? ' (one needs you)' : ''}: every worktree and chat at a glance` : 'Every worktree and chat at a glance', badge: news.count, urgent: news.urgent },
     { kind: 'search', label: 'Search', short: 'Search', hint: 'Search every conversation: type below, ↑↓ choose, Enter opens', badge: 0 },
-    { kind: 'usage', label: 'Usage', short: 'Usage', hint: 'Disk space and Claude tokens per workspace', badge: 0 },
+    { kind: 'usage', label: 'Usage', short: 'Usage', hint: 'Disk space and agent tokens per workspace', badge: 0 },
     { kind: 'terminal', label: 'Terminal', short: 'Terminal', hint: 'Your own shell in the current project (or home) folder; click it to type', badge: 0 },
   ];
   return tabs.map((t, i) => ({ ...t, hint: `${t.hint} · ${tabKey(i + 1)}` }));
@@ -493,9 +499,9 @@ function rowActions(state: AppState, p: Project, w: Workspace): Array<{ label: s
   const conflict = Boolean(state.conflicts[w.id]?.length);
   const ahead = w.kind === 'worktree' ? (w.status?.ahead ?? 0) : 0;
   return [
-    ...(conflict ? [{ label: 'Solve conflict', action: { type: 'ws', id: w.id, action: 'merge_claude' } as UiAction, hint: 'Ask Claude to resolve the merge conflict' }] : []),
+    ...(conflict ? [{ label: 'Solve conflict', action: { type: 'ws', id: w.id, action: 'merge_claude' } as UiAction, hint: 'Ask your agent to resolve the merge conflict' }] : []),
     ...(ahead > 0 && !(w.status?.changed ?? 0) && !conflict ? [{ label: 'Merge Locally', action: { type: 'ws', id: w.id, action: 'merge' } as UiAction, hint: `Merge ${w.branch} into ${p.name}'s main folder on this computer (nothing on GitHub)` }] : []),
-    ...(w.kind === 'worktree' && (ahead > 0 || pr) ? [{ label: pr ? 'View PR' : 'Open PR', action: { type: 'ws', id: w.id, action: 'pr' } as UiAction, hint: pr ? describePr(pr) : 'Claude opens a pull request with a short description' }] : []),
+    ...(w.kind === 'worktree' && (ahead > 0 || pr) ? [{ label: pr ? 'View PR' : 'Open PR', action: { type: 'ws', id: w.id, action: 'pr' } as UiAction, hint: pr ? describePr(pr) : 'Your agent opens a pull request with a short description' }] : []),
   ];
 }
 
@@ -562,20 +568,20 @@ export function overviewModel(state: AppState, frame: number, width: number, now
  */
 /** "Share" (or "Shared · 2") opens who's in this workspace and lets you invite or remove people. */
 function sharedButton(state: AppState, wsId: string): WorkspaceButton {
-  const count = Object.keys(state.members[wsId] ?? {}).length;
-  const others = state.peers.filter((p) => p.peerId !== state.self?.peerId).length;
+  // Friends it's shared with over the network count too, not only the room's members (BLG-340).
+  const count = worktreeShareRows(state, wsId).filter((r) => r.access !== 'none').length;
   return {
     label: count ? `Shared · ${count}` : 'Share',
     action: 'share',
     tone: 'info',
-    hint: count ? `${count} ${count === 1 ? 'person is' : 'people are'} in this workspace: invite or remove people` : others ? 'Invite people in the room to work here with you' : 'Invite a friend to work here with you',
+    hint: count ? `${count} ${count === 1 ? 'person is' : 'people are'} in this workspace: invite or remove people` : 'Invite a friend to just this worktree: they see the chat and files and can ask your agent here',
   };
 }
 
 /** A workspace's views: its chat, files, what changed (not for chats), and its terminal. */
 export function workspaceTabs(ws: Workspace): Array<{ label: string; tab: WorkspaceTab; hint: string }> {
   return [
-    { label: 'Chat', tab: 'chat', hint: 'Your conversation with Claude' },
+    { label: 'Chat', tab: 'chat', hint: 'Your conversation with your agent' },
     { label: 'Files', tab: 'files', hint: 'Browse this folder' },
     ...(ws.kind === 'chat' ? [] : [{ label: 'Diff', tab: 'review' as WorkspaceTab, hint: 'See exactly what changed' }]),
     { label: 'Terminal', tab: 'terminal', hint: 'A real shell in this folder, plus setup and run' },
@@ -600,7 +606,11 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
   const conflict = Boolean(state.conflicts[ws.id]?.length);
   const pr = state.prs[ws.id];
   const scripts = project?.scripts;
-  const friends = state.peers.some((p) => p.peerId !== state.self?.peerId && p.agent);
+  // In your room with their Claude, or a friend over the network (BLG-341).
+  const friends = handoffPeople(state).length > 0;
+  // What its runtime does instead (BLG-461): Compact greyed with why, Fork saying what comes along.
+  const runtime = runtimeHere(ws.agent, state.self);
+  const noCompact = fallbackFor(runtime, 'compact');
   const all: WorkspaceButton[] = ws.archived
     ? [
         { label: 'Restore', action: 'restore', hint: 'Bring this workspace back' },
@@ -609,26 +619,26 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
     : [
         ...(scripts?.run ? ([{ label: 'Run', action: 'run', hint: `Start ${scripts.run.command} in the Terminal tab` }] as WorkspaceButton[]) : []),
         // A main folder is questions only: a review there would want to fix things.
-        ...(ws.askOnly ? [] : ([{ label: 'Review', action: 'review_claude', hint: 'Ask Claude to check everything: bugs, security, tests and quality' }] as WorkspaceButton[])),
+        ...(ws.askOnly ? [] : ([{ label: 'Review', action: 'review_claude', hint: 'Ask your agent to check everything: bugs, security, tests and quality' }] as WorkspaceButton[])),
         ...(ws.kind === 'worktree'
           ? ([
               { label: 'Commit', action: 'commit', hint: changed ? `Commit ${changed} changed file(s)` : 'Nothing to commit', disabled: !changed },
               pr
                 ? { label: `PR #${pr.number}${pr.checks === 'passing' ? ' ✓' : pr.checks === 'failing' ? ' ✗' : pr.checks === 'pending' ? ' …' : ''}`, action: 'pr', hint: `${describePr(pr)}: open it, fix checks, or update it`, tone: pr.checks === 'failing' ? 'error' : pr.state === 'MERGED' ? 'ok' : 'info' }
-                : { label: 'PR', action: 'pr', hint: ahead || changed ? 'Claude pushes and opens a pull request with a short description' : 'Nothing to put in a pull request yet', disabled: !ahead && !changed },
+                : { label: 'PR', action: 'pr', hint: ahead || changed ? 'Your agent pushes and opens a pull request with a short description' : 'Nothing to put in a pull request yet', disabled: !ahead && !changed },
               conflict
-                ? { label: 'Solve conflict', action: 'merge_claude', hint: 'Ask Claude to resolve the merge conflict and finish the merge', tone: 'error' }
+                ? { label: 'Solve conflict', action: 'merge_claude', hint: 'Ask your agent to resolve the merge conflict and finish the merge', tone: 'error' }
                 : {
                     label: 'Merge Locally',
                     action: 'merge',
                     hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
                     disabled: !ahead || changed > 0,
                   },
-              { label: 'Hand off', action: 'handoff', hint: friends ? "Someone else's Claude continues this on their computer" : 'Invite someone first; then they can take this over', disabled: !friends },
+              { label: 'Hand off', action: 'handoff', hint: friends ? "A friend's agent continues this on their computer" : state.network.enabled ? 'Add a friend first; then their agent can take this over' : 'Turn on the Beluga network to hand this to a friend, or invite someone to your room', disabled: !friends },
             ] as WorkspaceButton[])
           : []),
-        ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so Claude has room to keep going' }] as WorkspaceButton[]) : []),
-        ...(ws.kind !== 'chat' && !ws.askOnly ? ([{ label: 'Fork', action: 'fork', hint: 'Copy this workspace and its conversation into a new worktree' }] as WorkspaceButton[]) : []),
+        ...(state.context[`ws:${ws.id}`] ? ([noCompact ? { label: 'Compact', action: 'compact', hint: noCompact, disabled: true } : { label: 'Compact', action: 'compact', hint: 'Shrink the conversation so your agent has room to keep going' }] as WorkspaceButton[]) : []),
+        ...(ws.kind !== 'chat' && !ws.askOnly ? ([{ label: 'Fork', action: 'fork', hint: fallbackFor(runtime, 'fork') ?? 'Copy this workspace and its conversation into a new worktree' }] as WorkspaceButton[]) : []),
         { label: 'Finder', action: 'finder', hint: 'Open this folder in Finder' },
         ...(ws.kind !== 'main' ? ([{ label: 'Archive', action: 'archive', hint: 'Put it away; keeps the branch and conversation' }] as WorkspaceButton[]) : []),
         sharedButton(state, ws.id),
@@ -646,7 +656,7 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
   const title: Line = [
     { text: project?.root ? `${project.name} › ` : '', color: theme.muted },
     { text: ws.name, color: theme.text, bold: true },
-    { text: ws.kind === 'chat' ? (ws.projectRoot ? '  chat in main folder' : '  Claude chat') : ws.branch ? `  ${BRANCH} ${ws.branch}` : '', color: theme.muted },
+    { text: ws.kind === 'chat' ? (ws.projectRoot ? '  chat in main folder' : '  agent chat') : ws.branch ? `  ${BRANCH} ${ws.branch}` : '', color: theme.muted },
     { text: '   ' },
     { text: `${st.icon} ${st.label}`, color: st.color },
   ];
@@ -688,7 +698,7 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
     zones.push({ x0: x, x1: x + MORE.length - 1, y: 1, action: { type: 'ws_more', id: ws.id, actions: rest.map((b) => ({ action: b.action, label: b.label, hint: b.hint })) }, hint: rest.map((b) => b.label).join(', ') });
   }
   const third: Line = conflict
-    ? [{ text: `! Merge conflict in ${state.conflicts[ws.id]?.join(', ')}`, color: theme.error, bold: true }, { text: '   Click "Solve conflict" and Claude will resolve it', color: theme.muted }]
+    ? [{ text: `! Merge conflict in ${state.conflicts[ws.id]?.join(', ')}`, color: theme.error, bold: true }, { text: '   Click "Solve conflict" and your agent will resolve it', color: theme.muted }]
     : [{ text: '─'.repeat(width), color: theme.border }];
   const meter = state.prefs.contextMeter ? contextMeter(state, `ws:${ws.id}`, 12) : [];
   const disk = state.disk[ws.id];

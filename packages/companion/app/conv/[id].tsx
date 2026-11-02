@@ -1,22 +1,34 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Bot, CircleCheck, CircleX, Clock, History, Monitor, OctagonX, Send, Sparkles, Square } from 'lucide-react-native';
+import { Activity, Bot, Camera, ChevronRight, Map as MapIcon, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, MessagesSquare, Monitor, OctagonX, Plus, Send, Square, SquareTerminal, Trash2 } from 'lucide-react-native';
+import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
+import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
+import { ProjectMark } from '../../components/ProjectMark';
+import { openOnMac } from '../../lib/mac';
 import { useRef, useState } from 'react';
 import { Platform, ScrollView, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeInUp, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Composer } from '../../components/Composer';
+import { Composer, QueueTray } from '../../components/Composer';
 import { AgentChips, Prose, StepTicker } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace } from '../../components/Needs';
 import { Options } from '../../components/Options';
-import { OutputGrid, Thumb } from '../../components/Outputs';
+import { OutputGrid, OutputsTopic, TurnOutputs } from '../../components/Outputs';
+import { DeleteMacChat, MacChatsSheet, newMacChat } from '../../components/MacChats';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
-import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
-import { ago, useView, useVisibleNeeds } from '../../lib/hooks';
+import { EditPromptSheet } from '../../components/EditPrompt';
+import { AgentPickerSheet } from '../../components/AgentPicker';
+import { agentMark, markIcon, markOfName, runtimeMark } from '../../components/AgentMark';
+import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone, toneOf } from '../../components/ui';
+import { ago, elapsed, useSince, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
-import type { ConvView, OutputView, SubAgentView, Topic, TurnView } from '../../lib/link/protocol';
+import { type ConvView, type HomeView, type OutputView, type SubAgentView, type Topic, type TurnView, isMacTopic } from '../../lib/link/protocol';
+import { type Send as Pending, sends, useSends } from '../../lib/sends';
+import { SendStatus } from '../../components/SendStatus';
+import { AgentStrip, SubAgentSheet } from '../../components/SubAgents';
 import { store } from '../../lib/store';
+import { upload } from '../../lib/pick';
 import { color } from '../../lib/theme';
 import { router } from 'expo-router';
 
@@ -25,6 +37,35 @@ import { router } from 'expo-router';
  * step, sub-agents as chips (tap: a sheet with their steps and outputs), what it waits on you for,
  * and a composer with Send and Stop.
  */
+
+/** An empty Your Mac: three first things to ask, one tap each (the composer is there too). */
+function MacStarters({ topic }: { readonly topic: Topic }) {
+  const starters = [
+    { label: 'Send me a screenshot', Icon: Camera, tone: 'sky' as Tone, text: 'Take a screenshot of my screen and send it to me.' },
+    { label: 'What’s using my CPU?', Icon: Cpu, tone: 'peach' as Tone, text: 'What’s using my CPU and memory right now?' },
+    { label: 'What’s running?', Icon: Activity, tone: 'mint' as Tone, text: 'What’s running in Beluga right now, across my projects?' },
+  ];
+  return (
+    <Animated.View entering={FadeIn.duration(260)} style={{ alignItems: 'center', gap: 14, marginTop: 40 }}>
+      <IconBadge Icon={Laptop} tone="sky" size={56} />
+      <T v="heading">Ask your Mac</T>
+      <T v="callout" style={{ textAlign: 'center', paddingHorizontal: 24 }}>
+        Your agent for the whole Mac, not one project. The same conversation as on your Mac.
+      </T>
+      <View style={{ gap: 8, alignSelf: 'stretch', marginTop: 6 }}>
+        {starters.map((s) => (
+          <Press key={s.label} scaleTo={0.985} onPress={() => sends.message(topic, s.text, calls.send(topic, s.text))}>
+            <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
+              <IconBadge Icon={s.Icon} tone={s.tone} size={30} />
+              <T v="body">{s.label}</T>
+            </Card>
+          </Press>
+        ))}
+      </View>
+    </Animated.View>
+  );
+}
+
 export default function Conversation() {
   const { scrolled, onScroll } = useScrolled();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,6 +73,8 @@ export default function Conversation() {
   const conv = useView<ConvView>(topic);
   const c = conv?.data;
   const needs = useVisibleNeeds(c?.needsYou);
+  /** What you sent that the Mac's view doesn't show yet (lib/sends.ts). */
+  const pending = useSends(topic);
   const insets = useSafeAreaInsets();
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const atEnd = useRef(true);
@@ -40,6 +83,10 @@ export default function Conversation() {
   const [menu, setMenu] = useState(false);
   /** A steered message of yours Claude hasn't read yet, long-pressed: its sheet offers Send now. */
   const [unread, setUnread] = useState<TurnView | undefined>();
+  /** Your message, long-pressed to edit it (1.28): Rewind Here or New Fork. */
+  const [editing, setEditing] = useState<TurnView | undefined>();
+  const [picking, setPicking] = useState(false);
+  const canEdit = useSupports('editPrompt');
   const older = async () => {
     if (!c) return;
     setOlderBusy(true);
@@ -52,112 +99,255 @@ export default function Conversation() {
     if (atEnd.current) scroll.current?.scrollToEnd({ animated: true });
   };
   const liveAgent = agent && c ? c.turns.flatMap((t) => t.subagents ?? []).find((a) => a.id === agent.id) ?? agent : agent;
-  const all: OutputView[] = c ? c.turns.flatMap((t) => [...(t.outputs ?? []), ...(t.subagents ?? []).flatMap((a) => a.outputs)]) : [];
+  // The viewer swipes through this worktree's outputs (all of them, since 1.3; else the turns').
+  const all: OutputView[] = c ? (c.outputs ?? c.turns.flatMap((t) => [...(t.outputs ?? []), ...(t.subagents ?? []).flatMap((a) => a.outputs)])) : [];
+  const [outputsOpen, setOutputsOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  // What waits its turn is in the queue above the composer, not a turn of its own.
+  const turns = c ? c.turns.filter((t) => !(c.queue && t.who === 'claude' && t.status === 'queued')) : [];
+  // A worktree (or chat folder) of yours has files to read and terminals to share with the Mac (1.7).
+  const hasFolder = topic.startsWith('conv:ws:') || Boolean(c?.mergeable);
+  // Your Mac's chats (1.14): a list to switch between in the header, New chat and Delete under •••.
+  const canChats = useSupports('macChats');
+  const macChats = isMacTopic(topic) && canChats;
+  const home = useView<HomeView>(macChats ? 'home' : undefined);
+  const chatCount = home?.data.macChats?.length ?? 0;
+  const [chatsOpen, setChatsOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  /** A request you asked of a friend's Claude: Stop cancels it (no run of yours to stop), Remove forgets it. */
+  const askedTask = topic.startsWith('conv:task:') ? topic.slice('conv:task:'.length) : undefined;
 
   return (
-    <Screen>
-      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} right={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {c?.working ? <Pill label="Working" tone="peach" /> : null}
-            <More onPress={() => setMenu(true)} label="Conversation options" />
-          </View>
-        }
-      />
-      <KeyboardLift>
-        <ScrollView
-          ref={scroll}
-          onContentSizeChange={follow}
-          onScroll={(e) => {
-            onScroll(e);
-            const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
-            atEnd.current = contentOffset.y + layoutMeasurement.height > contentSize.height - 80;
-          }}
-          scrollEventThrottle={64}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 8, paddingBottom: 18, gap: 14 }}
-          keyboardDismissMode="interactive"
-        >
-          {c?.more ? (
-            <Press
-              onPress={() => void older()}
-              style={{ alignSelf: 'center', paddingHorizontal: 14, height: 30, borderRadius: 15, justifyContent: 'center', backgroundColor: color.sunken }}
-            >
-              <T v="caption" c={color.text2}>
-                {olderBusy ? 'Loading…' : 'Earlier messages'}
-              </T>
-            </Press>
-          ) : null}
-          {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
-          {c?.turns.map((t, i) => (
-            <Animated.View key={t.id} entering={i > c.turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
-              {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} />}
-            </Animated.View>
-          ))}
-          {needs.map((n) => (
-            <Animated.View key={n.id} entering={FadeInDown.springify()} layout={LinearTransition.springify()}>
-              <Card style={{ padding: 16, gap: 14 }}>
-                <NeedFace item={n} more  />
-                <NeedButtons item={n} onAnswer={(t) => answer(n, t)} />
-              </Card>
-            </Animated.View>
-          ))}
-        </ScrollView>
-        <Composer
-          placeholder={c?.working ? 'Add to what Claude is doing…' : 'Reply to Claude…'}
-          working={c?.working}
-          disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
-          onSend={(text) => {
-            atEnd.current = true;
-            void store.call(calls.send(topic, text)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
-          }}
-          onStop={() => void store.call(calls.stop(topic))}
-          bottom={insets.bottom}
+    <OutputsTopic.Provider value={topic}>
+      <Screen>
+        <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={isMacTopic(topic) ? <IconBadge Icon={Laptop} tone="sky" size={30} /> : c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {c?.working && !all.length ? <Pill label="Working" tone="peach" /> : null}
+              {all.length ? (
+                <Press onPress={() => setOutputsOpen(true)} accessibilityLabel={`Outputs, ${all.length}`} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: color.sunken }}>
+                  <Images color={color.text2} size={16} />
+                  <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
+                    {all.length}
+                  </T>
+                </Press>
+              ) : null}
+              {macChats ? (
+                <Press onPress={() => setChatsOpen(true)} accessibilityLabel={`Your Mac’s chats, ${chatCount}`} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: color.sunken }}>
+                  <MessagesSquare color={color.text2} size={16} />
+                  {chatCount > 1 ? (
+                    <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
+                      {chatCount}
+                    </T>
+                  ) : null}
+                </Press>
+              ) : null}
+              <More onPress={() => setMenu(true)} label="Conversation options" />
+            </View>
+          }
         />
-      </KeyboardLift>
-      <AgentSheet agent={liveAgent} onClose={() => setAgent(undefined)} />
-      <Options
-        visible={Boolean(unread)}
-        onClose={() => setUnread(undefined)}
-        title="Claude hasn't read this yet"
-        options={[
-          {
-            Icon: Send,
-            label: 'Send now',
-            sub: 'Stops Claude’s current step so it reads this next',
-            tone: 'peach',
-            onPress: () => {
-              const request = unread?.steer?.request;
-              if (request) void store.call(calls.steerNow(request)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+        <KeyboardLift>
+          {/* Where a merge stands stays in view while the conversation scrolls under it. */}
+          {c?.merge ? (
+            <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 }}>
+              <MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} />
+            </View>
+          ) : c?.branch ? (
+            // Where its branch stands (the Mac toolbar's state), unless a merge from here is under way.
+            <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 }}>
+              <BranchBand topic={topic} branch={c.branch} canMerge={Boolean(c.mergeable) && store.supports('merge')} onMerge={() => setMergeOpen(true)} />
+            </View>
+          ) : null}
+          {/* The plan this chat writes and runs (1.15): its milestones and map are a tap away. */}
+          {c?.plan ? (
+            <View style={{ paddingHorizontal: 14, paddingBottom: 10, paddingTop: c.merge || c.branch ? 0 : 10 }}>
+              <Press scaleTo={0.985} onPress={() => router.push(`/plan/${c.plan!.topic.slice('plan:'.length)}`)} accessibilityLabel={`Open the plan ${c.plan.title}`}>
+                <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12 }}>
+                  <IconBadge Icon={MapIcon} tone="lavender" size={28} />
+                  <View style={{ flex: 1 }}>
+                    <T v="callout" c={color.text} numberOfLines={1} style={{ fontWeight: '700' }}>
+                      {c.plan.title}
+                    </T>
+                    <T v="caption" numberOfLines={1}>
+                      {c.plan.milestones ? `${c.plan.milestones} ${c.plan.milestones === 1 ? 'milestone' : 'milestones'} · ${c.plan.done} of ${c.plan.total} tasks` : 'Your agent is writing the plan'}
+                    </T>
+                  </View>
+                  <Pill label={c.plan.state} tone={toneOf(c.plan.state)} />
+                  <ChevronRight color={color.text3} size={16} />
+                </Card>
+              </Press>
+            </View>
+          ) : null}
+          {/* Its sub-agents at work stay in view, wherever their turn is (BLG-110). */}
+          <AgentStrip turns={turns} onOpen={setAgent} />
+          <ScrollView
+            ref={scroll}
+            onContentSizeChange={follow}
+            onScroll={(e) => {
+              onScroll(e);
+              const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+              atEnd.current = contentOffset.y + layoutMeasurement.height > contentSize.height - 80;
+            }}
+            scrollEventThrottle={64}
+            contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 8, paddingBottom: 18, gap: 14 }}
+            keyboardDismissMode="interactive"
+          >
+            {c?.more ? (
+              <Press
+                onPress={() => void older()}
+                style={{ alignSelf: 'center', paddingHorizontal: 14, height: 30, borderRadius: 15, justifyContent: 'center', backgroundColor: color.sunken }}
+              >
+                <T v="caption" c={color.text2}>
+                  {olderBusy ? 'Loading…' : 'Earlier messages'}
+                </T>
+              </Press>
+            ) : null}
+            {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
+            {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
+            {turns.map((t, i) => (
+              <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeIn.duration(180) : undefined}>
+                {t.dialogue ? <DialogueTurn d={t.dialogue} /> : t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} runtime={c?.agent?.runtime} />}
+              </Animated.View>
+            ))}
+            {pending.map((p) => (
+              <Animated.View key={p.id} entering={FadeIn.duration(180)}>
+                <PendingTurn s={p} />
+              </Animated.View>
+            ))}
+            {needs.map((n) => (
+              <Animated.View key={n.id} entering={FadeIn.duration(180)}>
+                <Card style={{ padding: 16, gap: 14 }}>
+                  <NeedFace item={n} more  />
+                  <NeedButtons item={n} onAnswer={(t) => answer(n, t)} />
+                </Card>
+              </Animated.View>
+            ))}
+          </ScrollView>
+          {c?.terminal ? <TerminalBand label={c.terminal.label} onTakeOver={() => void store.call(calls.takeOver(topic)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))} /> : null}
+          <Composer
+            placeholder={c?.waiting ?? (c?.working ? 'What’s next for your agent…' : 'Reply to your agent…')}
+            working={c?.working}
+            // The room: "@codex", "@bob:codex" as you type @ (BLG-520).
+            {...(c?.tags?.length ? { tags: c.tags } : {})}
+            disabled={c?.terminal ? `${c.terminal.label}’s terminal on your Mac has this conversation: Take Over to write here.` : c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
+            photos
+            onSend={(text, photos) => {
+              atEnd.current = true;
+              // Photos go up first (`put`), then the message names them; on the Mac it waits its
+              // turn while Claude works, as a queued message does.
+              if (photos.length) return sends.message(topic, text, async () => calls.send(topic, text, await Promise.all(photos.map(upload))), { photo: true });
+              // While Claude works, Send queues (after), as on the Mac; Steer is a long-press away.
+              const call = c?.working && !topic.startsWith('conv:task:') ? calls.queue(topic, text) : calls.send(topic, text);
+              sends.message(topic, text, call);
+            }}
+            onSteer={
+              topic.startsWith('conv:task:')
+                ? undefined
+                : (text) => {
+                    atEnd.current = true;
+                    sends.message(topic, text, calls.steer(topic, text));
+                  }
+            }
+            onStop={() => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic))}
+            bottom={insets.bottom}
+            above={
+              c?.queue?.length ? (
+                <QueueTray
+                  queue={c.queue}
+                  onSteer={(qid) => void store.call(calls.steerQueued(qid)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}
+                  onRemove={(qid) => void store.call(calls.unqueue(qid)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}
+                />
+              ) : null
+            }
+          />
+        </KeyboardLift>
+        <SubAgentSheet topic={topic} turn={agent ? c?.turns.find((t) => t.subagents?.some((a) => a.id === agent.id))?.id : undefined} agent={liveAgent} onClose={() => setAgent(undefined)} />
+        <Sheet
+          visible={outputsOpen}
+          onDismiss={() => setOutputsOpen(false)}
+          header={
+            <View style={{ paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <IconBadge Icon={Images} tone="sky" size={32} />
+              <View style={{ flex: 1 }}>
+                <T v="title" style={{ fontSize: 20 }}>
+                  Outputs
+                </T>
+                <T v="caption">Screenshots, logs, reports and scratch files from this worktree</T>
+              </View>
+            </View>
+          }
+        >
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+            <OutputGrid items={all} cols={3} />
+          </ScrollView>
+        </Sheet>
+        {c?.mergeable ? <MergeSheet topic={topic} visible={mergeOpen} onClose={() => setMergeOpen(false)} /> : null}
+        <EditPromptSheet turn={editing} onClose={() => setEditing(undefined)} />
+        <AgentPickerSheet topic={topic} picker={c?.agent} visible={picking} onClose={() => setPicking(false)} />
+        <Options
+          visible={Boolean(unread)}
+          onClose={() => setUnread(undefined)}
+          title="Your agent hasn't read this yet"
+          options={[
+            {
+              Icon: Send,
+              label: 'Send now',
+              sub: 'Stops your agent’s current step so it reads this next',
+              tone: 'peach',
+              onPress: () => {
+                const request = unread?.steer?.request;
+                if (request) void store.call(calls.steerNow(request)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+              },
             },
-          },
-        ]}
-      />
-      <Options
-        visible={menu}
-        onClose={() => setMenu(false)}
-        title={c?.title}
-        options={[
-          { Icon: Square, label: 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(calls.stop(topic)) },
-          { Icon: Sparkles, label: 'Ask with a photo', sub: 'Opens Ask, aimed here', tone: 'peach', onPress: () => router.push({ pathname: '/ask', params: { topic } }) },
-          { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
-          { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => store.toast({ text: 'Open it in Beluga on your Mac.', tone: 'info' }) },
-        ]}
-      />
-    </Screen>
+          ]}
+        />
+        <Options
+          visible={menu}
+          onClose={() => setMenu(false)}
+          title={c?.title}
+          options={[
+            { Icon: c?.agent ? markIcon(runtimeMark(c.agent.runtime)) : Bot, label: `Agent · ${c?.agent?.label ?? ''}`, sub: 'Pick the agent and model for this conversation', tone: 'lavender', hidden: !c?.agent || !store.supports('agentPicker'), onPress: () => setPicking(true) },
+            { Icon: Plus, label: 'New chat', sub: 'A fresh chat with your Mac, a new tab there too', tone: 'sky', hidden: !macChats, onPress: () => newMacChat((h) => router.replace(h as never)) },
+            { Icon: Square, label: askedTask ? 'Stop asking' : 'Stop the agent', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic)) },
+            { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
+            { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
+            { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
+            { Icon: SquareTerminal, label: 'Terminal', sub: 'The same terminal as on your Mac', tone: 'lavender', hidden: !hasFolder || !store.supports('terminal'), onPress: () => router.push({ pathname: '/terminal', params: { topic, title: c?.title ?? '' } }) },
+            { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
+            { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
+            { Icon: Trash2, label: 'Delete this chat', sub: 'For good, here and on your Mac', tone: 'rose', hidden: !macChats, onPress: () => setDeleting(true) },
+            {
+              Icon: Trash2,
+              label: 'Remove',
+              sub: c?.working ? 'Stops asking, then takes it off your lists' : 'Takes it off your lists, here and on your Mac',
+              tone: 'rose',
+              hidden: !askedTask || !store.supports('forget'),
+              onPress: () => void store.call(calls.forgetTask(askedTask!)).then(() => (router.canGoBack() ? router.back() : router.replace('/' as never))),
+            },
+          ]}
+        />
+        {macChats ? (
+          <>
+            <MacChatsSheet visible={chatsOpen} onClose={() => setChatsOpen(false)} current={topic} />
+            <DeleteMacChat topic={deleting ? topic : undefined} onClose={() => setDeleting(false)} after={() => (router.canGoBack() ? router.back() : router.replace('/' as never))} />
+          </>
+        ) : null}
+      </Screen>
+    </OutputsTopic.Provider>
   );
 }
 
-/** Your message. Steered into Claude's turn and not read yet: dimmed, with a clock (long-press: Send now). */
+/** Your message. Steered into Claude's turn and not read yet: dimmed, with a clock (long-press: Send now); else long-press edits it (1.28). */
 function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) | undefined }) {
   const waiting = t.steer?.waiting;
   return (
     <Press onLongPress={onLongPress} disabled={!onLongPress} scaleTo={0.99} style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
       <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: waiting ? 0.6 : 1 }}>
-        <Prose prose={t.prose} size={15} />
+        <Prose prose={t.prose} size={15} tasks />
       </View>
       {waiting ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4, marginRight: 4 }}>
           <Clock color={color.text2} size={12} />
-          <T v="caption">{waiting === 'stopping' ? 'Sent · Claude is stopping its step to read it' : 'Sent · waiting for Claude to read it'}</T>
+          <T v="caption">{waiting === 'stopping' ? 'Sent · your agent is stopping its step to read it' : 'Sent · waiting for your agent to read it'}</T>
         </View>
       ) : (
         <T v="caption" style={{ marginTop: 4, marginRight: 4 }}>
@@ -168,40 +358,97 @@ function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) 
   );
 }
 
-function ClaudeTurn({ t, all, onAgent }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void }) {
-  const working = t.status === 'working';
-  const { width } = useWindowDimensions();
-  const outs = t.outputs ?? [];
-  const thumbW = Math.min(width, 520) - 28 - 32;
-  const mins = t.endTs ? Math.max(1, Math.round((t.endTs - t.ts) / 60000)) : undefined;
+/** Yours, before the Mac's view has it: sending, waiting for the Mac, or not sent (Retry, Remove). */
+function PendingTurn({ s }: { s: Pending }) {
   return (
-    <Card style={{ padding: 16, gap: 12 }}>
+    <View style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
+      <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: s.state === 'failed' ? 1 : 0.6, borderWidth: s.state === 'failed' ? 1 : 0, borderColor: color.error }}>
+        <T v="body" style={{ fontSize: 15 }}>
+          {s.text || 'Photo'}
+        </T>
+      </View>
+      <SendStatus s={s} />
+    </View>
+  );
+}
+
+/** 1.34 (BLG-466): where a dialogue between agents begins: what it's about, how far it is, and Stop / Continue. */
+function DialogueTurn({ d }: { d: NonNullable<TurnView['dialogue']> }) {
+  const act = (call: ReturnType<typeof calls.dialogueStop>): void => void store.call(call).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+  return (
+    <Card style={{ padding: 14, gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <MessagesSquare color={color.text2} size={15} />
+        <T v="caption" c={color.text} style={{ fontWeight: '700' }}>
+          {d.mode}
+        </T>
+        <T v="caption" style={{ flex: 1 }} numberOfLines={1}>
+          {d.who}
+        </T>
+      </View>
+      <T v="callout" c={color.text}>
+        {d.topic}
+      </T>
+      <T v="caption">{[d.progress, d.budget, d.status].filter(Boolean).join(' · ')}</T>
+      {d.canStop || d.canContinue ? (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {d.canContinue ? (
+            <Press onPress={() => act(calls.dialogueContinue(d.id))} style={{ paddingHorizontal: 14, height: 32, borderRadius: 16, justifyContent: 'center', backgroundColor: color.sunken }}>
+              <T v="caption" c={color.text} style={{ fontWeight: '600' }}>
+                Continue
+              </T>
+            </Press>
+          ) : null}
+          {d.canStop ? (
+            <Press onPress={() => act(calls.dialogueStop(d.id))} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 32, borderRadius: 16, backgroundColor: color.sunken }}>
+              <OctagonX color={color.text2} size={14} />
+              <T v="caption" c={color.text} style={{ fontWeight: '600' }}>
+                Stop
+              </T>
+            </Press>
+          ) : null}
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
+/** An agent's turn, under its name with its mark (BLG-498: the agent the Mac sends; an older Mac's, by the name, else the conversation's runtime). */
+function ClaudeTurn({ t, all, onAgent, topic, runtime }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic; runtime?: string | undefined }) {
+  const working = t.status === 'working';
+  const outs = t.outputs ?? [];
+  const mins = t.endTs ? Math.max(1, Math.round((t.endTs - t.ts) / 60000)) : undefined;
+  // No card around Claude's answer: it takes the screen's full width, your bubbles sit on the right.
+  return (
+    <View style={{ gap: 12, paddingTop: 2 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <Avatar name={t.name} size={26} claude={t.who === 'claude'} />
+        <Avatar name={t.name} size={26} {...(t.who === 'claude' ? { mark: t.agent ? agentMark(t.agent) : markOfName(t.name, runtime) } : {})} />
         <T v="callout" c={color.text} style={{ fontWeight: '700' }}>
           {t.name}
         </T>
         <T v="caption" style={{ flex: 1 }} numberOfLines={1}>
-          {t.steps ? `${t.steps} steps` : ''}
+          {t.steps ? `${t.steps} ${t.steps === 1 ? 'step' : 'steps'}` : ''}
           {mins ? ` · ${mins} min` : ''}
         </T>
         <T v="caption">{ago(t.ts)}</T>
       </View>
-      {t.prose.text ? <Prose prose={t.prose} /> : null}
-      {working ? <StepTicker step={t.step ?? 'Thinking'} /> : null}
+      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} tasks /> : null}
+      {working ? <LivePanel t={t} /> : <StepsFold t={t} />}
       {t.subagents?.length ? (
-        <View style={{ gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        working || t.subagents.length <= 3 ? (
+          <AgentList agents={t.subagents} onOpen={onAgent} />
+        ) : (
+          <View style={{ gap: 8 }}>
             <T v="caption" style={{ fontWeight: '600' }}>
-              {t.subagents.length} helpers{t.subagents.some((a) => a.status === 'running') ? ` · ${t.subagents.filter((a) => a.status === 'running').length} working` : ''}
+              {t.subagents.length} sub-agents
             </T>
+            <AgentChips agents={t.subagents} onOpen={onAgent} />
           </View>
-          <AgentChips agents={t.subagents} onOpen={onAgent} />
-        </View>
+        )
       ) : null}
       {outs.length ? (
-        <Animated.View entering={FadeIn} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {outs.map((o) => (o.kind === 'image' ? <Thumb key={o.ref} o={o} group={all} w={outs.length === 1 ? thumbW : (thumbW - 8) / 2} h={outs.length === 1 ? thumbW * 0.6 : (thumbW - 8) / 2 * 0.75} /> : <Thumb key={o.ref} o={o} group={all} w={(thumbW - 8) / 2} h={96} />))}
+        <Animated.View entering={FadeIn}>
+          <TurnOutputs items={outs} />
         </Animated.View>
       ) : null}
       {t.status === 'failed' || t.status === 'stopped' ? (
@@ -212,77 +459,22 @@ function ClaudeTurn({ t, all, onAgent }: { t: TurnView; all: OutputView[]; onAge
           </T>
         </View>
       ) : null}
-    </Card>
+    </View>
   );
 }
 
-function AgentSheet({ agent, onClose }: { agent?: SubAgentView; onClose: () => void }) {
-  const { width } = useWindowDimensions();
-  const [last, setLast] = useState<SubAgentView | undefined>(agent);
-  if (agent && agent !== last) setLast(agent);
-  const a = agent ?? last;
-  const tone: Tone = a?.status === 'running' ? 'lavender' : a?.status === 'failed' ? 'rose' : 'mint';
+/**
+ * The Mac's terminal view drives this conversation (1.36, BLG-534): what you'd send here waits,
+ * and Take Over gives it back to the chat (the terminal on the Mac closes, what was said there is here).
+ */
+function TerminalBand({ label, onTakeOver }: { readonly label: string; readonly onTakeOver: () => void }) {
   return (
-    <Sheet
-      visible={!!agent}
-      onDismiss={onClose}
-      header={
-        a ? (
-          <View style={{ paddingHorizontal: 20, paddingBottom: 12, gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <IconBadge Icon={Bot} tone="lavender" size={30} />
-              <T v="callout" style={{ flex: 1 }}>
-                Helper
-              </T>
-              <Pill label={a.status === 'running' ? 'Working' : a.status === 'failed' ? 'Failed' : 'Done'} tone={tone} />
-            </View>
-            <T v="title" style={{ fontSize: 20, lineHeight: 26 }}>
-              {a.title}
-            </T>
-          </View>
-        ) : null
-      }
-    >
-      {a ? (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 18 }}>
-          <View>
-            <T v="eyebrow" style={{ marginBottom: 10 }}>
-              Steps
-            </T>
-            {a.steps.map((s, i) => {
-              const lastStep = i === a.steps.length - 1;
-              const live = lastStep && a.status === 'running';
-              return (
-                <View key={i} style={{ flexDirection: 'row', gap: 12 }}>
-                  <View style={{ alignItems: 'center', width: 14 }}>
-                    <View style={{ width: 9, height: 9, borderRadius: 5, marginTop: 6, backgroundColor: live ? color.subagent : color.ok }} />
-                    {!lastStep ? <View style={{ width: 1.5, flex: 1, backgroundColor: color.hairlineStrong, marginVertical: 3 }} /> : null}
-                  </View>
-                  <View style={{ flex: 1, paddingBottom: 12 }}>
-                    {live ? <StepTicker step={s} tone="lavender" size={14} /> : <T v="callout" c={color.text}>{s}</T>}
-                  </View>
-                </View>
-              );
-            })}
-            {a.status === 'done' ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                <CircleCheck color={color.ok} size={15} />
-                <T v="caption" c={color.ok}>
-                  Done
-                </T>
-              </View>
-            ) : null}
-          </View>
-          {a.outputs.length ? (
-            <View>
-              <T v="eyebrow" style={{ marginBottom: 10 }}>
-                Outputs · {a.outputs.length}
-              </T>
-              <OutputGrid items={a.outputs} cols={2} width={Math.min(width, 520) - 40} />
-            </View>
-          ) : null}
-        </ScrollView>
-      ) : null}
-    </Sheet>
+    <Card tone="lavender" style={{ marginHorizontal: 16, marginBottom: 8, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <IconBadge Icon={SquareTerminal} tone="lavender" size={30} />
+      <T v="caption" style={{ flex: 1 }}>{`${label}’s terminal on your Mac is driving this conversation.`}</T>
+      <Press onPress={onTakeOver} accessibilityRole="button" accessibilityLabel="Take over" style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9, backgroundColor: color.card }}>
+        <T v="caption" style={{ fontWeight: '600' }}>Take Over</T>
+      </Press>
+    </Card>
   );
 }

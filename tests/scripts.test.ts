@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { checkSetup, detectRun, detectSetup, readProjectFile, resolveScripts, saveProjectFile, scriptEnv } from '../src/workspaces/scripts.js';
+import { checkSetup, detectRun, detectSetup, nestedPackages, readProjectFile, resolveScripts, saveProjectFile, scriptEnv } from '../src/workspaces/scripts.js';
 
 let dir: string;
 const touch = (name: string, content = '') => writeFileSync(path.join(dir, name), content);
@@ -46,6 +46,67 @@ describe('detectSetup', () => {
 
   it('returns undefined for an empty folder', () => {
     expect(detectSetup(dir)).toBeUndefined();
+  });
+
+  describe('nested packages with their own lockfile', () => {
+    const sub = (at: string, files: string[]) => {
+      mkdirSync(path.join(dir, at), { recursive: true });
+      for (const f of files) touch(path.join(at, f), f === 'package.json' ? '{}' : '');
+    };
+
+    it('installs each one after the root (a root npm install leaves them empty)', () => {
+      pkg({});
+      touch('package-lock.json');
+      sub('packages/mac', ['package.json', 'package-lock.json']);
+      sub('packages/web', ['package.json', 'pnpm-lock.yaml']);
+      sub('packages/shared', ['package.json']); // no lockfile of its own: not installed on its own
+      sub('apps/site', ['README.md']);
+      expect(detectSetup(dir)).toBe('npm install && (cd packages/mac && npm install) && (cd packages/web && pnpm install)');
+      expect(nestedPackages(dir)).toEqual(['packages/mac', 'packages/web']);
+    });
+
+    it('leaves them to the root when it has workspaces or installs them itself', () => {
+      sub('packages/mac', ['package.json', 'package-lock.json']);
+      touch('package.json', JSON.stringify({ workspaces: ['packages/*'] }));
+      expect(detectSetup(dir)).toBe('npm install');
+      touch('package.json', JSON.stringify({ scripts: { postinstall: 'cd packages/mac && npm ci' } }));
+      expect(detectSetup(dir)).toBe('npm install');
+      touch('package.json', '{}');
+      touch('pnpm-workspace.yaml', 'packages:\n  - packages/*\n');
+      expect(detectSetup(dir)).toBe('npm install');
+    });
+
+    it('installs them with no package.json at the root', () => {
+      sub('apps/api', ['package.json', 'yarn.lock']);
+      expect(detectSetup(dir)).toBe('(cd apps/api && yarn install)');
+    });
+  });
+});
+
+describe("the project's own tooling", () => {
+  const tmp = (files: Record<string, string>): string => {
+    const d = mkdtempSync(path.join(os.tmpdir(), 'beluga-tooling-'));
+    for (const [name, content] of Object.entries(files)) writeFileSync(path.join(d, name), content);
+    return d;
+  };
+  it('uses Makefile and justfile targets before guessing from files', () => {
+    const dir = tmp({ Makefile: 'VERSION := 1\n.PHONY: deps run\ndeps:\n\tnpm ci\nrun build: deps\n\tnode .\n', 'package-lock.json': '{}', 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    expect(detectSetup(dir)).toBe('make deps');
+    expect(detectRun(dir)).toBe('make run');
+    const just = tmp({ justfile: 'set shell := ["bash", "-c"]\n@setup:\n    uv sync\nserve port="8000":\n    uv run app\n' });
+    expect(detectSetup(just)).toBe('just setup');
+    expect(detectRun(just)).toBe('just serve');
+  });
+
+  it("never runs `make install` (it often installs into the system), and falls back to the files", () => {
+    const dir = tmp({ Makefile: 'install:\n\tcp app /usr/local/bin\n', 'package-lock.json': '{}', 'package.json': '{}' });
+    expect(detectSetup(dir)).toBe('npm install');
+    expect(detectRun(dir)).toBeUndefined();
+  });
+
+  it("shows commands Claude worked out as Claude's", () => {
+    const dir = tmp({});
+    expect(resolveScripts(dir, { run: 'make it', setup: 'mine', byClaude: ['run'] })).toEqual({ setup: { command: 'mine', source: 'yours' }, run: { command: 'make it', source: 'claude' } });
   });
 });
 

@@ -63,11 +63,33 @@
 
 /* ------------------------------------------------------------ cards */
 
+/*
+ * One column, two from 39rem (the earnings card then takes the row below), three from 60rem.
+ * The container is a wrapper, never the grid or a card in it: older macOS WebKit gave a grid
+ * that was a size container (or held one) tracks of no width, piling the cards on top of each other.
+ */
+.summaryFit {
+  container: usage-summary / inline-size;
+}
 .summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
-  container: usage-summary / inline-size;
+}
+@container usage-summary (width >= 39rem) {
+  .summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container usage-summary (width >= 60rem) {
+  .summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@supports not (container-type: inline-size) {
+  .summary {
+    grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  }
 }
 .card {
   min-width: 0;
@@ -110,6 +132,53 @@
   text-transform: capitalize;
   color: var(--claude);
   background: color-mix(in srgb, var(--claude) 13%, transparent);
+}
+/* The make-default chip on a provider card: a soft pill, filled when it's your default. */
+.defaultChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 9px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-3) 12%, transparent);
+  cursor: default;
+}
+.defaultChip:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.defaultChipOn,
+.defaultChipOn:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.providerDetails {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--card-line);
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.agentTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.providerDetails dd {
+  margin: 0;
+  color: var(--text-2);
+}
+.friendAgent {
+  color: var(--text-3);
+  font-size: 0.8rem;
 }
 .subhead {
   margin: 0 0 6px;
@@ -272,15 +341,15 @@
  * whole row below (no half-empty row), and lays its total and its projects out next to each other.
  */
 .earnCard {
-  container: earnings / inline-size;
   --money: var(--ok);
 }
-@container usage-summary (width < 60rem) {
+@container usage-summary (39rem <= width < 60rem) {
   .earnCard {
     grid-column: 1 / -1;
   }
 }
-@container earnings (width >= 36rem) {
+/* Below 60rem the card is as wide as the row: room for both from 38rem (36rem inside its padding). */
+@container usage-summary (38rem <= width < 60rem) {
   .earnBody {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);

@@ -1,16 +1,18 @@
+import { talkReadOnly } from '../../agent/dialogue-tools.js';
+import type { AgentRef } from '../../protocol.js';
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, AgentPlace, TaskTools } from '../../agent/types.js';
-import { mentionsSecret } from '../../agent/policy.js';
+import { mentionsSecret, writesCode } from '../../agent/policy.js';
 import type { ClaudeAnswer, ClaudeQuestion } from '../../protocol.js';
-import { isSecretPath } from '../shares.js';
+import { isNeverSent, isSecretPath, secretKindOf } from '../shares.js';
 import type { TrustLevel } from '../trust.js';
 import { type AccessDecision, CAP_INFO, type Capabilities, Decision, type RequestFacts, type Rule, capFor, declineReason, ruleKindOf } from './access.js';
 import type { TaskBook } from './book.js';
 import { type SystemPort, captureScreen, describeDevice, deviceInfo, realSystem } from './device.js';
-import { type TaskOutcome, type TaskView, approvalTitle, isFinal, requestGist } from './model.js';
+import { type TaskOutcome, type TaskView, approvalTitle, isFinal, requestGist, secretLabel, secretNoun } from './model.js';
 import { type FileGet, MAX_FILES, MAX_QUESTIONS, type Need, type ResultStatus, type TaskAnswer, type TaskCancel, type TaskRequest } from './protocol.js';
 import { oneLine, parseAnswer, readResultFiles, taskPrompt } from './result.js';
 import { FileOffers } from './transfer.js';
@@ -28,6 +30,13 @@ import type { Courier } from './transport.js';
  */
 
 export type Answer = 'yes' | 'no' | 'always';
+
+/** How an approval is asked: `once` offers only Allow once / Decline (a secret: nothing covers it next time). */
+export interface ApproveOpts {
+  readonly once?: boolean;
+  /** The chat the request is in (its card is there, BLG-207): the approval and its notification point at it. */
+  readonly conversation?: string;
+}
 
 /** A question for you (an approval card) that can be withdrawn. */
 export interface Pending {
@@ -73,12 +82,18 @@ export interface ServeContext {
   readonly nameOf: (peerId: string) => string;
   readonly put: (task: TaskView) => TaskView;
   readonly agent: () => AgentBackend | undefined;
-  /** Ask you; `task` links the card to the request it's about (the sheet and notifications find it). */
-  readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string) => Pending;
+  /** Ask you; `task` links the card to the request it's about (the sheet and notifications find it). `once`: only Allow once / Decline (a secret). */
+  readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string, opts?: ApproveOpts) => Pending;
   readonly access: AccessPort;
   readonly serveShell?: ServeShell;
   readonly projectRoot: (name: string) => string | undefined;
   readonly model: () => { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' };
+  /** The agent that answers friends' asks here: your default, with your default model (you choose it, never the asker). */
+  readonly agentRef?: () => AgentRef;
+  /** The agents your card lists (an asker may pick one of those, BLG-503). */
+  readonly agents?: () => readonly AgentRef[];
+  /** Whether this Mac can run that agent now (its runtime is here). Unset: only your default. */
+  readonly runs?: (agent: AgentRef) => boolean;
   readonly notify: (title: string, body: string) => void;
   /** Where scratch folders go when the book has no folder. */
   readonly scratch: string;
@@ -90,6 +105,12 @@ export interface ServeContext {
   readonly runFolder?: (from: string) => Promise<string | undefined>;
   /** How long a question waits for the requester's answer (default 15 minutes). */
   readonly questionWaitMs?: number;
+  /** How long a friend's task may run in all (default 20 minutes; sooner if its deadline is). */
+  readonly runLimitMs?: number;
+  /** Chaired dialogues (BLG-468): a turn came in or ended, and whether one was stopped here. */
+  readonly dialogues?: import('./gateway.js').GatewayDialogues;
+  /** The chat its card is in here (BLG-208): the channel it names if you're both in it, else your DM with them (friends only). */
+  readonly chatOf?: (from: string, chat: string | undefined) => string | undefined;
 }
 
 /** Received tasks one person may have open here at once. */
@@ -98,15 +119,45 @@ const MAX_OPEN_PER_PERSON = 5;
 const MAX_RUNNING = 2;
 const MAX_STEPS = 12;
 const STEP_EVERY_MS = 400;
+/** Screenshots one task may take, with the screenshot tool or a command (BLG-427). */
 const MAX_SCREENSHOTS = 4;
 const QUESTION_WAIT_MS = 15 * 60_000;
+/** A friend's task stops after this many turns, or this long, whichever comes first (BLG-427). */
+const MAX_TURNS = 50;
+const RUN_LIMIT_MS = 20 * 60_000;
+/** Times one task may ask you to approve a step, and declines in a row that stop it (BLG-427). */
+const MAX_TOOL_ASKS = 8;
+const MAX_DECLINES = 2;
 
 const NEED_WORDS: Readonly<Record<Need, string>> = { project: 'work in a project', shell: 'run commands', files: 'read or write files', screen: 'see the screen', device: 'read device information' };
 
 /** The capability a tool of a friend's task uses (checked on every call). */
 const TOOL_NEEDS: Readonly<Record<string, Need>> = { Bash: 'shell', Write: 'files', Edit: 'files', MultiEdit: 'files', NotebookEdit: 'files' };
 
+/** A command that takes a screenshot (macOS's screencapture, the Linux tools, a script grabbing the screen). */
+const SCREENSHOT_COMMAND = /(?:^|[\s;&|(`/])(?:screencapture|gnome-screenshot|scrot|grim|maim|spectacle|xwd)(?=$|[\s;&|)`])|\bimport\s+-window\b|\bImageGrab\b|\bpyautogui\.screenshot\b|\bCG(?:Display|WindowList)CreateImage\b/;
+export const takesScreenshot = (tool: string, input: Record<string, unknown>): boolean => tool === 'Bash' && typeof input.command === 'string' && SCREENSHOT_COMMAND.test(input.command);
+
+/** Every capability a tool call uses: a command that takes a screenshot needs the screen too. */
+const toolNeeds = (tool: string, input: Record<string, unknown>): Need[] => {
+  const need = TOOL_NEEDS[tool];
+  if (!need) return [];
+  return takesScreenshot(tool, input) ? [need, 'screen'] : [need];
+};
+
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * The agent a friend's ask runs on here (BLG-503): the one they asked for when your card lists it
+ * (same runtime, and model when they named one) and it runs here, with your own pick of its model;
+ * else your default, with a note saying so.
+ */
+export function agentForAsk(asked: AgentRef | undefined, mine: AgentRef, listed: readonly AgentRef[], runs?: (agent: AgentRef) => boolean): { readonly agent: AgentRef; readonly note?: string } {
+  if (!asked || (asked.runtime === mine.runtime && (!asked.model || asked.model === mine.model))) return { agent: mine };
+  const found = listed.find((a) => a.runtime === asked.runtime && (!asked.model || a.model === asked.model)) ?? listed.find((a) => a.runtime === asked.runtime);
+  if (found && (runs?.(found) ?? false)) return { agent: found };
+  return { agent: mine, note: `${asked.label} isn’t set up here, so ${mine.label} does it` };
+}
 const SKIP: ClaudeAnswer = { kind: 'skip' };
 
 type QuestionWaiter = { readonly task: string; readonly from: string; readonly resolve: (a: ClaudeAnswer) => void };
@@ -124,6 +175,12 @@ export class TaskServer {
   private readonly artifacts = new Map<string, string[]>();
   private readonly questions = new Map<string, QuestionWaiter>();
   private readonly asked = new Map<string, number>();
+  /** Screenshots a task took, the tool's and its commands' (at most MAX_SCREENSHOTS). */
+  private readonly shots = new Map<string, number>();
+  /** Steps a task asked you to approve, and your declines in a row. */
+  private readonly toolAsks = new Map<string, { asked: number; declined: number }>();
+  /** The agent each ask ran on (its result names it). */
+  private readonly ranOn = new Map<string, AgentRef>();
   readonly offers: FileOffers;
 
   constructor(private readonly ctx: ServeContext) {
@@ -161,7 +218,9 @@ export class TaskServer {
     const now = ctx.now();
     // Blocked people get their answer, and nothing of theirs is kept here.
     if (level === 'blocked') return this.declineUnkept(from, req.id, `${me} doesn't take requests from you`);
+    const chat = ctx.chatOf?.(from, req.chat);
     const task = ctx.put({
+      ...(chat ? { chat } : {}),
       id: req.id,
       direction: 'received',
       peerId: from,
@@ -182,7 +241,13 @@ export class TaskServer {
       ...(req.cwd ? { cwd: req.cwd } : {}),
       ...(req.timeoutSec ? { timeoutSec: req.timeoutSec } : {}),
       ...(req.path ? { path: req.path } : {}),
+      ...(req.dialogue && req.kind === 'ask' ? { dialogue: req.dialogue } : {}),
     });
+    if (task.dialogue) {
+      // A dialogue you stopped here takes no more turns; one going on shows in your thread too.
+      if (ctx.dialogues?.isStopped(task.dialogue.id)) return this.finish(task, 'declined', `${me} stopped this dialogue`);
+      ctx.dialogues?.turn(task);
+    }
     try {
       await this.admit(task, req, level);
     } catch (err) {
@@ -199,29 +264,42 @@ export class TaskServer {
     const now = ctx.now();
     const from = task.peerId;
     if (req.deadline && req.deadline < now) return this.finish(task, 'failed', 'Its deadline passed before it could start');
-    const open = ctx.book.all().filter((t) => t.direction === 'received' && t.peerId === from && !isFinal(t.state)).length;
-    if (open > MAX_OPEN_PER_PERSON) return this.finish(task, 'declined', `Too many of your requests are already waiting on ${me}'s Mac; try again when they're done`);
+    // Their others still open (this one is on the book already): at most MAX_OPEN_PER_PERSON with it.
+    const open = ctx.book.all().filter((t) => t.direction === 'received' && t.peerId === from && t.id !== task.id && !isFinal(t.state)).length;
+    if (open >= MAX_OPEN_PER_PERSON) return this.finish(task, 'declined', `Too many of your requests are already waiting on ${me}'s Mac; try again when they're done`);
     if (req.kind === 'run' && !req.command) return this.finish(task, 'failed', 'It named no command to run');
     // Secrets stay off-limits at every trust level: refused before anyone is asked.
     if (req.kind === 'run' && mentionsSecret(req.command ?? '')) return this.finish(task, 'failed', 'Beluga never runs commands that touch secrets (.env files, keys, credentials)');
     if (req.kind === 'file' && !req.path) return this.finish(task, 'failed', 'It named no file');
-    // A secret file is refused before anyone is asked too (the read checks again, links followed).
-    if (req.kind === 'file' && isSecretPath(req.path ?? '')) return this.finish(task, 'declined', `${path.basename(req.path ?? '')}: not allowed (Beluga never sends secrets: .env files, keys, credentials)`);
     const facts = await this.factsFor(from, req);
     // It may have been stopped (or cancelled) meanwhile.
     if (this.isOver(task.id)) return;
+    // Beluga's own private files and the keychains never go, whoever approves (the read checks again, links followed).
+    const file = req.kind === 'file' ? this.expand(req.path ?? '') : '';
+    const really = req.kind === 'file' && facts.folder ? path.join(facts.folder, path.basename(file)) : file;
+    if (req.kind === 'file' && (isNeverSent(file) || isNeverSent(really))) return this.finish(task, 'declined', `${path.basename(file)}: not allowed (Beluga never sends its own private files or your keychains)`);
+    // Any other secret file is asked about on its own, every time (BLG-209).
+    const kind = req.kind === 'file' ? (secretKindOf(file) ?? secretKindOf(really)) : undefined;
+    const secret = kind ? { kind, label: secretLabel(kind, path.basename(file)) } : undefined;
+    if (secret) this.update(task.id, { secret });
     if (facts.folder && req.kind !== 'ask') this.update(task.id, this.folderOf(facts));
     // Decided before anything about your projects is said, and a project that isn't there reads
     // like one they can't have: nobody learns your project names by asking.
     const decided = ctx.access.decide(facts, level);
-    if (decided.verdict === 'decline') return this.finish(task, 'declined', declineReason(decided, me));
+    if (decided.verdict === 'decline') return this.finish(this.current(task), 'declined', declineReason(decided, me));
     if (req.kind !== 'file' && req.project && !ctx.projectRoot(req.project)) return this.finish(task, 'declined', `That isn't available on ${me}'s Mac`);
     let allowedBy: string;
     // You said yes to this very request, having seen its path: that one file may come from anywhere,
     // not only the folders you share. A rule doesn't reach that far (its folder could be your home).
-    // Secrets never.
-    const youChose = decided.verdict === 'ask';
-    if (decided.verdict === 'ask') {
+    // A secret is always asked about: trust, rules and Always never cover it.
+    const youChose = decided.verdict === 'ask' || Boolean(secret);
+    if (secret) {
+      const answer = await this.ask(this.current(task), 'request', approvalTitle(this.current(task)), this.secretDetail(req, name, secret.label), { once: true });
+      if (this.isOver(task.id)) return;
+      if (answer.answer === 'no') return this.finish(this.current(task), 'declined', `${me} declined${answer.reason?.trim() ? `: ${answer.reason.trim()}` : ''}`);
+      // Beluga's screens offer no "Always" for it; one that comes anyway counts once and writes nothing.
+      allowedBy = `you approved sending ${secretNoun(secret.label)}, this once`;
+    } else if (decided.verdict === 'ask') {
       const answer = await this.ask(task, 'request', approvalTitle(task), this.detail(req, name, decided));
       if (this.isOver(task.id)) return;
       if (answer.answer === 'no') return this.finish(this.current(task), 'declined', `${me} declined${answer.reason?.trim() ? `: ${answer.reason.trim()}` : ''}`);
@@ -235,15 +313,15 @@ export class TaskServer {
       } else allowedBy = 'you approved it';
     } else {
       allowedBy = decided.by === 'rule' ? 'a rule of yours allows it' : 'you trust them';
-      const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on your Mac` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from your Mac` : `ask your Claude to: ${requestGist(req, 80)}`;
-      ctx.notify(`${name}${req.by === 'agent' ? "'s Claude" : ''} wants to ${what}`, `It runs without asking: ${allowedBy}`);
+      const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on your Mac` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from your Mac` : `ask your agent to: ${requestGist(req, 80)}`;
+      ctx.notify(`${name}${req.by === 'agent' ? "'s agent" : ''} wants to ${what}`, `It runs without asking: ${allowedBy}`);
     }
     if (this.isOver(task.id)) return;
     this.update(task.id, { allowedBy });
     if (req.kind === 'run') return this.runCommand(this.current(task), req);
-    if (req.kind === 'file') return this.sendFile(this.current(task), req, facts, youChose);
+    if (req.kind === 'file') return this.sendFile(this.current(task), req, facts, youChose, secret?.label);
     this.queue.push({ task: this.current(task), req, facts });
-    if (this.running >= MAX_RUNNING) this.update(task.id, { state: 'queued' }, 'Waiting for your Claude to finish another request');
+    if (this.running >= MAX_RUNNING) this.update(task.id, { state: 'queued' }, 'Waiting for your agent to finish another request');
     void this.pump();
   }
 
@@ -311,12 +389,13 @@ export class TaskServer {
     return facts.folder ? { folder: facts.folder } : {};
   }
 
-  private halt(task: TaskView, why: string): void {
+  /** End a task now: cancelled (by you or them), or stopped by a limit (failed, declined). */
+  private halt(task: TaskView, why: string, status: ResultStatus = 'cancelled'): void {
     this.approvals.get(task.id)?.();
     const queued = this.queue.findIndex((q) => q.task.id === task.id);
     if (queued >= 0) this.queue.splice(queued, 1);
     for (const [qid, q] of this.questions) if (q.task === task.id) (this.questions.delete(qid), q.resolve(SKIP));
-    this.finish(task, 'cancelled', why);
+    this.finish(this.current(task), status, why);
     this.controllers.get(task.id)?.abort();
     this.offers.drop(task.id);
   }
@@ -325,7 +404,7 @@ export class TaskServer {
     const where = req.kind === 'file' ? `from ${req.path}` : req.project ? `in your project ${req.project}` : req.kind === 'run' ? `in ${req.cwd ?? 'your shared folder'}` : 'in a new scratch folder (~/.beluga/tasks/work)';
     const needs = req.needs.length ? req.needs.map((n) => NEED_WORDS[n]).join(', ') : 'nothing special';
     const back = req.kind === 'run' ? 'the output' : req.kind === 'file' ? 'the file' : req.expects === 'files' ? 'files' : req.expects ? 'structured data (JSON)' : 'a summary';
-    const why = decided.by === 'rule' ? ' · a rule of yours says to ask' : decided.caps?.length ? ` · you asked to be asked before friends’ Claudes ${decided.caps.map((n) => NEED_WORDS[n]).join(' or ')}` : '';
+    const why = decided.by === 'rule' ? ' · a rule of yours says to ask' : decided.caps?.length ? ` · you asked to be asked before friends’ agents ${decided.caps.map((n) => NEED_WORDS[n]).join(' or ')}` : '';
     return [
       req.kind === 'run' ? `$ ${req.command ?? ''}${req.ask !== req.command ? `\nwhy: ${req.ask.slice(0, 500)}` : ''}` : req.ask.slice(0, 2000),
       '',
@@ -334,9 +413,25 @@ export class TaskServer {
     ].join('\n');
   }
 
-  private async ask(task: TaskView, kind: 'request' | 'tool', title: string, detail: string): Promise<Decision> {
+  /** What a secret's approval says: where it is, why, and that nothing covers it next time. */
+  private secretDetail(req: TaskRequest, name: string, label: string): string {
+    return [
+      `${req.path ?? ''}${req.ask && !req.ask.startsWith('Send me ') ? `\nwhy: ${req.ask.slice(0, 500)}` : ''}`,
+      '',
+      `This is a secret (${secretNoun(label)}). If you allow it, Beluga sends this one file to ${name}, and ${name}'s agent is told you approved it.`,
+      "You're asked each time: trust, your rules and Always never cover a secret.",
+    ].join('\n');
+  }
+
+  /** A path as it names a place here (`~` is your home). */
+  private expand(p: string): string {
+    return path.resolve(p === '~' ? this.home : p.startsWith('~/') ? path.join(this.home, p.slice(2)) : p);
+  }
+
+  private async ask(task: TaskView, kind: 'request' | 'tool', title: string, detail: string, opts: ApproveOpts = {}): Promise<Decision> {
     this.update(task.id, { state: 'awaiting_approval' }, kind === 'tool' ? title : undefined);
-    const pending = this.ctx.approve(kind, title, detail, task.peerId, kind === 'request' ? task.id : undefined);
+    const chat = this.current(task).chat;
+    const pending = this.ctx.approve(kind, title, detail, task.peerId, kind === 'request' ? task.id : undefined, { ...opts, ...(chat ? { conversation: chat } : {}) });
     this.approvals.set(task.id, pending.withdraw);
     let fromSheet!: (d: Decision) => void;
     const sheet = new Promise<Decision>((resolve) => (fromSheet = resolve));
@@ -376,11 +471,12 @@ export class TaskServer {
     const tools: { screenshot?: TaskTools['screenshot']; deviceInfo?: TaskTools['deviceInfo'] } = {};
     if (req.needs.includes('screen')) {
       tools.screenshot = async (app) => {
-        const taken = this.artifacts.get(task.id) ?? [];
-        if (taken.length >= MAX_SCREENSHOTS) throw new Error(`At most ${MAX_SCREENSHOTS} screenshots per request`);
+        const tooMany = this.shotLimit(task.id);
+        if (tooMany) throw new Error(tooMany);
+        this.shots.set(task.id, (this.shots.get(task.id) ?? 0) + 1);
         const dir = path.join(this.ctx.book.workDir(task.id, this.ctx.scratch), 'screens');
         const shot = await captureScreen(this.system, dir, app ? { app } : {});
-        this.artifacts.set(task.id, [...taken, shot.file]);
+        this.artifacts.set(task.id, [...(this.artifacts.get(task.id) ?? []), shot.file]);
         this.keepStep(task.id, `Took a screenshot of ${shot.of}`);
         const image = shot.view ? { data: (await fs.readFile(shot.view)).toString('base64'), mimeType: shot.view.endsWith('.png') ? 'image/png' : 'image/jpeg' } : undefined;
         return { text: `Screenshot of ${shot.of} (${Math.round(shot.bytes / 1024)} KB). It goes back to ${task.peerName} with your answer.`, ...(image ? { image } : {}) };
@@ -399,14 +495,25 @@ export class TaskServer {
   private async runAsk(task: TaskView, req: TaskRequest): Promise<void> {
     const { ctx } = this;
     const agent = ctx.agent();
-    if (!agent) return this.finish(task, 'failed', `${ctx.selfName()}'s Claude isn't running`);
-    const { place, where, folders } = this.place(task, req);
+    if (!agent) return this.finish(task, 'failed', `${ctx.selfName()}'s agent isn't running`);
+    const found = this.place(task, req);
+    const { where, folders } = found;
+    // On the agent its card says (your default), or the one they asked for when it runs here (BLG-503).
+    const picked = ctx.agentRef ? agentForAsk(req.agent, ctx.agentRef(), ctx.agents?.() ?? [], ctx.runs) : undefined;
+    if (picked) this.ranOn.set(task.id, picked.agent);
+    // A talk (or cross-reference) dialogue's turn changes nothing, on any agent: no edits, even in a scratch folder.
+    const withAgent = picked ? { ...found.place, agent: picked.agent } : found.place;
+    const place = task.dialogue && task.dialogue.mode !== 'work' ? { ...withAgent, autoEdit: false } : withAgent;
+    // Settings' model is Claude's: another agent takes its own pick, or its default.
+    const settings = ctx.model();
+    const model = picked ? (picked.agent.model ?? (picked.agent.runtime === 'claude' ? settings.model : undefined)) : settings.model;
+    const runModel = { ...(model ? { model } : {}), ...(settings.effort ? { effort: settings.effort } : {}) };
     const full = ctx.trustFor(task.peerId) === 'full';
     const tools = this.toolsFor(task, req);
     const toolNames = [...(tools.screenshot ? ['screenshot'] : []), ...(tools.deviceInfo ? ['device_info'] : [])];
     const controller = new AbortController();
     this.controllers.set(task.id, controller);
-    this.update(task.id, { state: 'working', startedAt: ctx.now(), where });
+    this.update(task.id, { state: 'working', startedAt: ctx.now(), where }, picked?.note);
     let lastSent = 0;
     let held: string | undefined;
     let timer: NodeJS.Timeout | undefined;
@@ -423,6 +530,17 @@ export class TaskServer {
       }, Math.max(0, wait));
       timer.unref?.();
     };
+    // A friend's task never runs on and on: 20 minutes in all, or until its deadline if that's sooner.
+    const limitMs = ctx.runLimitMs ?? RUN_LIMIT_MS;
+    const byDeadline = req.deadline !== undefined && req.deadline - ctx.now() < limitMs;
+    const limit = setTimeout(
+      () => {
+        const took = limitMs >= 60_000 ? `${Math.round(limitMs / 60_000)} minutes` : `${Math.round(limitMs / 1000)} seconds`;
+        if (!this.isOver(task.id)) this.halt(task, byDeadline ? 'Stopped: its deadline passed' : `Stopped after ${took}`, 'failed');
+      },
+      Math.max(0, byDeadline ? req.deadline! - ctx.now() : limitMs),
+    );
+    limit.unref?.();
     try {
       const final = await agent.run({
         prompt: taskPrompt(req, ctx.selfName(), where, { tools: toolNames, folders }),
@@ -430,17 +548,21 @@ export class TaskServer {
         viaAgent: req.by === 'agent',
         context: [],
         place,
+        // None of your conversations is this task's: what its Claude posts goes to the group chat.
+        channel: 'room',
         scope: full ? 'full' : 'folder',
         signal: controller.signal,
         onEvent: (kind, text) => {
           if (kind === 'tool' && text) step(text.slice(0, 300));
         },
         onFileTouched: () => undefined,
-        vetTool: (tool) => this.vetTool(task, tool),
-        canUseTool: (tool, input) => this.authorizeTool(task, tool, input, full),
+        // A talk (or cross-reference) dialogue's turn only looks, here too; then their limits as for any task.
+        vetTool: (tool, input) => (task.dialogue && task.dialogue.mode !== 'work' ? talkReadOnly(tool, input) : undefined) ?? this.vetTool(this.current(task), tool, input),
+        canUseTool: (tool, input) => this.authorizeTool(task, tool, input, full, place.cwd),
         askUser: (question) => this.askRequester(task, question, controller.signal),
         ...(toolNames.length ? { taskTools: tools } : {}),
-        ...ctx.model(),
+        ...runModel,
+        maxTurns: MAX_TURNS,
       });
       clearTimeout(timer);
       if (controller.signal.aborted || this.isOver(task.id)) return;
@@ -458,11 +580,15 @@ export class TaskServer {
     } catch (err) {
       clearTimeout(timer);
       if (this.isOver(task.id)) return;
-      this.finish(this.current(task), 'failed', controller.signal.aborted ? 'Stopped' : errorText(err));
+      const why = controller.signal.aborted ? 'Stopped' : /max.turns/i.test(errorText(err)) ? `Stopped after ${MAX_TURNS} turns` : errorText(err);
+      this.finish(this.current(task), 'failed', why);
     } finally {
+      clearTimeout(limit);
       this.controllers.delete(task.id);
       this.artifacts.delete(task.id);
       this.asked.delete(task.id);
+      this.shots.delete(task.id);
+      this.toolAsks.delete(task.id);
     }
   }
 
@@ -501,33 +627,84 @@ export class TaskServer {
   }
 
   /** A tool's call, as the capability it uses, decided like a request (none: the tool needs no capability). */
-  private toolAccess(task: TaskView, tool: string): { need: Need; decided: AccessDecision } | undefined {
-    const need = TOOL_NEEDS[tool];
-    if (!need) return undefined;
-    const facts: RequestFacts = { peerId: task.peerId, kind: 'task', needs: [need], ...(task.project ? { project: task.project } : {}) };
-    return { need, decided: this.ctx.access.decide(facts, this.ctx.trustFor(task.peerId)) };
+  private toolAccess(task: TaskView, tool: string, input: Record<string, unknown>): { needs: Need[]; decided: AccessDecision } | undefined {
+    const needs = toolNeeds(tool, input);
+    if (!needs.length) return undefined;
+    const facts: RequestFacts = { peerId: task.peerId, kind: 'task', needs, ...(task.project ? { project: task.project } : {}) };
+    return { needs, decided: this.ctx.access.decide(facts, this.ctx.trustFor(task.peerId)) };
+  }
+
+  /** Why one more screenshot can't be taken (undefined: it can). */
+  private shotLimit(id: string): string | undefined {
+    return (this.shots.get(id) ?? 0) >= MAX_SCREENSHOTS ? `At most ${MAX_SCREENSHOTS} screenshots per request. Don't take more; answer with what you have.` : undefined;
   }
 
   /** Checked before every tool call of a friend's task: a capability that is Off, or a Decline rule, holds even with full trust. */
-  private vetTool(task: TaskView, tool: string): string | undefined {
-    const access = this.toolAccess(task, tool);
+  private vetTool(task: TaskView, tool: string, input: Record<string, unknown>): string | undefined {
+    // A command that takes a screenshot is the screen: only for a request let in to see it, and it counts toward the cap.
+    if (takesScreenshot(tool, input)) {
+      if (!task.needs.includes('screen')) return `This request wasn't let in to see ${this.ctx.selfName()}'s screen. Don't try another way; say so in your answer.`;
+      const tooMany = this.shotLimit(task.id);
+      if (tooMany) return tooMany;
+    }
+    const access = this.toolAccess(task, tool, input);
     if (access?.decided.verdict !== 'decline') return undefined;
-    return `${this.ctx.selfName()} doesn't let friends' Claudes ${CAP_INFO[access.need].doing} here${access.decided.by === 'rule' ? ' (a rule for this person)' : ''}. Don't try another way; say so in your answer.`;
+    const off = access.decided.caps?.length ? access.decided.caps : access.needs;
+    return `${this.ctx.selfName()} doesn't let friends' agents ${off.map((n) => CAP_INFO[n].doing).join(' or ')} here${access.decided.by === 'rule' ? ' (a rule for this person)' : ''}. Don't try another way; say so in your answer.`;
   }
 
-  private async authorizeTool(task: TaskView, tool: string, input: Record<string, unknown>, full: boolean): Promise<boolean> {
-    const access = this.toolAccess(task, tool);
+  private async authorizeTool(task: TaskView, tool: string, input: Record<string, unknown>, full: boolean, cwd: string): Promise<boolean> {
+    const ok = await this.allowTool(task, tool, input, full, cwd);
+    // A screenshot by command, let through: it counts like the screenshot tool's.
+    if (ok && takesScreenshot(tool, input)) {
+      if (this.shotLimit(task.id)) return false;
+      this.shots.set(task.id, (this.shots.get(task.id) ?? 0) + 1);
+      this.keepStep(task.id, 'Took a screenshot with a command');
+    }
+    return ok;
+  }
+
+  private async allowTool(task: TaskView, tool: string, input: Record<string, unknown>, full: boolean, cwd: string): Promise<boolean> {
+    const access = this.toolAccess(task, tool, input);
     if (access?.decided.verdict === 'decline') return false;
     if (full) return true;
     // Commands are allowed for this person (their trust level's setting, or a rule): no need to ask.
     if (tool === 'Bash' && access?.decided.verdict === 'allow') return true;
+    // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once.
+    if (writesCode(tool, input, cwd)) {
+      const file = String(input.file_path ?? input.notebook_path);
+      return (await this.askTool(task, `Your agent (working on ${task.peerName}'s request) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, { once: true })) !== 'no';
+    }
     const scope = `${task.peerId}:${tool}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input).slice(0, 2000);
-    const answer = await this.ask(task, 'tool', `Your Claude (working on ${task.peerName}'s request) wants to use ${tool.replace(/^mcp__beluga__/, '')}`, detail);
-    if (!this.isOver(task.id)) this.update(task.id, { state: 'working' });
-    if (answer.answer === 'always') this.alwaysTools.add(scope);
-    return answer.answer !== 'no';
+    const answer = await this.askTool(task, `Your agent (working on ${task.peerName}'s request) wants to use ${tool.replace(/^mcp__beluga__/, '')}`, detail);
+    if (answer === 'always') this.alwaysTools.add(scope);
+    return answer !== 'no';
+  }
+
+  /**
+   * Ask you to approve one step of a friend's task. A task that keeps asking stops (BLG-427):
+   * after MAX_TOOL_ASKS approvals, or when you decline MAX_DECLINES in a row; the requester hears why.
+   */
+  private async askTool(task: TaskView, title: string, detail: string, opts: ApproveOpts = {}): Promise<Decision['answer']> {
+    const me = this.ctx.selfName();
+    const count = this.toolAsks.get(task.id) ?? { asked: 0, declined: 0 };
+    if (count.asked >= MAX_TOOL_ASKS) {
+      this.halt(task, `Stopped: it needed ${me}'s approval more than ${MAX_TOOL_ASKS} times. Ask for less at once, or ask ${me} to allow it`, 'failed');
+      return 'no';
+    }
+    count.asked++;
+    this.toolAsks.set(task.id, count);
+    const answer = await this.ask(task, 'tool', title, detail, opts);
+    if (this.isOver(task.id)) return 'no';
+    count.declined = answer.answer === 'no' ? count.declined + 1 : 0;
+    if (count.declined >= MAX_DECLINES) {
+      this.halt(task, `Stopped: ${me} declined ${MAX_DECLINES} of its steps in a row${answer.reason?.trim() ? ` (${answer.reason.trim()})` : ''}`, 'declined');
+      return 'no';
+    }
+    this.update(task.id, { state: 'working' });
+    return answer.answer;
   }
 
   private async runCommand(task: TaskView, req: TaskRequest): Promise<void> {
@@ -556,16 +733,16 @@ export class TaskServer {
     }
   }
 
-  /** One file, sent by Beluga itself: from the folders you chose (anywhere with full trust), never secrets. */
-  private async sendFile(task: TaskView, req: TaskRequest, facts: RequestFacts, youChose: boolean): Promise<void> {
+  /** One file, sent by Beluga itself: from the folders you chose (anywhere with full trust); a secret only the time you approve it. */
+  private async sendFile(task: TaskView, req: TaskRequest, facts: RequestFacts, youChose: boolean, secret?: string): Promise<void> {
     try {
-      await this.readAndSend(task, req, facts, youChose);
+      await this.readAndSend(task, req, facts, youChose, secret);
     } catch (err) {
       if (!this.isOver(task.id)) this.finish(this.current(task), 'failed', `${this.ctx.selfName()}'s Beluga couldn't read it: ${errorText(err)}`);
     }
   }
 
-  private async readAndSend(task: TaskView, req: TaskRequest, facts: RequestFacts, youChose: boolean): Promise<void> {
+  private async readAndSend(task: TaskView, req: TaskRequest, facts: RequestFacts, youChose: boolean, secret?: string): Promise<void> {
     const { ctx } = this;
     const me = ctx.selfName();
     const full = ctx.trustFor(task.peerId) === 'full' || youChose;
@@ -573,14 +750,16 @@ export class TaskServer {
     if (!full && !folders.length) return this.finish(task, 'declined', `${me} hasn't chosen any folders friends may take files from`);
     const name = path.basename(req.path ?? '');
     this.update(task.id, { state: 'working', startedAt: ctx.now(), where: facts.folder ?? '' }, `Reading ${name}`);
-    const { files, skipped } = await readResultFiles([req.path ?? ''], { roots: folders, anywhere: full, home: this.home, offer: (file) => this.offers.offer(task.id, task.peerId, file) });
+    const { files, skipped } = await readResultFiles([req.path ?? ''], { roots: folders, anywhere: full, home: this.home, offer: (file) => this.offers.offer(task.id, task.peerId, file), ...(secret ? { secretApproved: true } : {}) });
     if (this.isOver(task.id)) return;
     const file = files[0];
     if (!file?.b64 && !file?.ref) {
       const why = skipped[0] ?? `${name} (not found)`;
       return this.finish(this.current(task), /not allowed|outside/.test(why) ? 'declined' : 'failed', `${me}'s Beluga didn't send it: ${why}`);
     }
-    this.finish(this.current(task), 'done', `${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB) from ${me}'s Mac.`, { files: [file] });
+    const size = `${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB) from ${me}'s Mac`;
+    if (secret) return this.finish(this.current(task), 'done', `${size}: a secret (${secretNoun(secret)}) that ${me} approved sending you.`, { files: [file], secret: secretNoun(secret) });
+    this.finish(this.current(task), 'done', `${size}.`, { files: [file] });
   }
 
   // ---- state
@@ -614,24 +793,29 @@ export class TaskServer {
   }
 
   /** The end: kept here, and the result goes back to the requester (waiting in the outbox if they're offline). */
-  private finish(task: TaskView, status: ResultStatus, summary: string, extra: { data?: unknown; files?: ReadonlyArray<{ name: string; size: number; b64?: string; ref?: string; sha256?: string; image?: boolean }>; problems?: readonly string[] } = {}): void {
+  private finish(task: TaskView, status: ResultStatus, summary: string, extra: { data?: unknown; files?: ReadonlyArray<{ name: string; size: number; b64?: string; ref?: string; sha256?: string; image?: boolean }>; problems?: readonly string[]; secret?: string } = {}): void {
     const t = this.current(task);
     if (isFinal(t.state)) return;
     const files = extra.files ?? [];
     const result: TaskOutcome = {
       status,
       summary,
+      ...(t.kind === 'ask' && this.ctx.agentRef ? { agent: this.ranOn.get(t.id) ?? this.ctx.agentRef() } : {}),
       // What's offered for fetching stays known (the result may have to be sent again); inline bytes don't.
       files: files.map((f) => ({ name: f.name, size: f.size, ...(f.image ? { image: true } : {}), ...(f.ref ? { ref: f.ref } : {}), ...(f.sha256 ? { sha256: f.sha256 } : {}) })),
       log: t.steps,
       ...(extra.data !== undefined ? { data: extra.data } : {}),
       ...(extra.problems?.length ? { problems: extra.problems } : {}),
+      ...(extra.secret ? { secret: extra.secret } : {}),
     };
+    this.ranOn.delete(t.id);
     const done = this.ctx.put({ ...t, state: status, result, endedAt: this.ctx.now(), updatedAt: this.ctx.now() });
     this.sendResult(done, result, files);
+    if (done.dialogue) this.ctx.dialogues?.turn(done);
   }
 
-  private sendResult(task: TaskView, result: TaskOutcome, files: ReadonlyArray<{ name: string; size: number; b64?: string; ref?: string; sha256?: string; image?: boolean }> = result.files): void {
+  /** Tell the friend who asked how their task ended (also: one that ended when Beluga quit). */
+  sendResult(task: TaskView, result: TaskOutcome, files: ReadonlyArray<{ name: string; size: number; b64?: string; ref?: string; sha256?: string; image?: boolean }> = result.files): void {
     try {
       this.ctx.courier.send(
         task.peerId,
@@ -644,6 +828,8 @@ export class TaskServer {
           log: result.log.slice(-60),
           ts: this.ctx.now(),
           ...(result.data !== undefined ? { data: result.data } : {}),
+          ...(result.secret ? { secret: result.secret } : {}),
+          ...(result.agent ? { agent: result.agent } : {}),
         },
         true,
       );

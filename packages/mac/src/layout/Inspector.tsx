@@ -3,7 +3,9 @@ import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
 import { formatTokens } from '@beluga/ui/work-models.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { speedWords } from '@beluga/shared/local-endpoints.js';
 import { unreadCount } from '@beluga/core/work-store.js';
+import { issuesOfWorkspace } from '@beluga/core/board/model.js';
 import { noticeAgo, noticeLook } from '@beluga/ui/notice-models.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, Tip } from '../components/ui.js';
@@ -14,8 +16,12 @@ import { Switch } from '../dialogs/settings-controls.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
 import r from '../dialogs/native/room.module.css';
 import { ConversationDetails } from '../network/ConversationInspector.js';
-import { EarningsPanel } from './EarningsPanel.js';
+import { StatusIcon } from '../tasks/marks.js';
 import { ClaudeCodeInspector } from '../claude-code/Live.js';
+import { teammatesOf } from '@beluga/core/team/model.js';
+import { shownState } from '../network/net-model.js';
+import { openDm } from '../network/use-net.js';
+import { sameDeep, sameFields } from '../lib/stable.js';
 import s from './Inspector.module.css';
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
@@ -43,7 +49,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function NeedsYou() {
   const api = useApi();
   const actions = useActions();
-  const state = useApp((st) => st);
+  const state = useApp((st) => ({ approvals: st.approvals, questions: st.questions, projects: st.projects, shared: st.shared }), sameFields);
   const { approvals, questions } = state;
   if (!approvals.length && !questions.length) return null;
   const place = (channel: string): string => {
@@ -91,18 +97,94 @@ function NeedsYou() {
   );
 }
 
+/** The board's tasks this worktree is doing or carrying: each opens its page, and the board opens filtered to them. */
+function WorkspaceTasks({ id, projectId }: { id: string; projectId: string }) {
+  const actions = useActions();
+  const board = useApp((st) => st.board);
+  if (!board.enabled) return null;
+  const tasks = issuesOfWorkspace(board, id);
+  const toBoard = (
+    <Tip label="The board, with only this worktree’s tasks">
+      <Button size="small" variant="quiet" icon="task" onClick={() => actions.run({ type: 'view', view: { kind: 'tasks', projectId, worktree: id } })}>
+        Board
+      </Button>
+    </Tip>
+  );
+  return (
+    <Panel title={tasks.length > 1 ? `Tasks · ${tasks.length}` : 'Tasks'} action={toBoard}>
+      {tasks.length ? (
+        tasks.map((t) => (
+          <button key={t.id} type="button" className={s.taskLink} title={`${t.key} ${t.title}`} onClick={() => actions.run({ type: 'view', view: { kind: 'task', id: t.id } })}>
+            <StatusIcon status={t.status} size={13} />
+            <span className={s.taskKey}>{t.key}</span>
+            <span className={s.taskTitle}>{t.title}</span>
+          </button>
+        ))
+      ) : (
+        <div className={s.dim}>No task yet. Your agent links the ones it opens or moves from here.</div>
+      )}
+    </Panel>
+  );
+}
+
+/** The people you work on this project with (BLG-299): each opens your chat with them. */
+function ProjectTeam({ projectId }: { projectId: string }) {
+  const { client } = useBeluga();
+  const enabled = useApp((st) => st.team.enabled);
+  const mates = useApp((st) => teammatesOf(st.team, projectId), sameDeep);
+  const online = useApp((st) => mates.filter((m) => st.network.friends.some((f) => f.peerId === m.peerId && shownState(f) === 'online')).map((m) => m.peerId), sameDeep);
+  if (!enabled && !mates.length) return null;
+  return (
+    <Panel title={mates.length > 1 ? `Team · ${mates.length}` : 'Team'}>
+      {mates.length ? (
+        mates.map((m) => (
+          <Tip key={m.peerId} label={`Your chat with ${m.name}`}>
+            <button type="button" className={`${s.person} ${r.personRow}`} onClick={() => openDm(client, m.peerId)}>
+              <Avatar name={m.name} id={m.peerId} size={18} />
+              <span className={s.personName}>{m.name}</span>
+              {online.includes(m.peerId) ? (
+                <span className={s.dim}>
+                  <Dot tone="ok" /> online
+                </span>
+              ) : null}
+              <Icon name="chat" size={12} />
+            </button>
+          </Tip>
+        ))
+      ) : (
+        <div className={s.dim}>Only you. Team up with a friend who has this repository to share its tasks.</div>
+      )}
+    </Panel>
+  );
+}
+
 function WorkspaceDetails({ id }: { id: string }) {
   const api = useApi();
   const actions = useActions();
   const { ui } = useBeluga();
-  const state = useApp((st) => st);
-  const ws = findWorkspace(state.projects, id);
-  if (!ws) return null;
-  const st = stateOf(state, ws, 0);
-  const pr = state.prs[ws.id];
-  const ctx = state.context[`ws:${ws.id}`];
-  const setup = state.setup[ws.id];
-  const members = Object.entries(state.members[ws.id] ?? {});
+  // What this panel shows, worked out from the shared state: drawn again only when part of it changes.
+  const state = useApp(
+    (full) => {
+      const ws = findWorkspace(full.projects, id);
+      return {
+        ws,
+        st: ws ? stateOf(full, ws, 0) : undefined,
+        pr: full.prs[id],
+        ctx: full.context[`ws:${id}`],
+        setup: full.setup[id],
+        members: full.members[id],
+        disk: full.disk[id],
+        projects: full.projects,
+        peers: full.peers,
+        friends: full.network.friends,
+        contextMeter: full.prefs.contextMeter,
+      };
+    },
+    (a, b) => sameDeep(a, b, 2),
+  );
+  const { ws, st, pr, ctx, setup } = state;
+  if (!ws || !st) return null;
+  const members = Object.entries(state.members ?? {});
   const tokens = ws.usage ? ws.usage.input + ws.usage.output + ws.usage.cacheWrite : 0;
   const project = state.projects.find((p) => p.id === ws.projectId);
   return (
@@ -118,7 +200,7 @@ function WorkspaceDetails({ id }: { id: string }) {
             {ws.status.changed} uncommitted · {ws.status.ahead} ahead{ws.status.behind ? ` · ${ws.status.behind} behind` : ''}
           </Field>
         ) : null}
-        {ctx && state.prefs.contextMeter ? (
+        {ctx && state.contextMeter ? (
           <Field label="Context">
             {/* The same numbers and colours as the meter in the box you type in. */}
             <span className={s.meter} data-tone={contextTone(contextPct(ctx))} title={`${formatTokenCount(ctx.used)} of ${formatTokenCount(ctx.window)} tokens`}>
@@ -127,8 +209,8 @@ function WorkspaceDetails({ id }: { id: string }) {
             {ctx.compacting ? 'Compacting…' : `${contextPct(ctx)}% · ${formatTokenCount(ctx.used)} of ${formatTokenCount(ctx.window)}`}
           </Field>
         ) : null}
-        {tokens ? <Field label="Claude">{`${formatTokens(tokens)} tokens${ws.usage?.cost ? ` · $${ws.usage.cost.toFixed(2)}` : ''}`}</Field> : null}
-        {state.disk[ws.id] !== undefined ? <Field label="Disk">{formatBytes(state.disk[ws.id]!)}</Field> : null}
+        {tokens ? <Field label="Agent">{`${formatTokens(tokens)} tokens${ws.usage?.local ? ` · ${speedWords(ws.usage.local.tps)}` : ws.usage?.cost ? ` · $${ws.usage.cost.toFixed(2)}` : ''}`}</Field> : null}
+        {state.disk !== undefined ? <Field label="Disk">{formatBytes(state.disk)}</Field> : null}
         {setup ? <Field label="Setup">{setup.status === 'running' ? 'Running…' : setup.status === 'done' ? 'Done' : `Failed${setup.detail ? ` (${setup.detail})` : ''}`}</Field> : null}
         {ws.handedTo ? <Field label="Handed to">{ws.handedTo}</Field> : null}
         {ws.handedFrom ? <Field label="From">{ws.handedFrom}</Field> : null}
@@ -143,7 +225,7 @@ function WorkspaceDetails({ id }: { id: string }) {
           ) : null}
         </div>
       </Panel>
-      {project?.root ? <EarningsPanel projectId={project.id} /> : null}
+      {project?.root ? <WorkspaceTasks id={ws.id} projectId={ws.projectId} /> : null}
       {pr ? (
         <Panel title={`Pull request #${pr.number}`} action={<Button size="small" variant="quiet" icon="refresh" onClick={() => void api.workbench.refreshPrs(ws.id)} />}>
           <div className={s.prTitle}>{pr.title}</div>
@@ -165,10 +247,11 @@ function WorkspaceDetails({ id }: { id: string }) {
           </div>
         </Panel>
       ) : null}
+      <ProjectTeam projectId={ws.projectId} />
       <Panel title="Working here" action={<Button size="small" variant="quiet" icon="plus" onClick={() => actions.run({ type: 'ws', id: ws.id, action: 'share' })} />}>
         {members.length ? (
           members.map(([peerId, role]) => {
-            const name = state.peers.find((p) => p.peerId === peerId)?.name ?? 'someone';
+            const name = state.peers.find((p) => p.peerId === peerId)?.name ?? state.friends.find((f) => f.peerId === peerId)?.name ?? 'someone';
             return (
               <button key={peerId} type="button" className={`${s.person} ${r.personRow}`} onClick={(e) => openPerson(ui, state.peers.findIndex((p) => p.peerId === peerId), e.currentTarget)}>
                 <Avatar name={name} id={peerId} size={18} />
@@ -188,9 +271,9 @@ function WorkspaceDetails({ id }: { id: string }) {
 function Room() {
   const api = useApi();
   const { ui } = useBeluga();
-  const state = useApp((st) => st);
+  const state = useApp((st) => ({ hosting: st.hosting, invite: st.invite, room: st.room, status: st.status, peers: st.peers, selfId: st.selfId, isHost: st.isHost, roomOpen: st.roomOpen }), sameFields);
   const hosting = state.hosting;
-  const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite'));
+  const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite-room'));
   const inviteState = hosting?.phase === 'ready' || state.invite ? 'Ready to share' : hosting?.phase === 'local' ? 'Local network only' : hosting?.phase === 'failed' ? (hosting.detail ?? 'Couldn’t open remote access') : hosting ? 'Opening…' : 'Not open yet';
   return (
     <Panel
@@ -274,7 +357,16 @@ export function Inspector() {
       <div className={s.scroll}>
         <NeedsYou />
         <ClaudeCodeInspector />
-        {view.kind === 'workspace' ? <WorkspaceDetails id={view.id} /> : view.kind === 'conversation' ? <ConversationDetails id={view.id} /> : <Room />}
+        {view.kind === 'workspace' ? (
+          <WorkspaceDetails id={view.id} />
+        ) : view.kind === 'conversation' ? (
+          <ConversationDetails id={view.id} />
+        ) : (
+          <>
+            {view.kind === 'project' ? <ProjectTeam projectId={view.id} /> : null}
+            <Room />
+          </>
+        )}
         <Inbox />
       </div>
     </aside>

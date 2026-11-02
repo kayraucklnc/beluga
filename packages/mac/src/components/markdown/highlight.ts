@@ -35,6 +35,9 @@ const ALIASES: Readonly<Record<string, string>> = {
   rs: 'rust',
   rb: 'ruby',
   py: 'python',
+  node: 'js',
+  postgres: 'sql',
+  sqlite: 'sql',
   md: 'markdown',
   mdx: 'mdx',
   htm: 'html',
@@ -93,6 +96,12 @@ export function languageOf(lang: string | undefined): string {
 /** Colored once per code and language, then remembered (a live file re-renders often). */
 const cache = new Map<string, TokenLines>();
 const CACHE_MAX = 120;
+
+/** The code's tokens if they're already colored (so it's drawn colored at once, not plain first). */
+export function cachedTokens(code: string, lang: string | undefined): TokenLines | undefined {
+  const id = languageOf(lang);
+  return id ? cache.get(`${id}\0${code}`) : undefined;
+}
 
 /** The code's tokens, or undefined when it stays plain (no language, too big, unknown). */
 export async function tokenize(code: string, lang: string | undefined): Promise<TokenLines | undefined> {

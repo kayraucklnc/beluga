@@ -150,3 +150,68 @@
 .flex {
   flex: 1;
 }
+.modes {
+  padding: 2px 18px 8px;
+}
+.newForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 0 0;
+}
+.field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+}
+.field > span:first-child {
+  width: 44px;
+  color: var(--text-2);
+  font-weight: 550;
+}
+.nameInput {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: 1rem;
+}
+.nameInput:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.whereRow {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.whereText {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.newNote,
+.newError {
+  margin: 0;
+  padding: 0 18px 0 74px;
+  font-size: 0.88rem;
+}
+.newNote {
+  color: var(--text-3);
+}
+.newError {
+  color: var(--error);
+}

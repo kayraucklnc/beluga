@@ -49,12 +49,22 @@ const ARCHIVING: Record<NonNullable<AppState['archiving'][string]>, string> = {
   removing: 'Archiving: removing the folder',
 };
 
+/** A row's sub-agents, folded under it or not (SubAgents.tsx): the arrow in its gutter turns them. */
+export interface WorkspaceFold {
+  readonly open: boolean;
+  readonly count: number;
+  readonly running: number;
+  /** "2 sub-agents · 1 running". */
+  readonly summary: string;
+  readonly toggle: () => void;
+}
+
 /**
  * A chat or worktree in the sidebar. What it waits on sits at the row's right edge: a hand
  * when it needs you (the row faintly tinted), a count and a bold name when Claude finished or
  * someone wrote while you were elsewhere, Claude's pulse while it works; otherwise its git state.
  */
-export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) {
+export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold }: { ws: Workspace; indent: number; fold?: WorkspaceFold }) {
   const actions = useActions();
   const { client } = useBeluga();
   // Only what the row shows: another conversation streaming doesn't draw it again (KLD-48).
@@ -97,18 +107,60 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent }: { ws: Wor
         selected={selected}
         className={signalClass(signal, selected)}
         data-signal-row={signal.level}
+        data-kind={ws.kind}
         // Named for itself alone (so it's found by name whatever it waits on); the tooltip says the rest.
         aria-label={ws.name}
-        icon={<Icon name={icon} size={14} />}
+        aria-expanded={fold ? fold.open : undefined}
+        icon={
+          fold ? (
+            <span className={s.foldIcon}>
+              <button
+                type="button"
+                className={s.agentFold}
+                aria-label={fold.open ? `Fold the sub-agents of ${ws.name}` : `Show the sub-agents of ${ws.name}`}
+                title={fold.open ? `Fold away ${fold.summary}` : `Show ${fold.summary}`}
+                onClick={(e) => (e.stopPropagation(), fold.toggle())}
+              >
+                <Icon name="chevronRight" size={9} className={cx(s.agentDisclosure, fold.open && s.agentDisclosureOpen)} />
+              </button>
+              <Icon name={icon} size={14} />
+            </span>
+          ) : (
+            <Icon name={icon} size={14} />
+          )
+        }
+        onKeyDown={(e) => {
+          // ← folds its sub-agents, → shows them (as in Finder's lists).
+          if (!fold || e.target !== e.currentTarget || e.metaKey || e.ctrlKey) return;
+          if ((e.key === 'ArrowLeft' && fold.open) || (e.key === 'ArrowRight' && !fold.open)) {
+            e.preventDefault();
+            fold.toggle();
+          }
+        }}
         label={
           <>
             <span className={cx(ws.external && s.external, nameClass(signal))}>{ws.name}</span>
             {where ? <span className={o.where}>{where.folder}</span> : null}
           </>
         }
-        detail={archiving ? `${ws.name}: ${ARCHIVING[archiving]}` : `${ws.name}: ${signal.tip || st.label}${where ? `\n${where.path}` : ''}`}
+        detail={archiving ? `${ws.name}: ${ARCHIVING[archiving]}` : `${ws.name}: ${signal.tip || st.label}${fold ? ` · ${fold.summary}` : ''}${where ? `\n${where.path}` : ''}`}
         onClick={() => actions.run({ type: 'open_ws', id: ws.id })}
-        trailing={archiving ? <span className={s.archiving} data-archiving={archiving}>Archiving…</span> : <SignalMark signal={signal} fallback={quiet} />}
+        trailing={
+          archiving ? (
+            <span className={s.archiving} data-archiving={archiving}>Archiving…</span>
+          ) : (
+            <>
+              {/* Folded away: how many, quietly (and that one is at work, when the row says nothing else). */}
+              {fold && !fold.open ? (
+                <span className={s.agentCount} title={fold.summary}>
+                  <Icon name="bot" size={11} />
+                  {fold.count}
+                </span>
+              ) : null}
+              <SignalMark signal={signal} fallback={quiet} working={ws.kind === 'worktree' ? 'worktree' : 'claude'} />
+            </>
+          )
+        }
       />
     </ActionsContext>
   );

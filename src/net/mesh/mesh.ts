@@ -4,7 +4,9 @@ import path from 'node:path';
 import type DHT from 'hyperdht';
 import type { BootstrapNode } from 'hyperdht';
 import type { Identity } from '../crypto.js';
-import { DmBook } from './dms.js';
+import { AvatarBook } from './avatars.js';
+import { DmBook, type DmChange } from './dms.js';
+import { type BelugaInfo, type Feature, MESH_FEATURES } from './features.js';
 import { checkMessage, parseExtras, wireNote } from './extras.js';
 import { readJson, writeJson } from './files.js';
 import { FriendBook } from './friends.js';
@@ -12,6 +14,7 @@ import { MAX_TEXT } from './groups/engine.js';
 import { GroupHub } from './groups/hub.js';
 import { InvitationBook, type InvitationRecord, newInvitation, parseTicket } from './invitations.js';
 import { type MeshKeys, meshKeys } from './keys.js';
+import { type MailChannel, Mailbox, type MailboxOptions } from './mailbox.js';
 import { CLOSE, type MeshLink } from './link.js';
 import { type Contacts, DEFAULT_TIMING, LinkManager, type LinkManagerOptions, type Timing } from './links.js';
 import { type ViewContext, dmView, friendView, groupMessageView, groupView, invitationView } from './mesh-views.js';
@@ -20,6 +23,8 @@ import { ONLINE, current, loadPresence, savePresence, shown } from './presence.j
 import { NameSchema, type Profile } from './schemas.js';
 import { type ChatExtras, type ChatFile, type FriendView, type GroupView, type InvitationView, type MessageView, type NetworkSummary, type Presence, dmConversation, groupConversation } from './views.js';
 import { type LinkMessage, PROTO } from './wire.js';
+import { isLate } from '../patient-timer.js';
+import type { AgentRef } from '../../protocol.js';
 
 /**
  * Your Mac on the Beluga network: no server and no host. It listens at an address derived from
@@ -29,7 +34,7 @@ import { type LinkMessage, PROTO } from './wire.js';
  * offline, and tells people your status.
  *
  * Files under `dir` (normally ~/.beluga): friends.json, invitations.json, outbox.json, dms/,
- * groups/, presence.json, reads.json. Keys never leave this process; what screens see is views.ts.
+ * groups/, avatars/, presence.json, reads.json. Keys never leave this process; what screens see is views.ts.
  */
 
 export interface MeshOptions {
@@ -44,6 +49,10 @@ export interface MeshOptions {
   readonly relay?: boolean;
   /** Tests: act as if there were no direct route to these people. */
   readonly blocked?: (peerId: string) => boolean;
+  /** This Beluga's version, said in every hello (core/version.ts). */
+  readonly app?: string;
+  /** Where frames wait for a friend you're never online with at the same time (mailbox.ts); none: only links. */
+  readonly mailbox?: MailboxOptions;
 }
 
 /** What using an invitation got you. */
@@ -54,12 +63,20 @@ interface MeshEvents {
   change: [];
   /** A message arrived, was sent, or changed status. */
   message: [MessageView];
+  /** A message was deleted from a conversation (here, or by its author for both of you). */
+  unsent: [string, string];
+  /** A conversation was cleared on this Mac. */
+  cleared: [string];
   /** A gateway frame from a friend (core/gateway checks and answers it). */
   gateway: [string, unknown];
+  /** A sharing frame from a friend (core/friend-share checks it): shared projects, their worktrees' conversations, shared folders. */
+  share: [string, unknown];
+  /** A team boards frame from a friend (core/team checks it): which repos you share, the board, shared plans. */
+  team: [string, unknown];
   /** A link to someone came up (what waited for them can go now). */
   link: [string];
   /** Someone's Claude started or stopped answering message `for` in a conversation. */
-  live: [{ readonly conversation: string; readonly from: string; readonly for: string; readonly state: 'thinking' | 'idle' }];
+  live: [{ readonly conversation: string; readonly from: string; readonly for: string; readonly state: 'thinking' | 'idle'; readonly agent?: AgentRef }];
   /** A chat file frame (f_get / f_data / f_err) from someone you're linked to (core/chat-files checks it). */
   file: [string, FileFrame];
 }
@@ -68,6 +85,8 @@ interface MeshEvents {
 export type FileFrame = Extract<LinkMessage, { t: 'f_get' | 'f_data' | 'f_err' }>;
 
 const MAX_FRAME = 2 * 1024 * 1024;
+/** How long leaving waits for the mailbox before it goes anyway. */
+const LEAVING_MS = 4_000;
 const HISTORY_PAGE = 50;
 
 export class Mesh extends EventEmitter<MeshEvents> {
@@ -81,11 +100,25 @@ export class Mesh extends EventEmitter<MeshEvents> {
   private presence: Presence;
   private readonly theirPresence = new Map<string, Presence>();
   private readonly helloNames = new Map<string, string>();
+  private readonly avatars: AvatarBook;
+  /** The picture asked of each person on this link (asked again on their next link if it didn't come). */
+  private readonly avatarAsked = new Map<string, string>();
+  /** What each person's Beluga said about itself on its last link (kept while they're away). */
+  private readonly theirBeluga = new Map<string, BelugaInfo>();
+  /** People whose Mac speaks another network version, and who needs to update. */
+  private readonly mismatched = new Map<string, 'them' | 'you'>();
+  /** What else this Mac does now (the gateway adds its tasks while it listens). */
+  private readonly offered = new Set<Feature>();
   private reads: Record<string, number>;
   private allowed = new Map<string, Profile>();
   private wanted = new Map<string, Profile>();
   private byAddress = new Map<string, string>();
   private ticker: NodeJS.Timeout | undefined;
+  private lastTick = Date.now();
+  private readonly mailbox: Mailbox | undefined;
+  private mailCheckedAt = 0;
+  /** What to mail before this Mac leaves the network (each outbox: everything still waiting). */
+  private readonly leavingHooks = new Set<() => Promise<unknown>>();
   private untilTimer: NodeJS.Timeout | undefined;
   private closed = false;
   /** Who you're pulling chat files from now (set by core/chat/files.ts). */
@@ -102,6 +135,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
     this.friends = new FriendBook(path.join(opts.dir, 'friends.json'));
     this.invitations = new InvitationBook(path.join(opts.dir, 'invitations.json'));
     this.dms = new DmBook(opts.dir);
+    this.avatars = new AvatarBook(path.join(opts.dir, 'avatars'));
     this.presence = loadPresence(this.file('presence.json'));
     const reads = readJson(this.file('reads.json'));
     this.reads = reads && typeof reads === 'object' ? Object.fromEntries(Object.entries(reads).filter(([, v]) => typeof v === 'number' && Number.isInteger(v) && v >= 0)) : {};
@@ -138,6 +172,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
       onLink: (link) => this.linkUp(link),
       onUnlink: (peerId) => {
         this.theirPresence.delete(peerId);
+        this.avatarAsked.delete(peerId);
         this.emit('change');
       },
       onMessage: (link, msg) => this.onMessage(link, msg),
@@ -151,12 +186,23 @@ export class Mesh extends EventEmitter<MeshEvents> {
       decide: (record, profile) => {
         if (profile.card.peerId === this.peerId) return { ok: false, reason: "That's your own invitation" };
         if (record.kind === 'group') return this.groups.decideJoin(record, profile);
+        if (record.for && record.for !== profile.card.peerId) return { ok: false, reason: 'That invitation was for someone else' };
         this.friends.add(profile.card, profile.name);
         this.contactsChanged();
         return { ok: true, kind: 'friend' };
       },
       onChange: () => this.emit('change'),
     });
+    this.mailbox = opts.mailbox?.url
+      ? new Mailbox(keys, opts.mailbox, {
+          cardOf: (peerId) => this.friends.get(peerId)?.card,
+          deliver: (from, t, p) => {
+            if (!this.friends.has(from)) return;
+            if (t === 'gw') this.emit('gateway', from, p);
+            else this.emit(t, from, p);
+          },
+        })
+      : undefined;
     this.rebuildContacts();
   }
 
@@ -179,6 +225,8 @@ export class Mesh extends EventEmitter<MeshEvents> {
     mesh.ticker.unref();
     mesh.scheduleUntil();
     mesh.links.refresh();
+    // What friends left while this Mac was off.
+    if (mesh.mailbox) setTimeout(() => void mesh.checkMail(), 1_000).unref();
     return mesh;
   }
 
@@ -199,7 +247,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
   summary(): NetworkSummary {
     return {
       enabled: true,
-      self: { peerId: this.peerId, name: this.opts.name, presence: current(this.presence), appearOffline: current(this.presence).state === 'offline' },
+      self: { peerId: this.peerId, name: this.opts.name, presence: current(this.presence), appearOffline: current(this.presence).state === 'offline', ...(this.avatars.mine ? { avatar: this.avatars.mine } : {}) },
       friends: this.friendViews(),
       groups: this.groupViews(),
       invitations: this.invitations.all().map(invitationView),
@@ -209,9 +257,12 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   // ---- friends
 
-  /** A one-time invitation to be friends: a link (a day, or `ttlMs`) and a code (an hour, or less). */
-  async createInvite(opts: { ttlMs?: number; codeTtlMs?: number } = {}): Promise<InvitationView> {
-    const record = newInvitation('friend', { ...(opts.ttlMs ? { ttlMs: opts.ttlMs } : {}), ...(opts.codeTtlMs ? { codeTtlMs: opts.codeTtlMs } : {}) });
+  /**
+   * A one-time invitation to be friends: a link (a day, or `ttlMs`) and a code (an hour, or less).
+   * `for`: only that person may use it; anyone else who got hold of it is refused.
+   */
+  async createInvite(opts: { ttlMs?: number; codeTtlMs?: number; for?: string } = {}): Promise<InvitationView> {
+    const record = newInvitation('friend', { ...(opts.ttlMs ? { ttlMs: opts.ttlMs } : {}), ...(opts.codeTtlMs ? { codeTtlMs: opts.codeTtlMs } : {}), ...(opts.for ? { for: opts.for } : {}) });
     await this.openInvitation(record);
     this.emit('change');
     return invitationView(record);
@@ -221,12 +272,16 @@ export class Mesh extends EventEmitter<MeshEvents> {
     await this.pairing.stop(id);
   }
 
-  /** Use a friend or group invitation (a beluga:// or klaud:// link, or a code). */
-  async accept(text: string): Promise<Accepted> {
+  /**
+   * Use a friend or group invitation (a beluga:// or klaud:// link, or a code). `from`: whose it must
+   * be (a friend request sent in a room); anyone else on the other end isn't added.
+   */
+  async accept(text: string, opts: { from?: string } = {}): Promise<Accepted> {
     const ticket = parseTicket(text);
     if (!ticket) throw new Error('That isn’t a Beluga invitation: paste the beluga:// link or type the code (like K7QM-4XPA-R2TD)');
     const result = await pairWith(this.node, this.keys.keyPair, this.profile, ticket, this.timing.pairTimeoutMs);
     if (result.profile.card.peerId === this.peerId) throw new Error("That's your own invitation");
+    if (opts.from && (result.kind !== 'friend' || result.profile.card.peerId !== opts.from)) throw new Error('That invitation came from someone else');
     if (result.kind === 'friend') {
       this.friends.add(result.profile.card, result.profile.name);
       this.contactsChanged();
@@ -255,6 +310,43 @@ export class Mesh extends EventEmitter<MeshEvents> {
     this.emit('message', view);
     this.emit('change');
     return view;
+  }
+
+  /** Delete a message (`dm:` only): here, or (`everyone`, your own) on their Mac too. */
+  deleteMessage(conversation: string, id: string, everyone = false): void {
+    const peerId = this.dmPeer(conversation);
+    const mine = this.dms.find(peerId, id)?.from === this.peerId;
+    const before = this.dmMessages(peerId);
+    const change = this.dms.delete(peerId, id, everyone);
+    if (change) this.links.get(peerId)?.send(changeFrame(change));
+    if (!mine) this.unread(conversation, before, id);
+    this.emit('unsent', conversation, id);
+    this.emit('change');
+  }
+
+  /** Change the text of a message you sent (`dm:` only), here and on their Mac. */
+  editMessage(conversation: string, id: string, text: string): MessageView {
+    const peerId = this.dmPeer(conversation);
+    const was = this.dms.find(peerId, id);
+    checkMessage(text, was?.x, MAX_TEXT);
+    const { dm, change } = this.dms.edit(peerId, id, text);
+    this.links.get(peerId)?.send(changeFrame(change));
+    const view = dmView(this.ctx, peerId, dm, this.dms.status(peerId));
+    this.emit('message', view);
+    this.emit('change');
+    return view;
+  }
+
+  /** Empty a conversation on this Mac (`dm:` only; your friend keeps theirs). */
+  clearConversation(conversation: string): void {
+    const peerId = this.dmPeer(conversation);
+    this.dms.clear(peerId);
+    if (this.reads[conversation]) {
+      this.reads = { ...this.reads, [conversation]: 0 };
+      writeJson(this.file('reads.json'), this.reads);
+    }
+    this.emit('cleared', conversation);
+    this.emit('change');
   }
 
   dmHistory(peerId: string, opts: { before?: number; limit?: number } = {}): MessageView[] {
@@ -315,9 +407,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
   }
 
   /** Tell the others in a conversation that your Claude is answering message `id` (or stopped). */
-  sendLive(conversation: string, id: string, state: 'thinking' | 'idle'): void {
+  sendLive(conversation: string, id: string, state: 'thinking' | 'idle', agent?: AgentRef): void {
     const g = conversation.startsWith('group:') ? conversation.slice(6) : undefined;
-    for (const peerId of this.peopleIn(conversation)) this.links.get(peerId)?.send({ t: 'live', ...(g ? { g } : {}), for: id, state });
+    for (const peerId of this.peopleIn(conversation)) this.links.get(peerId)?.send({ t: 'live', ...(g ? { g } : {}), for: id, state, ...(agent ? { agent } : {}) });
   }
 
   /** Say who you're pulling chat files from (their pieces get the file allowance on the link). */
@@ -411,6 +503,58 @@ export class Mesh extends EventEmitter<MeshEvents> {
     return true;
   }
 
+  /** Hand a sharing frame to a friend's link; false when they're not linked now. */
+  sendShare(peerId: string, payload: unknown): boolean {
+    const link = this.links.get(peerId);
+    if (!link?.isOpen || !this.friends.has(peerId)) return false;
+    link.send({ t: 'share', p: payload });
+    return true;
+  }
+
+  /** A frame nobody took goes to the friend's mailbox after this long (undefined: there's no mailbox). */
+  get mailAfterMs(): number | undefined {
+    return this.mailbox?.afterMs;
+  }
+
+  /** Leave a frame in a friend's mailbox (mailbox.ts); false when there's none or it didn't take it. */
+  mail(peerId: string, t: MailChannel, payload: unknown): Promise<boolean> {
+    if (!this.mailbox || !this.friends.has(peerId) || this.closed) return Promise.resolve(false);
+    return this.mailbox.post(peerId, t, payload);
+  }
+
+  /** Run `fn` (an outbox mailing what still waits) before this Mac leaves the network; returns how to stop. */
+  onLeaving(fn: () => Promise<unknown>): () => void {
+    this.leavingHooks.add(fn);
+    return () => void this.leavingHooks.delete(fn);
+  }
+
+  /**
+   * About to go (quitting, the network turned off): whatever no friend has acknowledged yet goes
+   * to their mailboxes now, rather than waiting here until both of you happen to be online.
+   * Their acknowledgements are in your mailbox when you're back, and clear your outbox then.
+   */
+  async leaving(timeoutMs = LEAVING_MS): Promise<void> {
+    if (!this.mailbox || this.closed || !this.leavingHooks.size) return;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([Promise.allSettled([...this.leavingHooks].map((fn) => fn())), new Promise((r) => (timer = setTimeout(r, timeoutMs)))]);
+    clearTimeout(timer);
+  }
+
+  /** Take what friends left in your mailbox now; how many frames it handed on. */
+  checkMail(): Promise<number> {
+    if (!this.mailbox || this.closed) return Promise.resolve(0);
+    this.mailCheckedAt = Date.now();
+    return this.mailbox.check();
+  }
+
+  /** Hand a team boards frame to a friend's link; false when they're not linked now. */
+  sendTeam(peerId: string, payload: unknown): boolean {
+    const link = this.links.get(peerId);
+    if (!link?.isOpen || !this.friends.has(peerId)) return false;
+    link.send({ t: 'team', p: payload });
+    return true;
+  }
+
   // ---- status and reading
 
   setPresence(next: Presence): Presence {
@@ -445,6 +589,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   async close(): Promise<void> {
     if (this.closed) return;
+    await this.leaving();
     this.closed = true;
     clearInterval(this.ticker);
     clearTimeout(this.untilTimer);
@@ -472,7 +617,10 @@ export class Mesh extends EventEmitter<MeshEvents> {
       me: this.peerId,
       link: (peerId) => this.links.get(peerId),
       presenceOf: (peerId) => this.theirPresence.get(peerId),
+      belugaOf: (peerId) => this.theirBeluga.get(peerId),
+      updateOf: (peerId) => this.mismatched.get(peerId),
       nameOf: (peerId) => this.nameOf(peerId),
+      avatarOf: (peerId) => this.avatarOf(peerId),
       readCount: (conversation) => this.reads[conversation] ?? 0,
     };
   }
@@ -485,10 +633,47 @@ export class Mesh extends EventEmitter<MeshEvents> {
     return this.friends.get(peerId)?.name ?? this.allowed.get(peerId)?.name ?? this.helloNames.get(peerId) ?? 'someone';
   }
 
+  /** Someone's picture (yours too), once its bytes are here. */
+  private avatarOf(peerId: string): string | undefined {
+    const sha = peerId === this.peerId ? this.avatars.mine : this.avatars.theirs(peerId);
+    return sha && this.avatars.has(sha) ? sha : undefined;
+  }
+
+  /** Set your profile picture (undefined takes it away): everyone linked hears at once, and fetches it once. → its checksum. */
+  setAvatar(bytes: Uint8Array | undefined): string | undefined {
+    const sha = this.avatars.setMine(bytes);
+    if (!this.closed) for (const link of this.links.linked()) this.sendHello(link);
+    this.emit('change');
+    return sha;
+  }
+
+  /** A profile picture's bytes to show (yours, or one someone sent): → { mime, b64 }. */
+  avatar(sha: string): { mime: string; b64: string } | undefined {
+    const pic = this.avatars.read(sha);
+    return pic ? { mime: pic.mime, b64: pic.bytes.toString('base64') } : undefined;
+  }
+
   private friendProfile(peerId: string): Profile {
     const f = this.friends.get(peerId);
     if (!f) throw new Error('Add them as a friend first (or send them the group’s invite link)');
     return { card: f.card, name: f.name };
+  }
+
+  private dmPeer(conversation: string): string {
+    if (conversation.startsWith('group:')) throw new Error('Messages in channels can’t be deleted or edited yet');
+    const peerId = conversation.startsWith('dm:') ? conversation.slice(3) : '';
+    if (!this.friends.has(peerId)) throw new Error('No such conversation');
+    return peerId;
+  }
+
+  /** A message from them went: it no longer counts as read (`before`: the conversation as it was). */
+  private unread(conversation: string, before: readonly MessageView[], id: string): void {
+    const theirs = before.filter((m) => !m.mine);
+    const at = theirs.findIndex((m) => m.id === id);
+    const read = this.reads[conversation] ?? 0;
+    if (at < 0 || at >= read) return;
+    this.reads = { ...this.reads, [conversation]: read - 1 };
+    writeJson(this.file('reads.json'), this.reads);
   }
 
   private dmMessages(peerId: string): MessageView[] {
@@ -551,10 +736,27 @@ export class Mesh extends EventEmitter<MeshEvents> {
       .filter((p) => p !== peerId && p !== this.peerId);
   }
 
+  /** Say (again) that this Mac does these too, or no longer does: every linked friend hears it at once. */
+  offer(features: readonly Feature[], on: boolean): void {
+    for (const f of features) on ? this.offered.add(f) : this.offered.delete(f);
+    if (this.closed) return;
+    for (const link of this.links.linked()) this.sendHello(link);
+  }
+
+  /** What a person's Beluga said about itself (undefined for Macs from before that, or never linked). */
+  belugaOf(peerId: string): BelugaInfo | undefined {
+    return this.theirBeluga.get(peerId);
+  }
+
+  private sendHello(link: MeshLink): void {
+    link.send({ t: 'hello', proto: PROTO, name: this.opts.name, presence: shown(this.presence), app: this.opts.app ?? 'unknown', can: [...new Set([...MESH_FEATURES, ...this.offered])], ...(this.avatars.mine ? { avatar: this.avatars.mine } : {}) });
+  }
+
   private linkUp(link: MeshLink): void {
-    link.send({ t: 'hello', proto: PROTO, name: this.opts.name, presence: shown(this.presence) });
+    this.sendHello(link);
     this.groups.linkUp(link);
     for (const dm of this.dms.waiting(link.peerId)) link.send(dmFrame(dm));
+    for (const change of this.dms.pendingChanges(link.peerId)) link.send(changeFrame(change));
     this.emit('link', link.peerId);
     this.emit('change');
   }
@@ -565,13 +767,34 @@ export class Mesh extends EventEmitter<MeshEvents> {
     switch (msg.t) {
       case 'hello':
         if (Math.floor(msg.proto) !== PROTO) {
+          // Said on their card rather than looking offline (they redial, and are told the same).
+          this.mismatched.set(from, Math.floor(msg.proto) > PROTO ? 'you' : 'them');
+          if (msg.app) this.theirBeluga.set(from, { version: msg.app, can: msg.can ?? [] });
+          this.emit('change');
           link.close(CLOSE.version, 'different protocol version');
           return;
         }
+        this.mismatched.delete(from);
+        if (msg.app) this.theirBeluga.set(from, { version: msg.app, can: msg.can ?? [] });
+        else this.theirBeluga.delete(from);
         // The name they go by now (shown for people in your groups; friends keep the name you know them by).
         this.helloNames.set(from, msg.name);
         this.theirPresence.set(from, msg.presence);
+        this.avatars.announce(from, msg.avatar);
+        if (msg.avatar && !this.avatars.has(msg.avatar) && this.avatarAsked.get(from) !== msg.avatar) {
+          this.avatarAsked.set(from, msg.avatar);
+          link.send({ t: 'av_get', sha: msg.avatar });
+        }
         this.emit('change');
+        return;
+      case 'av_get': {
+        // Only your own picture, and only to people you're linked with (friends, people in your groups).
+        const pic = msg.sha === this.avatars.mine ? this.avatars.read(msg.sha) : undefined;
+        if (pic) link.send({ t: 'av_data', sha: msg.sha, d: pic.bytes.toString('base64') });
+        return;
+      }
+      case 'av_data':
+        if (this.avatars.receive(from, msg.sha, Buffer.from(msg.d, 'base64'))) this.emit('change');
         return;
       case 'presence':
         this.theirPresence.set(from, msg.presence);
@@ -590,12 +813,35 @@ export class Mesh extends EventEmitter<MeshEvents> {
         link.send({ t: 'dm_ack', id: msg.id });
         return;
       }
+      case 'dm_change': {
+        if (!this.friends.has(from)) return;
+        const conversation = dmConversation(from);
+        const before = msg.text === undefined ? this.dmMessages(from) : [];
+        const now = this.dms.changed(from, { id: msg.id, at: msg.at, ...(msg.text !== undefined ? { text: msg.text } : {}) });
+        if (now) this.emit('message', dmView(this.ctx, from, now, this.dms.status(from)));
+        else if (now === undefined) {
+          this.unread(conversation, before, msg.id);
+          this.emit('unsent', conversation, msg.id);
+        }
+        if (now !== null) this.emit('change');
+        link.send({ t: 'dm_change_ack', id: msg.id, at: msg.at });
+        return;
+      }
+      case 'dm_change_ack':
+        this.dms.changeDelivered(from, msg.id, msg.at);
+        return;
       case 'gw':
         if (this.friends.has(from)) this.emit('gateway', from, msg.p);
         return;
+      case 'share':
+        if (this.friends.has(from)) this.emit('share', from, msg.p);
+        return;
+      case 'team':
+        if (this.friends.has(from)) this.emit('team', from, msg.p);
+        return;
       case 'live': {
         const conversation = msg.g ? groupConversation(msg.g) : dmConversation(from);
-        if (this.shares(conversation, from)) this.emit('live', { conversation, from, for: msg.for, state: msg.state });
+        if (this.shares(conversation, from)) this.emit('live', { conversation, from, for: msg.for, state: msg.state, ...(msg.agent ? { agent: msg.agent } : {}) });
         return;
       }
       case 'f_get':
@@ -636,6 +882,11 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   private tick(): void {
     if (this.closed) return;
+    const now = Date.now();
+    // A tick much later than planned: the Mac slept. Friends may have left mail meanwhile.
+    const woke = isLate(now - this.lastTick, this.timing.syncMs);
+    this.lastTick = now;
+    if (this.mailbox && (woke || (now - this.mailCheckedAt >= this.mailbox.checkMs && this.friends.all().some((f) => !this.isLinked(f.peerId))))) void this.checkMail();
     this.groups.tick();
     for (const dm of this.dms.expire()) this.emit('message', dmView(this.ctx, dm.to, dm, this.dms.status(dm.to)));
     this.links.refresh();
@@ -644,6 +895,8 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
 /** A direct message as it goes over the link. */
 const dmFrame = (dm: { id: string; text: string; ts: number; x?: ChatExtras }): LinkMessage => ({ t: 'dm', id: dm.id, text: dm.text.trim() ? dm.text : wireNote(dm.x) || dm.text, ts: dm.ts, ...(dm.x ? { x: dm.x } : {}) });
+
+const changeFrame = (c: DmChange): LinkMessage => ({ t: 'dm_change', id: c.id, at: c.at, ...(c.text !== undefined ? { text: c.text } : {}) });
 
 /** A page of a conversation: the `limit` messages before `before` (default: the latest). */
 function page(messages: readonly MessageView[], opts: { before?: number; limit?: number }): MessageView[] {

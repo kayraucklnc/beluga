@@ -2,9 +2,9 @@
   "expo": {
     "name": "Beluga",
     "slug": "beluga-companion",
-    "version": "0.1.0",
+    "version": "2.0.0",
     "scheme": "beluga",
-    "orientation": "portrait",
+    "orientation": "default",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#FAF8F5",
     "icon": "./assets/icon.png",
@@ -21,16 +21,21 @@
       },
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.POST_NOTIFICATIONS"
-      ],
-      "blockedPermissions": [
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECORD_AUDIO"
       ],
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "versionCode": 31
     },
     "ios": {
       "bundleIdentifier": "sh.ratel.beluga",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Beluga writes down what you say on this phone, so you can ask your Mac by voice. Nothing you say leaves the phone.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "web": {
       "bundler": "metro",
@@ -46,6 +51,13 @@
       "expo-secure-store",
       "expo-status-bar",
       "expo-font",
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": false,
+          "supportsPictureInPicture": false
+        }
+      ],
       [
         "expo-camera",
         {
@@ -69,10 +81,17 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 29
+            "minSdkVersion": 29,
+            "buildArchs": [
+              "arm64-v8a"
+            ],
+            "useLegacyPackaging": true
           }
         }
-      ]
+      ],
+      "./plugins/loopback-cleartext",
+      "./plugins/phone-control-addon",
+      "./plugins/release-signing"
     ]
   }
 }

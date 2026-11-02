@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -8,10 +8,10 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 const CLAUDE_HOME = mkdtempSync(path.join(os.tmpdir(), 'klaud-claude-home-'));
 process.env.CLAUDE_CONFIG_DIR = CLAUDE_HOME;
 
-const { encodeProjectDir, findConversation, listConversations, pathVariants, samePath, sessionTitle } = await import('../src/agent/claude-sessions.js');
-const { findCreators, worktreeAddTargets } = await import('../src/agent/worktree-creators.js');
+const { encodeProjectDir, findConversation, listConversations, pathVariants, samePath, sessionTitle } = await import('../src/agent/runtime/claude/claude-sessions.js');
+const { findCreators, worktreeAddTargets } = await import('../src/agent/runtime/claude/worktree-creators.js');
 const { describeOrigin, sourceFromPath, worktreeOrigin } = await import('../src/workspaces/origin.js');
-const { staleReason, worktreeFacts } = await import('../src/workspaces/others.js');
+const { deletesSettled, removeWorktreeKeepingBranch, staleReason, sweepSetAside, worktreeFacts } = await import('../src/workspaces/others.js');
 const { parseConductorRows, inConductorRoot } = await import('../src/workspaces/conductor.js');
 const { OtherWorktrees } = await import('../src/core/other-worktrees.js');
 const { WorkspaceManager } = await import('../src/workspaces/manager.js');
@@ -46,7 +46,8 @@ describe('finding Claude Code conversations for a folder', () => {
     expect(encodeProjectDir('/Users/k/Desktop/ratel/_pr-review/catalog-v2/ratel.154')).toBe('-Users-k-Desktop-ratel--pr-review-catalog-v2-ratel-154');
   });
 
-  it('treats /tmp and /private/tmp (and symlinks) as one folder', () => {
+  // Not on Windows: macOS's /private links.
+  it.skipIf(process.platform === 'win32')('treats /tmp and /private/tmp (and symlinks) as one folder', () => {
     expect(pathVariants('/tmp/x')).toEqual(expect.arrayContaining(['/tmp/x', '/private/tmp/x']));
     expect(samePath('/tmp/does-not-exist-klaud', '/private/tmp/does-not-exist-klaud')).toBe(true);
     expect(samePath('/tmp/a', '/tmp/b')).toBe(false);
@@ -118,7 +119,8 @@ describe('finding Claude Code conversations for a folder', () => {
 });
 
 describe('which conversation made a worktree', () => {
-  it('reads the folders `git worktree add` makes, following cd and -C', () => {
+  // Not on Windows: POSIX paths in the commands.
+  it.skipIf(process.platform === 'win32')('reads the folders `git worktree add` makes, following cd and -C', () => {
     expect(worktreeAddTargets('git worktree add /abs/wt -b feat', '/repo')).toEqual(['/abs/wt']);
     expect(worktreeAddTargets('cd /Users/k/repo && git worktree add ../rc210-replay feat/x', '/elsewhere')).toEqual(['/Users/k/rc210-replay']);
     expect(worktreeAddTargets('git -C /Users/k/repo worktree add -B pr-154 "../_pr review/ratel-154" origin/pr', '/x')).toEqual(['/Users/k/_pr review/ratel-154']);
@@ -280,6 +282,34 @@ describe('worktrees from other tools, end to end in a real repo', () => {
     expect(sh(repo, 'branch', '--list', 'dirty')).toContain('dirty');
   });
 
+  it('sets the folder aside at once and deletes it in the background; a dirty one without force is still refused by git', async () => {
+    const dirty = ext('dirty');
+    writeFileSync(path.join(dirty.path, 'node_modules.txt'), 'x'.repeat(1000));
+    await removeWorktreeKeepingBranch(repo, dirty.path, true);
+    expect(existsSync(dirty.path)).toBe(false);
+    expect(sh(repo, 'worktree', 'list')).not.toContain(dirty.path);
+    await deletesSettled();
+    expect(readdirSync(base).filter((n) => n.includes('.removing-'))).toEqual([]);
+    expect(sh(repo, 'branch', '--list', 'dirty')).toContain('dirty');
+    // Without force, git's own refusal stands: the folder stays where it was.
+    sh(repo, 'worktree', 'add', '-q', '-b', 'dirty2', path.join(base, 'dirty2'));
+    writeFileSync(path.join(base, 'dirty2', 'wip.txt'), 'x');
+    await expect(removeWorktreeKeepingBranch(repo, path.join(base, 'dirty2'), false)).rejects.toThrow();
+    expect(existsSync(path.join(base, 'dirty2', 'wip.txt'))).toBe(true);
+  });
+
+  it('finishes deleting what an earlier background delete left, and only that', async () => {
+    const parent = path.join(base, 'wts'); // not looked in yet this run (refresh already swept base)
+    mkdirSync(path.join(parent, '.old.removing-123', 'node_modules'), { recursive: true });
+    mkdirSync(path.join(parent, '.keep-me'));
+    mkdirSync(path.join(parent, 'work'));
+    await sweepSetAside([parent]);
+    await deletesSettled();
+    expect(existsSync(path.join(parent, '.old.removing-123'))).toBe(false);
+    expect(existsSync(path.join(parent, '.keep-me'))).toBe(true);
+    expect(existsSync(path.join(parent, 'work'))).toBe(true);
+  });
+
   it("deleting one you've talked in from Beluga never deletes its branch or forces it", async () => {
     const busy = ext('busy');
     mgr.rememberSession(busy.id, 'sess-1'); // adopted: now one of yours
@@ -299,6 +329,7 @@ describe('worktrees from other tools, end to end in a real repo', () => {
   it('labels with the conversation that made it, and lists conversations that ran there', async () => {
     const busy = ext('busy');
     const tools = {
+      conversationsUnder: async () => [],
       conversations: async (dir: string) => (dir === busy.path ? [{ sessionId: 's1', title: 'Earlier', lastModified: 1 }] : []),
       conductor: async () => [],
       creators: async (paths: readonly string[]) => new Map(paths.map((p) => [p, { sessionId: 'maker', title: 'RC-210 epic', cwd: repo }])),
@@ -339,7 +370,7 @@ describe('opening a worktree from another tool', () => {
       intend: () => undefined,
       askClaude: () => undefined,
       findConversation: async (dir, opts) => (asked.push({ dir, ...(opts ? { opts } : {}) }), opts?.sessionId === 'older' ? convo('older', 'the older one') : convo('active', 'the one Conductor has open')),
-      otherTools: { conversations: async () => [], conductor: async () => [{ path: wt, name: 'berlin', sessionId: 'active' }], creators: async () => new Map() },
+      otherTools: { conversations: async () => [], conversationsUnder: async () => [], conductor: async () => [{ path: wt, name: 'berlin', sessionId: 'active' }], creators: async () => new Map() },
     });
     await ctl.refresh();
     const ws = mgr.list.flatMap((p) => p.workspaces).find((w) => w.path === wt)!;
@@ -367,7 +398,8 @@ describe('opening a worktree from another tool', () => {
 });
 
 describe("Conductor's live workspaces", () => {
-  it('are never offered for cleanup or removed by Clean Up (archive them in Conductor)', async () => {
+  // Not on Windows: Conductor is a Mac app.
+  it.skipIf(process.platform === 'win32')('are never offered for cleanup or removed by Clean Up (archive them in Conductor)', async () => {
     const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-conductor-live-')));
     const repo = path.join(base, 'code', 'app');
     mkdirSync(repo, { recursive: true });
@@ -382,6 +414,7 @@ describe("Conductor's live workspaces", () => {
     const mgr = new WorkspaceManager(store);
     await mgr.refresh();
     const tools = {
+      conversationsUnder: async () => [],
       conversations: async () => [],
       conductor: async () => [
         { path: live, name: 'lisbon', state: 'ready' },

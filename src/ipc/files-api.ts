@@ -22,6 +22,17 @@ export const FILES_EDIT_API = {
         .optional(),
     ]),
   },
+  // Files whose path has the query, anywhere in a workspace's folder → NameResults. Same options as files.searchContent.
+  'files.searchNames': {
+    args: z.tuple([
+      id,
+      z.string().min(1).max(1000),
+      z
+        .object({ regex: z.boolean().optional(), caseSensitive: z.boolean().optional(), wholeWord: z.boolean().optional(), slot: z.string().max(200).optional() })
+        .strict()
+        .optional(),
+    ]),
+  },
   // Save a file you edited → { ok, hash } or { ok: false, conflict } (it changed since `expect`, the hash of the text you started from; `force` saves anyway).
   'files.save': {
     args: z.tuple([

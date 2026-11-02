@@ -1,4 +1,14 @@
+import { NewLabelSheet } from '../../tasks/NewLabelSheet.js';
+import { ProjectContextSheet } from '../../tasks/ProjectContextSheet.js';
+import { EnvironmentSheet } from '../EnvironmentSheet.js';
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
+import { BoardSheet } from '../../tasks/boards.js';
+import { NewSentinelSheet } from '../../sentinel/NewSentinelSheet.js';
+import { AddTileSheet } from '../../sentinel/AddTileSheet.js';
+import { DocumentSheet } from '../../sentinel/DocumentSheet.js';
+import { DataSheet } from '../../sentinel/DataSheet.js';
+import { ShareProjectSheet } from './ShareProjectSheet.js';
+import { SyncSheet } from '../../tasks/SyncSheet.js';
 import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
 import { useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
@@ -13,9 +23,12 @@ import { type NativeSheet, closeSheet, useSheet } from '../../lib/sheets.js';
 import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
 import { TemplateEditorSheet } from './TemplatesSheet.js';
 import { ContinueSheet } from './ContinueSheet.js';
+import { ForkToMacSheet } from './ForkToMacSheet.js';
+import { ImportConversationSheet } from './ImportConversationSheet.js';
 import { CleanUpWorktreesAlert } from './CleanUpWorktrees.js';
 import { DeleteProjectAlert } from './DeleteProjectAlert.js';
 import { WorkConfirm } from './WorkConfirm.js';
+import { GitTroubleSheet } from './GitTroubleSheet.js';
 
 /** The folder and branch name Beluga makes from a name (as the core's `slug` does). */
 const slug = (name: string): string =>
@@ -71,7 +84,7 @@ function PeerRunSheet({ peerId, close }: { peerId?: string; close: () => void })
         icon="terminal"
         tone="info"
         title="Nobody lets you run commands yet"
-        message="When a friend lets your Claude run commands on their computer, you can run one there yourself too. They choose that in their People settings."
+        message="When a friend lets your agent run commands on their computer, you can run one there yourself too. They choose that in their People settings."
         cancel={false}
         confirm={{ label: 'OK', onClick: close }}
         onCancel={close}
@@ -159,6 +172,8 @@ export function NativeSheets() {
       return <ForkSheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
     case 'continue_worktree':
       return <ContinueSheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
+    case 'fork_to_mac':
+      return <ForkToMacSheet key={sheet.wsId} owner={sheet.owner} wsId={sheet.wsId} close={close} />;
     case 'peer_run':
       return <PeerRunSheet key={sheet.peerId ?? ''} {...(sheet.peerId ? { peerId: sheet.peerId } : {})} close={close} />;
     case 'template':
@@ -173,16 +188,40 @@ export function NativeSheets() {
       return <CleanUpWorktreesAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'delete_project':
       return <DeleteProjectAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'import_conversation':
+      return <ImportConversationSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'share_project':
+      return <ShareProjectSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_task':
-      return <NewTaskSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
+      return <NewTaskSheet {...(sheet.boardId ? { boardId: sheet.boardId } : {})} {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
+    case 'task_board':
+      return <BoardSheet key={sheet.boardId ?? 'new'} {...(sheet.boardId ? { boardId: sheet.boardId } : {})} {...(sheet.repos ? { repos: sheet.repos } : {})} close={close} />;
+    case 'new_label':
+      return <NewLabelSheet key={sheet.projectId} projectId={sheet.projectId} {...(sheet.issueId ? { issueId: sheet.issueId } : {})} close={close} />;
+    case 'task_sync':
+      return <SyncSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'project_context':
+      return <ProjectContextSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'project_env':
+      return <EnvironmentSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_plan':
       return <NewPlanSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} close={close} />;
+    case 'new_sentinel':
+      return <NewSentinelSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.way ? { way: sheet.way } : {})} close={close} />;
+    case 'add_tile':
+      return <AddTileSheet key={sheet.dashboardId} dashboardId={sheet.dashboardId} close={close} />;
+    case 'sentinel_data':
+      return <DataSheet key={`${sheet.sentinelId}:${sheet.metric}`} sentinelId={sheet.sentinelId} metric={sheet.metric} close={close} />;
+    case 'sentinel_document':
+      return <DocumentSheet key={`${sheet.source}:${sheet.name}`} source={sheet.source} sentinelId={sheet.sentinelId} metric={sheet.metric} column={sheet.column} name={sheet.name} close={close} />;
     case 'plan_style':
       return <PlanStyleSheet close={close} />;
     case 'plan_send_back':
       return <SendBackSheet planId={sheet.planId} milestone={sheet.milestone} close={close} />;
     case 'plan_mode':
       return <PlanModeSheet key={sheet.planId} planId={sheet.planId} close={close} />;
+    case 'git_trouble':
+      return <GitTroubleSheet key={`${sheet.wsId}:${sheet.trouble.kind}`} wsId={sheet.wsId} trouble={sheet.trouble} retry={sheet.retry} close={close} />;
     case 'confirm':
       return (
         <Alert

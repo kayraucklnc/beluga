@@ -24,6 +24,8 @@ import { InlineCode } from '../views/Inline.js';
 import { viewFenceType } from '@beluga/shared/view-spec.js';
 import { TASKS_FENCE } from '@beluga/shared/task-refs.js';
 import { TaskCards } from '../../tasks/TaskRef.js';
+import { prepareMath } from '@beluga/shared/render/math.js';
+import { RichBlock, useRichFence } from '../blocks/RichBlock.js';
 import m from './markdown.module.css';
 
 /**
@@ -122,6 +124,19 @@ function heading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6', ctx: { current: C
   };
 }
 
+/**
+ * A fenced block that's really something else (shared/render/rich-fence.ts): a file tree, JSON, a
+ * terminal session, math, or a mermaid diagram drawn as our own graph or view (else Mermaid's own).
+ */
+function DocFence({ code, lang }: { code: string; lang: string | undefined }) {
+  const fence = useRichFence(lang, code);
+  if (fence?.kind === 'math') return <MathTex tex={fence.tex} display />;
+  if (fence?.kind === 'mermaid') return fence.block.kind === 'graph' ? <GraphBlock code={fence.block.text} /> : <ViewBlock code={fence.block.text} type="any" />;
+  if (fence) return <RichBlock fence={fence} code={code} lang={lang} />;
+  if (lang === 'mermaid') return <Diagram code={code} />;
+  return <CodeBlock code={code} lang={lang} />;
+}
+
 function makeComponents(ctx: { current: Ctx }): Components {
   return {
     a: ({ href = '', children, node: _node, ...rest }) => (
@@ -151,11 +166,10 @@ function makeComponents(ctx: { current: Ctx }): Components {
         .find((c) => c.startsWith('language-'))
         ?.slice('language-'.length);
       if (lang === 'math') return <MathTex tex={text} display />;
-      if (lang === 'mermaid') return <Diagram code={text} />;
       if (isGraphFence(lang)) return <GraphBlock code={text} />;
       if (lang === TASKS_FENCE) return <TaskCards code={text} />;
       if (viewFenceType(lang)) return <ViewBlock code={text} type={viewFenceType(lang)!} />;
-      return <CodeBlock code={text} lang={lang} />;
+      return <DocFence code={text} lang={lang} />;
     },
     code: ({ className, children }) =>
       className?.includes('math-inline') ? <MathTex tex={String(children)} display={false} /> : <InlineCode text={String(children)} fallback={<code className={m.inlineCode}>{children}</code>} />,
@@ -204,7 +218,9 @@ export const MarkdownDoc = memo(function MarkdownDoc({ text, at, variant, nav }:
   const article = useRef<HTMLElement>(null);
   const { yaml, body } = useMemo(() => splitFrontMatter(text), [text]);
   // A big file re-renders behind whatever you're doing, not in its way.
-  const shown = useDeferredValue(body);
+  const deferred = useDeferredValue(body);
+  // Math the way the chat reads it: `\(…\)` too, and prices stay words ("$5 and $10").
+  const shown = useMemo(() => prepareMath(deferred), [deferred]);
 
   const ctx = useRef<Ctx>(null as unknown as Ctx);
   const open = (path: string): void => void client.api.files.open({ ...at, path });

@@ -1,6 +1,7 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
-import type { RoomBridge } from './types.js';
+import type { RoomBridge, SetupTools } from './types.js';
+import { type DialogueTurnTools, endDialogueToolDef } from './dialogue-tools.js';
 import { createGatewayToolDefs } from './gateway-tools.js';
 
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
@@ -124,17 +125,30 @@ export function createRoomToolDefs(bridge: RoomBridge) {
 
 export const CONTINUE_TOOL = 'mcp__beluga__continue_in_worktree';
 
-/** For runs in a project's main folder: move the conversation into a new worktree and work there. */
+/** For runs in a project's main folder: turn the chat into a new worktree and work there. */
 export function continueInWorktreeToolDef(move: (task: string) => Promise<string>) {
   return tool(
     'continue_in_worktree',
-    "You're in the project's read-only main folder. Call this as soon as the request needs any change: Beluga makes a new worktree from the latest origin, carries this conversation over and you continue the task there. Then end your turn with one short line.",
+    "You're in the project's read-only main folder. Call this as soon as the request needs any change: Beluga turns this chat into a new worktree from the latest origin (same conversation, its own folder) and you continue the task there. Then end your turn with one short line.",
     { task: z.string().min(1).max(8000).describe('The change to make, as a complete instruction (it starts the work in the new worktree)') },
     (a) => guarded(() => move(a.task)),
   );
 }
 
-/** The Beluga tools for one run: the room's, plus continue_in_worktree in a main folder. */
-export function createRoomTools(bridge: RoomBridge, move?: (task: string) => Promise<string>) {
-  return createSdkMcpServer({ name: 'beluga', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : [])] });
+/** For your own runs in a worktree: correct the setup new worktrees of this project run once. */
+export function setProjectSetupToolDef(setup: SetupTools) {
+  return tool(
+    'set_project_setup',
+    "Change the setup command Beluga runs once in every new worktree of this project, when you found it incomplete (you had to install dependencies or run a step it doesn't). Give the whole command a fresh checkout needs, chained with &&.",
+    {
+      command: z.string().min(1).max(2000).describe('The full setup command, e.g. `npm install && (cd packages/app && npm install)`'),
+      why: z.string().min(1).max(300).describe('What was missing, in a few words (shown to the owner)'),
+    },
+    (a) => guarded(async () => setup.set(a.command, a.why)),
+  );
+}
+
+/** The Beluga tools for one run: the room's, plus continue_in_worktree in a main folder, plus set_project_setup in a worktree, plus end_dialogue in a dialogue's turn. */
+export function createRoomTools(bridge: RoomBridge, move?: (task: string) => Promise<string>, setup?: SetupTools, dialogue?: DialogueTurnTools) {
+  return toolSuite({ name: 'beluga', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : []), ...(setup ? [setProjectSetupToolDef(setup)] : []), ...(dialogue ? [endDialogueToolDef(dialogue)] : [])] });
 }

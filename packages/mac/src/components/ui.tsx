@@ -1,5 +1,8 @@
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { type ButtonHTMLAttributes, type ReactNode, forwardRef } from 'react';
+import type { AgentRef } from '@beluga/protocol.js';
+import { agentMark, runtimeMark } from '../../../../src/shared/agent-marks.js';
+import { useAvatarUrl } from '../lib/avatars.js';
 import { DotMatrix } from './DotMatrix.js';
 import { Icon, type IconName } from './Icon.js';
 import s from './ui.module.css';
@@ -58,16 +61,22 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
  * just the icons, each named in its tooltip.
  */
 /** `radio`: a choice of how to show one thing (a radio group), not tabs of their own. */
-export function Segmented<T extends string>({ value, options, onChange, label, iconOnly, radio }: { value: T; options: ReadonlyArray<{ value: T; label: string; hint?: string; icon?: IconName; keys?: string }>; onChange: (v: T) => void; label: string; iconOnly?: boolean; radio?: boolean }) {
+/** `count`: a number after the label, in a quieter tone (`data-count`, so a narrow toolbar can drop it). */
+export function Segmented<T extends string>({ value, options, onChange, label, iconOnly, radio }: { value: T; options: ReadonlyArray<{ value: T; label: string; hint?: string; icon?: IconName; keys?: string; count?: number }>; onChange: (v: T) => void; label: string; iconOnly?: boolean; radio?: boolean }) {
   return (
     <div className={s.segmented} role={radio ? 'radiogroup' : 'tablist'} aria-label={label}>
       {options.map((o) => {
         const bare = iconOnly && o.icon;
         return (
           <Tip key={o.value} label={bare ? `${o.label}${o.hint ? ` · ${o.hint}` : ''}` : (o.hint ?? o.label)} {...(o.keys ? { keys: o.keys } : {})}>
-            <button type="button" role={radio ? 'radio' : 'tab'} aria-label={bare ? o.label : undefined} {...(radio ? { 'aria-checked': o.value === value } : { 'aria-selected': o.value === value })} className={cx(s.segment, o.value === value && s.segmentOn, bare && s.segmentIcon)} onClick={() => onChange(o.value)}>
+            <button type="button" role={radio ? 'radio' : 'tab'} aria-label={bare ? o.label : o.count ? `${o.label} ${o.count}` : undefined} {...(radio ? { 'aria-checked': o.value === value } : { 'aria-selected': o.value === value })} className={cx(s.segment, o.value === value && s.segmentOn, bare && s.segmentIcon)} onClick={() => onChange(o.value)}>
               {o.icon ? <Icon name={o.icon} size={13} /> : null}
               {bare ? null : o.label}
+              {bare || !o.count ? null : (
+                <span className={s.segmentCount} data-count="">
+                  {o.count}
+                </span>
+              )}
             </button>
           </Tip>
         );
@@ -82,10 +91,13 @@ export function Badge({ count, urgent }: { count: number; urgent?: boolean }) {
   return <span className={cx(s.badge, urgent && s.badgeUrgent)}>{count > 99 ? '99+' : count}</span>;
 }
 
-/** A status dot. `live` pulses softly (Claude is working). `subagent`: one of Claude's sub-agents, in its own color. */
-export function Dot({ tone, live }: { tone: 'ok' | 'warn' | 'error' | 'info' | 'claude' | 'subagent' | 'muted'; live?: boolean }) {
+/**
+ * A status dot. `live` pulses softly (Claude is working). `subagent`: one of Claude's sub-agents, in
+ * its own color. `worktree` and `plan`: the bigger work, each in its color with the orbiting loader.
+ */
+export function Dot({ tone, live }: { tone: 'ok' | 'warn' | 'error' | 'info' | 'claude' | 'subagent' | 'worktree' | 'plan' | 'muted'; live?: boolean }) {
   // At work: the dot matrix, in the dot's color (no pulsing ring).
-  if (live) return <DotMatrix className={s[`live_${tone}`]} size={13} />;
+  if (live) return <DotMatrix className={s[`live_${tone}`]} size={13} pattern={tone === 'worktree' || tone === 'plan' ? 'orbit' : 'petals'} />;
   return <span className={cx(s.dot, s[`dot_${tone}`])} aria-hidden="true" />;
 }
 
@@ -106,16 +118,23 @@ const NOBODY = new Set(['claude-code']);
  */
 export const claudeColor = (owner: string | undefined): string | undefined => (owner && !NOBODY.has(owner) ? personColor(owner) : undefined);
 
-/** A person's initial in their color; their Claude gets its mark (the Beluga prompt), tinted the same. */
-export function Avatar({ name, id, claude, size = 22 }: { name: string; id: string; claude?: boolean; size?: number }) {
-  const tint = claude ? claudeColor(id) : undefined;
+/**
+ * A person's profile picture (lib/avatars.ts), or their initial in their color until there is one;
+ * their agent gets its runtime's mark (Claude Code, Codex, a local model), tinted the same.
+ * `agent`: the agent (or its runtime id); `claude`: an agent whose runtime isn't known (Claude's mark).
+ */
+export function Avatar({ name, id, claude, agent, size = 22 }: { name: string; id: string; claude?: boolean; agent?: Pick<AgentRef, 'runtime'> | string | undefined; size?: number }) {
+  const isAgent = Boolean(claude) || agent !== undefined;
+  const picture = useAvatarUrl(id, isAgent);
+  const tint = isAgent ? claudeColor(id) : undefined;
+  if (picture) return <img className={cx(s.avatar, s.avatarPicture)} src={picture} width={size} height={size} alt="" draggable={false} aria-hidden="true" />;
   return (
     <span
-      className={cx(s.avatar, claude && s.avatarClaude)}
-      style={{ width: size, height: size, fontSize: size * 0.46, ...(claude ? (tint ? { background: `color-mix(in srgb, ${tint} 20%, transparent)`, color: tint } : {}) : { background: personColor(id) }) }}
+      className={cx(s.avatar, isAgent && s.avatarClaude)}
+      style={{ width: size, height: size, fontSize: size * 0.46, ...(isAgent ? (tint ? { background: `color-mix(in srgb, ${tint} 20%, transparent)`, color: tint } : {}) : { background: personColor(id) }) }}
       aria-hidden="true"
     >
-      {claude ? <Icon name="claude" size={size * 0.6} /> : (name[0] ?? '?').toUpperCase()}
+      {isAgent ? <Icon name={typeof agent === 'string' ? runtimeMark(agent) : agentMark(agent)} size={size * 0.6} /> : (name[0] ?? '?').toUpperCase()}
     </span>
   );
 }

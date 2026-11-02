@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Beluga",
+        "width": 1320,
+        "height": 860,
+        "minWidth": 860,
+        "minHeight": 560,
+        "decorations": true
+      }
+    ]
+  },
+  "bundle": {
+    "targets": [
+      "deb",
+      "appimage",
+      "rpm"
+    ],
+    "longDescription": "Beluga for Linux: worktrees per task, Claude you can watch, and friends with their own Claude in the same room.",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}

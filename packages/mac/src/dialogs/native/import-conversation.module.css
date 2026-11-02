@@ -1,0 +1,76 @@
+/* Import from Claude Code: one hairline list, a soft tint on the one picked (no glow). */
+.where {
+  display: block;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--text-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.list {
+  max-height: 18rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-l);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+.list > li + li {
+  border-top: 0.5px solid var(--hairline);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.on,
+.on:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.icon {
+  flex: none;
+  color: var(--text-3);
+}
+.on .icon,
+.check {
+  flex: none;
+  color: var(--accent);
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.title,
+.detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail {
+  color: var(--text-3);
+  font-size: 0.92em;
+}
+.quiet {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--text-3);
+}
+/* Where focus starts (one child: the list, or what's said instead). */
+.focus:focus {
+  outline: none;
+}

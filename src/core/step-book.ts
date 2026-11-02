@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { type StepPage, type StepRecord, sizeOf, summaryOf } from '../shared/steps.js';
 
@@ -21,6 +22,8 @@ const MEMORY_RUNS = 40;
 const DISK_RUNS = 300;
 /** A run's file is written this long after its last change (and right away when it ends). */
 const SAVE_DELAY_MS = 2_000;
+/** Old runs' files are cleared out at most this often. */
+const PRUNE_EVERY_MS = 60_000;
 
 interface Run {
   readonly key: string;
@@ -29,6 +32,11 @@ interface Run {
   chars: number;
   version: number;
   timer?: NodeJS.Timeout;
+  /** The version its file has (none: not written yet). */
+  saved?: number;
+  /** A write in flight, and whether changes came after it started. */
+  writing?: boolean;
+  again?: boolean;
 }
 
 const fileName = (key: string): string => `${createHash('sha1').update(key).digest('hex')}.json`;
@@ -136,23 +144,80 @@ export class StepBook {
     if (!this.dir || run.timer) return;
     run.timer = setTimeout(() => {
       run.timer = undefined;
-      this.save(run);
+      this.saveLater(run);
     }, SAVE_DELAY_MS);
     run.timer.unref?.();
   }
 
+  private madeDir = false;
+  private prunedAt = 0;
+
+  private text(run: Run): string {
+    return JSON.stringify({ key: run.key, version: run.version, steps: run.order.map((id) => run.records.get(id)) });
+  }
+
+  private ensureDir(): void {
+    if (this.madeDir) return;
+    mkdirSync(this.dir!, { recursive: true, mode: 0o700 });
+    this.madeDir = true;
+  }
+
+  /** Write a run now, all of it, before going on (a run ending, Beluga quitting). */
   private save(run: Run): void {
     if (!this.dir) return;
     try {
-      mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+      this.ensureDir();
       const file = path.join(this.dir, fileName(run.key));
+      if (run.saved === run.version && this.touch(file)) return;
       const tmp = `${file}.${process.pid}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ key: run.key, version: run.version, steps: run.order.map((id) => run.records.get(id)) }), { mode: 0o600 });
+      writeFileSync(tmp, this.text(run), { mode: 0o600 });
       renameSync(tmp, file);
-      this.prune();
+      run.saved = run.version;
+      this.pruneSoon();
     } catch {
       // Details are a nicety: a full disk must not stop Claude.
     }
+  }
+
+  /**
+   * Write a run while it goes on (BLG-407): without holding up the daemon, one write per run at a
+   * time (changes meanwhile are written right after it), and not at all when nothing changed.
+   */
+  private saveLater(run: Run): void {
+    if (!this.dir || run.saved === run.version) return;
+    if (run.writing) {
+      run.again = true;
+      return;
+    }
+    const version = run.version;
+    const file = path.join(this.dir, fileName(run.key));
+    const tmp = `${file}.${process.pid}.${version}.tmp`;
+    run.writing = true;
+    let text: string;
+    try {
+      this.ensureDir();
+      text = this.text(run);
+    } catch {
+      run.writing = false;
+      return;
+    }
+    void writeFile(tmp, text, { mode: 0o600 })
+      .then(() => {
+        // Written in full meanwhile (the run ended): that one is newer, and stays.
+        if ((run.saved ?? -1) >= version) return void unlink(tmp).catch(() => undefined);
+        // Renamed here, on the daemon's thread, so it can never land after a newer full write.
+        renameSync(tmp, file);
+        run.saved = version;
+        this.pruneSoon();
+      })
+      .catch(() => void unlink(tmp).catch(() => undefined))
+      .finally(() => {
+        run.writing = false;
+        if (run.again) {
+          run.again = false;
+          this.saveLater(run);
+        }
+      });
   }
 
   private load(key: string): Run | undefined {
@@ -161,20 +226,46 @@ export class StepBook {
       const data = JSON.parse(readFileSync(path.join(this.dir, fileName(key)), 'utf8')) as { key?: string; version?: number; steps?: StepRecord[] };
       if (data.key !== key || !Array.isArray(data.steps)) return undefined;
       const steps = data.steps.filter((r): r is StepRecord => Boolean(r && typeof r.id === 'string' && typeof r.title === 'string'));
-      return { key, order: steps.map((r) => r.id), records: new Map(steps.map((r) => [r.id, r])), chars: steps.reduce((n, r) => n + sizeOf(r), 0), version: data.version ?? 1 };
+      const version = data.version ?? 1;
+      return { key, order: steps.map((r) => r.id), records: new Map(steps.map((r) => [r.id, r])), chars: steps.reduce((n, r) => n + sizeOf(r), 0), version, ...(data.version !== undefined ? { saved: version } : {}) };
     } catch {
       return undefined;
     }
   }
 
-  private prune(): void {
-    if (!this.dir) return;
-    const files = readdirSync(this.dir).filter((f) => f.endsWith('.json'));
+  /**
+   * The file already has this version: only its time is brought up to now, as writing it again
+   * would (the oldest files are the ones to go) → false when it isn't there to touch.
+   */
+  private touch(file: string): boolean {
+    try {
+      const now = new Date();
+      utimesSync(file, now, now);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Clear out the oldest runs' files, at most once a minute (BLG-407), off the daemon's thread. */
+  private pruneSoon(): void {
+    if (!this.dir || Date.now() - this.prunedAt < PRUNE_EVERY_MS) return;
+    this.prunedAt = Date.now();
+    void this.prune().catch(() => undefined);
+  }
+
+  private async prune(): Promise<void> {
+    const dir = this.dir!;
+    const files = (await readdir(dir)).filter((f) => f.endsWith('.json'));
     if (files.length <= DISK_RUNS) return;
-    const dated = files.map((f) => ({ f, t: statSync(path.join(this.dir!, f)).mtimeMs })).sort((a, b) => a.t - b.t);
-    for (const { f } of dated.slice(0, files.length - DISK_RUNS)) {
+    const dated = (await Promise.all(files.map(async (f) => ({ f, t: await stat(path.join(dir, f)).then((s) => s.mtimeMs, () => undefined) }))))
+      .filter((d): d is { f: string; t: number } => d.t !== undefined)
+      .sort((a, b) => a.t - b.t);
+    // Removed in one go on the daemon's thread, each only if it wasn't written since it was looked at.
+    for (const { f, t } of dated.slice(0, dated.length - DISK_RUNS)) {
       try {
-        unlinkSync(path.join(this.dir, f));
+        const file = path.join(dir, f);
+        if (statSync(file).mtimeMs === t) unlinkSync(file);
       } catch {
         // Already gone.
       }

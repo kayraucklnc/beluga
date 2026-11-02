@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, AgentRunInput } from '../../agent/types.js';
+import { type AgentRef, CLAUDE_AGENT, type ProviderUsage } from '../../protocol.js';
 import { demoShell } from '../../demo.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
 import { Store, initialState } from '../store.js';
@@ -30,6 +31,8 @@ interface Persona {
   /** The few words their notification shows for it. */
   readonly asksBackSummary: string;
   readonly asksIn?: string;
+  /** Their plans' usage, shared on their card with those they trust (BLG-597): percent used, and hours until each resets. */
+  readonly usage: ReadonlyArray<{ readonly agent: AgentRef; readonly plan: string; readonly fiveHour: readonly [number, number]; readonly week: readonly [number, number] }>;
 }
 
 /** What a demo friend's Claude asks when you mention a screenshot to them. */
@@ -52,6 +55,10 @@ const PERSONAS: Readonly<Record<'bob' | 'mia', Persona>> = {
     fallback: 'Done. I looked into it in bob-api; nothing needed changing.',
     asksBack: 'Could you check the landing page links still work after the domain change? A short list of anything broken is enough.',
     asksBackSummary: 'check the landing page links after the domain change',
+    usage: [
+      { agent: CLAUDE_AGENT, plan: 'max', fiveHour: [34, 2.5], week: [61, 76] },
+      { agent: { runtime: 'codex', label: 'Codex' }, plan: 'plus', fiveHour: [12, 4], week: [40, 100] },
+    ],
   },
   mia: {
     name: 'mia',
@@ -65,6 +72,8 @@ const PERSONAS: Readonly<Record<'bob' | 'mia', Persona>> = {
     asksBack: 'What does your auth middleware return for an expired session? I need the exact status code for the error page.',
     asksBackSummary: 'tell me what auth returns for an expired session',
     asksIn: 'bob-api',
+    // She has you on "Ask me each time": her usage stays hers.
+    usage: [{ agent: CLAUDE_AGENT, plan: 'pro', fiveHour: [72, 1], week: [48, 50] }],
   },
 };
 
@@ -117,6 +126,13 @@ function demoClaude(persona: Persona): AgentBackend {
 }
 
 /** Give a demo friend a gateway that answers your tasks. Returns how to stop it. */
+/** A persona's usage as their Mac would report it, resetting a few hours or days from now. */
+function demoUsages(p: Persona): ProviderUsage[] {
+  const now = Date.now();
+  const at = (hours: number): number => now + hours * 3_600_000;
+  return p.usage.map((u) => ({ agent: u.agent, plan: u.plan, fiveHour: { pct: u.fiveHour[0], resetsAt: at(u.fiveHour[1]) }, week: { pct: u.week[0], resetsAt: at(u.week[1]) }, updatedAt: now }));
+}
+
 export function demoResponder(mesh: Mesh, persona: 'bob' | 'mia', meId: string, base: string): { gateway: Gateway; stop: () => void; askBack: (what?: 'question' | 'screenshot') => void } {
   const p = PERSONAS[persona];
   const store = new Store(initialState('room'));
@@ -125,6 +141,7 @@ export function demoResponder(mesh: Mesh, persona: 'bob' | 'mia', meId: string, 
   mesh.on('change', sync);
   sync();
   store.dispatch({ type: 'trust_level', peerId: meId, level: p.trust });
+  store.dispatch({ type: 'welcome', self: { peerId: mesh.peerId, name: p.name, shares: [], agent: true, usages: demoUsages(p) } });
   const folder = path.join(base, persona, 'work');
   mkdirSync(folder, { recursive: true });
   const gateway = new Gateway({

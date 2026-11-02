@@ -91,7 +91,7 @@ describe('capabilities hold on every tool call', () => {
     const t = kay.gw.ask({ person: 'fixA2', ask: 'look around', by: 'agent' });
     await settle(() => task(kay, t.id)?.state === 'done');
     expect(seen[0]![0]).toBe('Bash');
-    expect(seen[0]![1]).toContain("doesn't let friends' Claudes run commands");
+    expect(seen[0]![1]).toContain("doesn't let friends' agents run commands");
     expect(seen[0]![2]).toBe(false);
     expect(seen.slice(1).map(([tool, veto, ok]) => [tool, veto, ok])).toEqual([
       ['Write', undefined, true],
@@ -163,7 +163,8 @@ describe('questions: once each, a few per task, and your answer seen first', () 
 });
 
 describe('nothing left hanging when the disk says no', () => {
-  it('a result that can’t be saved ends the task (failed), saying why', async () => {
+  // Not on Windows: chmod can’t make a file unwritable on Windows.
+  it.skipIf(process.platform === 'win32')('a result that can’t be saved ends the task (failed), saying why', async () => {
     const [kay, bob] = await pair('fixD1', 'fixD2');
     kay.trust(bob.id, 'trusted');
     bob.trust(kay.id, 'trusted');
@@ -181,7 +182,8 @@ describe('nothing left hanging when the disk says no', () => {
     expect(task(kay, t.id)?.result?.summary).toContain("couldn't be saved on this Mac");
   }, 60_000);
 
-  it('Always whose rule can’t be saved fails (doesn’t hang); a file that can’t be read fails too', async () => {
+  // Not on Windows: chmod can’t make a file unreadable on Windows.
+  it.skipIf(process.platform === 'win32')('Always whose rule can’t be saved fails (doesn’t hang); a file that can’t be read fails too', async () => {
     const blocker = path.join(scratch('d-rules'), 'a-file');
     writeFileSync(blocker, 'x');
     const shared = scratch('d-shared2');
@@ -283,5 +285,21 @@ describe('results can be sent again whole', () => {
     const t = kay.gw.ask({ person: 'fixH2', ask: 'screen', needs: ['screen'], by: 'agent' });
     await settle(() => task(kay, t.id)?.state === 'done');
     expect(task(bob, t.id)?.result?.files[0]).toMatchObject({ ref: expect.any(String), sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
+  }, 60_000);
+});
+
+describe('a cancel reaches them', () => {
+  it('when their ack of the request isn’t back yet: their approval card is taken back', async () => {
+    const [kay, bob] = await pair('fixI1', 'fixI2');
+    kay.trust(bob.id, 'trusted');
+    bob.trust(kay.id, 'ask');
+    const t = kay.gw.ask({ person: 'fixI2', ask: 'a long job', by: 'agent' });
+    await settle(() => bob.approvals.length === 1);
+    // The request reached bob, but kay's outbox still holds it, handed over (as when the ack is slow).
+    kay.gw.book.queue(bob.id, { f: 'frame-late-ack-01', m: { t: 'task_request', id: t.id } } as never, Date.now());
+    expect(kay.gw.cancel(t.id).state).toBe('cancelled');
+    await settle(() => bob.approvals[0]?.withdrawn);
+    await settle(() => task(bob, t.id)?.state === 'cancelled');
+    expect(kay.gw.book.waiting(bob.id).some((o) => o.frame.f === 'frame-late-ack-01')).toBe(false);
   }, 60_000);
 });

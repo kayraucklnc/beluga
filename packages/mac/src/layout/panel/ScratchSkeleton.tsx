@@ -42,13 +42,12 @@ export function ScratchSkeleton() {
 
 interface ScratchEmptyProps {
   readonly working: boolean;
-  /** The folders shown here, from the workspace's root. */
-  readonly folders: readonly string[];
   /** Claude is given no scratch folder (Settings › Claude). */
   readonly off: boolean;
   /** Beluga's own folder (where Show in Finder goes). */
   readonly dir: string;
-  readonly onReveal: () => void;
+  /** Show in Finder (not for a friend's worktree: it's on their Mac). */
+  readonly onReveal?: () => void;
 }
 
 /** The app's beluga, quiet, over the empty state. */
@@ -61,26 +60,27 @@ function BelugaMark() {
 }
 
 /** Looked, and nothing's there yet: what will land here, and where it is. */
-export function ScratchEmpty({ working, folders, off, dir, onReveal }: ScratchEmptyProps) {
+export function ScratchEmpty({ working, off, dir, onReveal }: ScratchEmptyProps) {
   return (
     <div className={k.empty}>
       <Empty
         icon="image"
         mark={<BelugaMark />}
         title="Nothing in scratch yet"
-        detail={off ? 'Claude isn’t given a scratch folder (Settings › Claude), so nothing lands here.' : 'Screenshots, logs, JSON and notes Claude saves while it works show up here, newest first.'}
+        detail={off ? 'Your agent isn’t given a scratch folder (see Settings), so nothing lands here.' : 'Screenshots, logs, JSON and notes your agent saves while it works show up here, newest first.'}
         action={
           <>
             {working ? (
               <div className={k.emptyWorking} role="status">
                 <DotMatrix size={12} />
-                <span>Claude is working · its files show up here as they’re saved</span>
+                <span>Your agent is working · its files show up here as they’re saved</span>
               </div>
             ) : null}
-            <Button icon="folder" title={dir} onClick={onReveal}>
+            {onReveal ? (
+              <Button icon="folder" title={dir} onClick={onReveal}>
               Show in Finder
             </Button>
-            {off ? null : <div className={k.emptyFolders}>{folders.map((f) => `${f}/`).join('  ·  ')}</div>}
+            ) : null}
           </>
         }
       />
@@ -93,7 +93,7 @@ export function NextFileRow() {
   return (
     <div className={cx(k.next, k.live)} role="status">
       <DotMatrix size={12} />
-      <span>Claude is working</span>
+      <span>Your agent is working</span>
       <span className={k.bar} aria-hidden />
     </div>
   );

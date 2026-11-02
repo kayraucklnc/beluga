@@ -7,7 +7,9 @@ import { type ControlState, initialState, resolveControls } from '@beluga/shared
 /**
  * A view's rows as you look at them: a page, sorted and searched. Rows Claude brought are paged
  * here; a source (your own Claude's) is asked for each page, and fetched again on Refresh or every
- * `refresh` seconds while it's on screen. A command that hasn't run before waits for your Run.
+ * `refresh` seconds while it's on screen. What this Mac fetched before is shown again when the
+ * view opens, without running the source (core/views/kept.ts). A command that hasn't run before
+ * waits for your Run.
  */
 
 export type Sort = ViewQuery['sort'];
@@ -40,6 +42,8 @@ export interface ViewData {
   readonly switched: boolean;
   /** What's chosen in each of the view's controls (see shared/view-controls.ts). */
   readonly controls: ControlState;
+  /** Every row in this order (sorted, searched, filtered), past the page: what Copy takes. A source here: the page it has. */
+  allRows(): readonly Row[];
   setControl(id: string, value: ControlState[string]): void;
   setPage(n: number): void;
   setSort(s: Sort): void;
@@ -91,18 +95,31 @@ export function useViewData(view: View, opts: { local: boolean; visible: boolean
 
   useEffect(() => {
     if (mode !== 'live' || !source || !opts.visible) return;
-    if (snapshotWillDo) return;
     let alive = true;
+    // The rows it came with will do, unless this Mac fetched newer ones since (a Refresh): never runs it.
+    if (snapshotWillDo) {
+      client.api.view.fetch(source, query, { cache: 'only', ...(opts.text ? { text: true } : {}) }).then(
+        (r) => {
+          if (!alive || !('rows' in r) || r.at <= (view.at ?? 0)) return;
+          setGot({ key, rows: r.rows, columns: r.columns, ...(r.total !== undefined ? { total: r.total } : {}), hasMore: r.hasMore, at: r.at, ...(r.text !== undefined ? { text: r.text } : {}) });
+        },
+        () => undefined,
+      );
+      return () => {
+        alive = false;
+      };
+    }
     setLoading(true);
     const wantFresh = fresh.current;
     const yes = confirm.current;
     fresh.current = false;
     confirm.current = false;
+    // What was fetched before is shown again (it says when it's from); Refresh fetches anew.
     client.api.view
-      .fetch(source, query, { ...(wantFresh ? { fresh: true } : {}), ...(yes ? { confirm: true } : {}), ...(opts.text ? { text: true } : {}) })
+      .fetch(source, query, { ...(wantFresh ? { fresh: true } : { cache: 'prefer' }), ...(yes ? { confirm: true } : {}), ...(opts.text ? { text: true } : {}) })
       .then(
         (r) => {
-          if (!alive) return;
+          if (!alive || 'notKept' in r) return;
           if ('needsApproval' in r) {
             setAsk(r.what);
             return;
@@ -162,6 +179,7 @@ export function useViewData(view: View, opts: { local: boolean; visible: boolean
   const hasMore = shown ? shown.hasMore : mode === 'live' ? (view.total ?? 0) > pageSize || view.rows.length > pageSize : local!.hasMore;
   const at = shown?.at ?? view.at;
   const text = shown?.text ?? view.text;
+  const allRows = useCallback(() => (mode === 'live' ? rows : pageOf(view.rows, { ...query, offset: 0, limit: view.rows.length }).rows), [mode, view.rows, query, rows]);
   return {
     mode,
     rows,
@@ -180,6 +198,7 @@ export function useViewData(view: View, opts: { local: boolean; visible: boolean
     ...(source ? { source } : {}),
     switched: other !== undefined,
     controls,
+    allRows,
     setControl,
     setPage,
     setSort,

@@ -1,13 +1,15 @@
+import type { AgentRef } from '../../protocol.js';
 import type { CombineResult } from '../../workspaces/git.js';
 import type { Actor, BoardState, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { Action, Store } from '../store.js';
 import { openMilestone } from './apply.js';
-import { type Plan, type PlanMerge, allTasks, openMilestones, planBranchName } from './model.js';
+import { openMilestoneEpic } from './epics.js';
+import { type Plan, type PlanMerge, type PlanMilestone, allTasks, openMilestones, planBranchName } from './model.js';
 import type { PlanGit } from './plan-git.js';
 import type { Plans } from './plans.js';
 import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, agentTasks, agentsAtWork, liveFrom, planView, startable, tidyOffer, waitingOnYou } from './progress.js';
-import { checkPrompt, criteriaNeedCheck, fixupPrompt, mergeFixupPrompt, milestoneNextPrompt, milestonePrompt, recapPrompt } from './prompt.js';
+import { checkFailedPrompt, checkNudgePrompt, checkPrompt, criteriaNeedCheck, fixupPrompt, mainFixupPrompt, mergeFixupPrompt, milestoneNextPrompt, milestonePrompt, recapPrompt, stuckPrompt } from './prompt.js';
 import { TaskWatchdog } from './watchdog.js';
 
 /**
@@ -67,20 +69,37 @@ export interface PilotDeps {
   /** Beluga no longer needs a request of its own (a check you passed past): out of the queue, or its run stopped. */
   readonly cancel?: (requestId: string) => void;
   /**
+   * A conversation of its own to check a milestone in (its workspace id), so the head Claude's stays
+   * free and milestones are checked side by side. Without it, the head Claude checks (as before).
+   */
+  readonly checkerChat?: (plan: Plan, milestone: PlanMilestone) => Promise<string | undefined>;
+  /** A checker's conversation is no longer needed (its milestone passed): archived, what was said kept. */
+  readonly retireChat?: (workspaceId: string) => void;
+  /**
    * Tasks only you can do came up (ready, in an open milestone), each once: the hook for asking you
    * (the plan's chat). A milestone's Claude skips them, and what builds on them waits.
    */
   readonly forYou?: (plan: Plan, tasks: readonly TaskView[]) => void;
+  /** The plan's epics on the board, made or brought up to date (once a session here: approving keeps them true). */
+  readonly structure?: (plan: Plan) => void;
+  /** How long a plan may sit quiet with Claude's work left before Beluga moves it along (default RESCUE_MS). */
+  readonly rescueMs?: number;
 }
 
 /** How many times the head Claude is asked to fix one task's combining conflict before it waits for you. */
 const FIXUP_ASKS = 2;
 /** A conflict left to you is looked at again this often (it starts once no markers are left). */
 const STUCK_RETRY_MS = 30_000;
+/** A check asked before a restart, with nothing running in its conversation this long after: it ended without a verdict. */
+const CHECK_QUIET_MS = 60_000;
 /** How often a plan's pull request is looked at on GitHub. */
 const PR_POLL_MS = 2 * 60_000;
 /** How often started tasks are looked at when nothing else happens (a turn can stall in silence). */
 const HEARTBEAT_MS = 60_000;
+/** Nothing of a plan running, and nothing of it yours, this long: Beluga moves it along (see rescue). */
+export const RESCUE_MS = 3 * 60_000;
+/** Steps Beluga takes for one stalled milestone, across kinds of stall, before it's yours. */
+export const MAX_RESCUES = 6;
 
 
 /** Why a milestone can't be merged yet: a task of it still being worked on (undefined: none). */
@@ -89,7 +108,7 @@ function stillWorking(m: MilestoneView): string | undefined {
   // Handed to the milestone's Claude and not begun: its worktree is still in use too.
   const busy = m.tasks.filter((t) => t.issue && !t.issue.worktreeGone && (words[t.state] || t.queued));
   if (!busy.length) return undefined;
-  const who = busy.map((t) => `${t.issue!.key} ${t.queued ? 'is next for its milestone’s Claude' : words[t.state]}`).join(', ');
+  const who = busy.map((t) => `${t.issue!.key} ${t.queued ? 'is next for its milestone’s agent' : words[t.state]}`).join(', ');
   return `“${m.milestone.title}” can’t be merged yet: ${who}. Merging retires each task’s worktree and branch, so only tasks In Review are merged: let them finish (or stop them), then pass it.`;
 }
 
@@ -104,6 +123,83 @@ const RUNNING = new Set(['queued', 'awaiting_approval', 'started', 'answered']);
 const milestoneName = (plan: Plan, id: string): string => plan.body?.milestones.find((m) => m.id === id)?.title ?? id;
 const WS_PREFIX = 'ws:';
 
+/**
+ * How far a plan has got: tasks finished out of how many, milestones passed, checks recorded. A
+ * rescue goes up its ladder while this stays the same, and starts over once it moves (a nudge that
+ * only stirs things, a woken task that stops again, doesn't count as moving).
+ */
+export function progressMark(view: PlanView): string {
+  const passed = view.milestones.filter((m) => m.run.passedAt).length;
+  const checks = view.milestones.reduce((n, m) => n + (m.run.check ? m.run.check.at : 0), 0);
+  return `${view.done}/${view.total}:${passed}:${checks}`;
+}
+
+/** The plan's own ladder, when what it waits on is no one milestone's. */
+const PLAN_UNIT = '_plan';
+
+/** What a milestone is stuck on, when it's Claude's to move. */
+export type StallKind = 'checking' | 'stalled' | 'working' | 'failed' | 'merging' | 'waiting';
+
+/**
+ * Whether an open milestone has Claude's work left to move (undefined: nothing, or it's yours: a
+ * pass on Check-ins, a task for you, a step-by-step start).
+ */
+export function stallOf(view: PlanView, m: MilestoneView): StallKind | undefined {
+  if (m.state === 'merging') return 'merging';
+  if (m.state === 'failed') return m.autonomy === 'autopilot' ? 'failed' : undefined;
+  if (m.tasks.some((t) => t.state === 'asking')) return undefined;
+  if (m.tasks.some((t) => t.state === 'stalled')) return 'stalled';
+  if (m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check)) return 'checking';
+  if (m.state !== 'running' || m.autonomy === 'step') return undefined;
+  const todo = agentTasks(m).filter((t) => !FINISHED.has(t.state));
+  return todo.some((t) => t.state === 'ready' || t.state === 'idle' || t.state === 'running') ? 'working' : undefined;
+}
+
+/** How far one milestone has got: its tasks finished out of how many, its check, its merge, passed. */
+export function milestoneMark(m: MilestoneView): string {
+  const counted = m.tasks.filter((t) => t.state !== 'canceled' && t.state !== 'missing');
+  return `${counted.filter((t) => FINISHED.has(t.state)).length}/${counted.length}:${m.run.check?.at ?? 0}:${m.merging?.conflict?.at ?? 0}:${m.run.passedAt ?? 0}`;
+}
+
+/** What a stalled milestone waits on, in words. */
+export function stallWords(m: MilestoneView, kind: StallKind): string {
+  const title = `“${m.milestone.title}”`;
+  switch (kind) {
+    case 'checking':
+      return `the check of ${title}`;
+    case 'failed':
+      return `fix tasks for ${title}, whose check failed`;
+    case 'merging':
+      return `merging ${title} into the plan’s branch`;
+    case 'stalled':
+      return `${m.tasks.filter((t) => t.state === 'stalled').map((t) => t.issue?.key ?? t.task.title).join(', ')} in ${title}, whose Claude stopped`;
+    default:
+      return `the work of ${title} (nothing of it is running)`;
+  }
+}
+
+/** What a stalled plan waits on, in words. */
+export function waitsOnWords(view: PlanView): string {
+  const n = view.next;
+  const keys = (tasks: readonly TaskView[]): string => tasks.map((t) => t.issue?.key ?? t.task.title).join(', ') || 'its ready tasks';
+  switch (n.kind) {
+    case 'checking':
+      return `the check of “${n.milestone.milestone.title}”`;
+    case 'failed':
+      return `fix tasks for “${n.milestone.milestone.title}”, whose check failed`;
+    case 'merging':
+      return `merging “${n.milestone.milestone.title}” into the plan’s branch`;
+    case 'stalled':
+      return `${keys(n.tasks)}, whose Claude stopped`;
+    case 'working':
+      return `${keys(n.tasks)} (nothing is running)`;
+    case 'waiting':
+      return n.why;
+    default:
+      return n.kind;
+  }
+}
+
 /** The plans each conversation belongs to: a plan's home, and its tasks' worktrees. */
 export function plansByChannel(plans: readonly Plan[], board: BoardState): Map<string, Set<string>> {
   const planOfIssue = new Map<string, string>();
@@ -111,6 +207,7 @@ export function plansByChannel(plans: readonly Plan[], board: BoardState): Map<s
   const out = new Map<string, Set<string>>();
   const add = (channel: string, planId: string): void => void (out.get(channel) ?? out.set(channel, new Set()).get(channel)!).add(planId);
   for (const plan of plans) add(plan.home, plan.id);
+  for (const plan of plans) for (const run of Object.values(plan.runs ?? {})) if (run?.checker) add(`${WS_PREFIX}${run.checker}`, plan.id);
   for (const issue of board.issues) {
     const planId = planOfIssue.get(issue.id);
     if (planId) for (const ws of issue.worktrees) add(`${WS_PREFIX}${ws}`, planId);
@@ -141,6 +238,8 @@ export class PlanPilot {
   /** Merges into a plan's branch under way (`plan:milestone`), one plan's at a time (its chain). */
   private readonly mergingNow = new Set<string>();
   private readonly mergeChain = new Map<string, Promise<void>>();
+  /** Plans whose pull request is being merged now (a second click waits for the first). */
+  private readonly prMerging = new Set<string>();
   private prTimer: ReturnType<typeof setInterval> | undefined;
   /** Each plan's tasks as last seen (by plan task id): a task that comes back finished is written down once. */
   private readonly seen = new Map<string, ReadonlyMap<string, TaskState>>();
@@ -165,6 +264,16 @@ export class PlanPilot {
   private readonly toldYou = new Set<string>();
   /** The head Claude's check of a milestone under way (`plan:milestone` → its request). */
   private readonly checkRuns = new Map<string, string>();
+  /** Checks whose conversation is being made now (`plan:milestone`). */
+  private readonly askingCheck = new Set<string>();
+  /** Check rounds (`plan:milestone:asked`) that ended without a verdict: asked once more, then left to you. */
+  private readonly checkNudged = new Map<string, 'asked' | 'told'>();
+  /** Milestones whose check moved from the head Claude to a checker this session (`plan:milestone`): once. */
+  private readonly handedOver = new Set<string>();
+  /** Since when each plan has had nothing running and nothing of it yours (see rescue). */
+  private readonly quietSince = new Map<string, number>();
+  /** Plans whose epics were made or caught up this session. */
+  private readonly structured = new Set<string>();
 
   constructor(private readonly deps: PilotDeps) {
     this.watchdog = new TaskWatchdog({
@@ -256,6 +365,11 @@ export class PlanPilot {
     for (const plan of this.deps.plans.list()) {
       if (only && !only.has(plan.id)) continue;
       try {
+        // Plans from before epics: their shape goes on the board once.
+        if (plan.body && plan.status !== 'draft' && !this.structured.has(plan.id)) {
+          this.structured.add(plan.id);
+          this.deps.structure?.(plan);
+        }
         // Its branch, catching up, merges: paused or done, they go on (nothing new starts).
         if (plan.body && plan.status !== 'draft') this.tend(plan);
         // Started tasks that stopped without finishing: woken once, then they wait for you.
@@ -269,8 +383,12 @@ export class PlanPilot {
     }
   }
 
-  /** Start one task now (you, or the head Claude when you asked it). */
-  async startNow(planId: string, taskId: string, by: Actor): Promise<string> {
+  /**
+   * Start one task now (you, or the head Claude when you asked it). `agent` (Start with…, BLG-506):
+   * who works it this once, instead of the task's own agent or the plan's; a milestone whose agent
+   * is already at work keeps that one.
+   */
+  async startNow(planId: string, taskId: string, by: Actor, agent?: AgentRef): Promise<string> {
     const plan = this.deps.plans.need(planId);
     if (plan.status !== 'active' || !plan.body) throw new Error('The plan isn’t approved yet');
     if (plan.draft) throw new Error('Changes to the plan are waiting for approval: approve or discard them first');
@@ -287,10 +405,10 @@ export class PlanPilot {
       this.fixAsked.delete(t.issue.id);
       this.deps.plans.setCombining(plan.id, t.task.id, { ...t.combining, ...(t.combining.conflict ? { conflict: { ...t.combining.conflict, stuck: false } } : {}) });
     } else if (t.state !== 'ready') throw new Error(`“${t.task.title}” can’t start: ${t.why ?? t.state}`);
-    if (this.byMilestone) return this.startInMilestone(plan, view, t, by);
+    if (this.byMilestone) return this.startInMilestone(plan, view, t, by, agent);
     if (view.active.length + this.startingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} tasks are already running (the plan’s limit)`);
     this.failed.delete(t.issue!.id);
-    return this.start(plan, t, by);
+    return this.start(plan, t, by, agent);
   }
 
   /** One milestone, one Claude (see the top): unless the plan says a worktree per task. */
@@ -299,10 +417,10 @@ export class PlanPilot {
   }
 
   /** Start a task of a milestone: its Claude gets it (started first if there's none yet). */
-  private async startInMilestone(plan: Plan, view: PlanView, t: TaskView, by: Actor): Promise<string> {
+  private async startInMilestone(plan: Plan, view: PlanView, t: TaskView, by: Actor, agent?: AgentRef): Promise<string> {
     const m = view.milestones.find((x) => x.milestone.id === t.milestoneId)!;
     const key = `${plan.id}:${m.milestone.id}`;
-    if (this.launching.has(key)) return `The Claude for “${m.milestone.title}” is starting`;
+    if (this.launching.has(key)) return `The agent for “${m.milestone.title}” is starting`;
     const issue = t.issue!;
     this.failed.delete(issue.id);
     if (m.agent) {
@@ -311,12 +429,14 @@ export class PlanPilot {
       this.deps.askClaude(milestoneNextPrompt(this.view(this.deps.plans.need(plan.id)), m, [t], m.autonomy === 'step' ? 'only' : 'new'), channel, false);
       this.sentOn.set(key, { sig: issue.id, ...this.after(channel), count: 1 });
       this.handed.delete(key);
-      this.deps.plans.note(plan.id, 'started', `gave ${issue.key} “${t.task.title}” to the Claude doing “${m.milestone.title}”`, by);
-      return `Gave ${issue.key} “${t.task.title}” to the Claude doing “${m.milestone.title}”, in its worktree: it does it ${liveFrom(this.deps.store.getState()).busy(channel) ? 'once its current turn ends' : 'now'}`;
+      this.deps.plans.note(plan.id, 'started', `gave ${issue.key} “${t.task.title}” to the agent doing “${m.milestone.title}”`, by);
+      // Started with another agent: the milestone's agent at work keeps it (one worktree, one agent).
+      const keeps = agent ? ' (a milestone already at work keeps its agent)' : '';
+      return `Gave ${issue.key} “${t.task.title}” to the agent doing “${m.milestone.title}”, in its worktree: it does it ${liveFrom(this.deps.store.getState()).busy(channel) ? 'once its current turn ends' : 'now'}${keeps}`;
     }
     if (agentsAtWork(view).length + this.launchingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} milestones are already at work (the plan’s limit)`);
     // A task of yours you start yourself: that one, for its Claude (it never takes yours on its own).
-    return this.launch(plan, m.milestone.id, by, m.autonomy === 'step' || t.forYou ? [t.task.id] : undefined);
+    return this.launch(plan, m.milestone.id, by, m.autonomy === 'step' || t.forYou ? [t.task.id] : undefined, agent);
   }
 
   /**
@@ -336,6 +456,7 @@ export class PlanPilot {
     this.dropCheck(plan, milestoneId);
     if (!this.deps.git || !plan.branch) return this.passed(planId, milestoneId, by);
     // Said at once (the page shows it merging); the merge runs in the background, and it passes once it's in.
+    this.deps.plans.setMergeFailed(planId, milestoneId, undefined);
     const next = this.deps.plans.setMerging(planId, milestoneId, { at: Date.now(), by });
     this.stepMerges(next);
     return next;
@@ -365,6 +486,9 @@ export class PlanPilot {
     if (!passed) throw new Error('That milestone isn’t in the approved plan');
     const wasOpen = new Set(openMilestones(before));
     const after = this.deps.plans.pass(planId, milestoneId, by);
+    // Its checker is done: archived (what it said is kept, and the plan still knows it).
+    const checker = after.runs[milestoneId]?.checker;
+    if (checker) this.deps.retireChat?.(checker);
     const next = openMilestones(after)
       .filter((id) => !wasOpen.has(id))
       .map((id) => after.body!.milestones.find((m) => m.id === id)!);
@@ -389,6 +513,7 @@ export class PlanPilot {
     if (this.opened.has(key)) return;
     this.opened.add(key);
     openMilestone(plan, milestoneId, this.deps.work.board, { kind: 'beluga' });
+    openMilestoneEpic(plan, milestoneId, this.deps.work.board, { kind: 'beluga' });
   }
 
   private step(plan: Plan): void {
@@ -406,6 +531,219 @@ export class PlanPilot {
     }
     this.tellYou(plan, view);
     for (const m of view.open) this.stepMilestone(plan, view, m);
+    this.rescue(plan.id);
+  }
+
+  // ------------------------------------------------------------------ rescue: a plan never stalls quietly
+
+  /**
+   * The rule that keeps a plan going, milestone by milestone: an open milestone with Claude's work
+   * left (tasks ready or stopped, a check, a merge, fix tasks on Autopilot) where nothing of it runs
+   * and nothing of it waits on you is stalled. After a quiet spell Beluga moves it along, a step
+   * further each time it stays stuck: send it on, then a fresh Claude, then the head Claude decides.
+   * Only then is it left to you, saying what was tried. Each milestone has its own ladder (one stuck
+   * behind another's check is still seen), kept on the plan so a restart goes on from there; it
+   * starts over as soon as that milestone moves.
+   */
+  private rescue(planId: string): void {
+    const plan = this.deps.plans.need(planId);
+    const view = this.view(plan);
+    const now = this.deps.now?.() ?? Date.now();
+    const units: Array<{ readonly id: string; readonly m?: MilestoneView; readonly kind: StallKind }> = [];
+    for (const m of view.open) {
+      const kind = stallOf(view, m);
+      if (kind) units.push({ id: m.milestone.id, m, kind });
+    }
+    // Nothing open is stuck, yet the plan waits on Claude's work (a blocker nobody moves).
+    if (!units.length && view.next.kind === 'waiting' && !waitingOnYou(view).length && view.open.length) units.push({ id: PLAN_UNIT, kind: 'waiting' });
+    let rescue = { ...(plan.rescue ?? {}) };
+    // A milestone that moved (or isn't stuck any more) starts over.
+    for (const [id, r] of Object.entries(rescue)) {
+      const unit = units.find((u) => u.id === id);
+      if (!unit || r.sig !== this.markOf(view, unit.m)) delete rescue[id];
+    }
+    for (const unit of units) {
+      const key = `${plan.id}:${unit.id}`;
+      if (this.unitAtWork(plan, view, unit.m, unit.kind)) {
+        this.quietSince.delete(key);
+        continue;
+      }
+      const was = rescue[unit.id];
+      if (was?.yours) continue;
+      const since = this.quietSince.get(key) ?? now;
+      this.quietSince.set(key, since);
+      if (now - since < (this.deps.rescueMs ?? RESCUE_MS)) continue;
+      this.quietSince.delete(key);
+      // Stuck on something else now (its check, after its work): that ladder starts at the bottom.
+      const tries = was && was.kind === unit.kind ? was.tries : 0;
+      const total = was?.total ?? was?.tries ?? 0;
+      const tried = was?.tried ?? [];
+      const what = unit.m ? stallWords(unit.m, unit.kind) : waitsOnWords(view);
+      let did: string | undefined;
+      try {
+        did = total >= MAX_RESCUES ? undefined : this.rescueStep(plan, view, unit.m, unit.kind, tries, tried, what);
+      } catch (err) {
+        did = `tried to move it (${err instanceof Error ? err.message : String(err)})`;
+      }
+      const sig = this.markOf(view, unit.m);
+      if (did) {
+        rescue = { ...rescue, [unit.id]: { sig, kind: unit.kind, tries: tries + 1, total: total + 1, at: now, tried: [...tried, did].slice(-MAX_RESCUES) } };
+        this.deps.plans.note(plan.id, 'note', `${what} went quiet: ${did}`, { kind: 'beluga' });
+        continue;
+      }
+      rescue = { ...rescue, [unit.id]: { sig, kind: unit.kind, tries, total, at: now, tried, yours: true } };
+      const text = `Stuck on ${what}. Beluga tried: ${tried.join('; ') || 'nothing it could'}. It needs you now: open the plan's conversation${unit.m ? ', or Pass Anyway' : ''}.`;
+      this.deps.plans.note(plan.id, 'problem', text, { kind: 'beluga' });
+      this.deps.system(plan.home, text);
+    }
+    this.deps.plans.setRescue(plan.id, Object.keys(rescue).length ? rescue : undefined);
+  }
+
+  /** How far a milestone (or, for the plan, every milestone) has got: see progressMark. */
+  private markOf(view: PlanView, m: MilestoneView | undefined): string {
+    return m ? milestoneMark(m) : progressMark(view);
+  }
+
+  /** Something of this stall runs, asks you, or is being done here right now. */
+  private unitAtWork(plan: Plan, view: PlanView, m: MilestoneView | undefined, kind: StallKind): boolean {
+    const state = this.deps.store.getState();
+    const live = liveFrom(state);
+    const channels = new Set<string>();
+    if (m) {
+      if (m.agent) channels.add(`${WS_PREFIX}${m.agent.worktree}`);
+      if (m.run.checker) channels.add(`${WS_PREFIX}${m.run.checker}`);
+      for (const t of m.tasks) for (const w of t.issue?.worktrees ?? []) channels.add(`${WS_PREFIX}${w}`);
+      // The head Claude works on it for these (a merge's fix-up, fix tasks, its check before checkers).
+      if (kind === 'merging' || kind === 'failed' || (kind === 'checking' && !m.run.checker)) channels.add(plan.home);
+    } else {
+      channels.add(plan.home);
+      for (const x of view.open) if (x.agent) channels.add(`${WS_PREFIX}${x.agent.worktree}`);
+    }
+    for (const c of channels) if (live.busy(c) || live.asking(c) || this.deps.alive?.(c)) return true;
+    const key = (id: string): string => `${plan.id}:${id}`;
+    if (m) {
+      const k = key(m.milestone.id);
+      if (this.launching.has(k) || this.askingCheck.has(k) || this.mergingNow.has(k)) return true;
+      if (m.tasks.some((t) => t.issue && this.starting.has(t.issue.id))) return true;
+    }
+    return this.branching.has(plan.id);
+  }
+
+  /** One step up the ladder for a stalled milestone → what was done, in words (undefined: nothing left to try). */
+  private rescueStep(plan: Plan, view: PlanView, m: MilestoneView | undefined, kind: StallKind, tries: number, tried: readonly string[], what: string): string | undefined {
+    const autopilot = (m?.autonomy ?? plan.autonomy) === 'autopilot';
+    const head = (): string => {
+      this.deps.askClaude(stuckPrompt(what, tried, autopilot), plan.home, false);
+      return 'asked the plan’s Claude to decide';
+    };
+    if (!m) return tries <= 1 ? head() : undefined;
+    const title = m.milestone.title;
+    switch (kind) {
+      case 'checking': {
+        if (tries === 0) {
+          this.deps.plans.newRound(plan.id, m.milestone.id);
+          this.schedule();
+          return `asked for the check of “${title}” again`;
+        }
+        if (tries === 1) {
+          if (m.run.checker) {
+            this.deps.retireChat?.(m.run.checker);
+            this.deps.plans.setChecker(plan.id, m.milestone.id, undefined);
+          }
+          this.deps.plans.newRound(plan.id, m.milestone.id);
+          this.schedule();
+          return `gave the check of “${title}” to a fresh checker`;
+        }
+        return tries === 2 ? head() : undefined;
+      }
+      case 'stalled': {
+        const stalled = m.tasks.filter((t) => t.state === 'stalled');
+        const keys = stalled.map((t) => t.issue?.key ?? t.task.id).join(', ');
+        if (tries === 0) {
+          for (const t of stalled) this.resume(plan.id, t.task.id, 'beluga');
+          return `woke ${keys}`;
+        }
+        if (tries === 1) {
+          this.restartTasks(plan.id, stalled);
+          return `stopped what was left of ${keys} and started it again`;
+        }
+        return tries === 2 ? head() : undefined;
+      }
+      case 'working': {
+        if (tries <= 1) {
+          const sent = this.kick(plan, view, m, tries === 1);
+          if (sent) return sent;
+        }
+        return tries <= 2 ? head() : undefined;
+      }
+      case 'failed': {
+        if (tries <= 1) {
+          this.deps.askClaude(checkFailedPrompt(title, m.run.check?.notes ?? 'No notes.', true), plan.home, false);
+          return `asked the plan’s Claude to add the fix tasks for “${title}”`;
+        }
+        if (tries === 2) {
+          this.deps.plans.newRound(plan.id, m.milestone.id);
+          this.schedule();
+          return `asked for the check of “${title}” again`;
+        }
+        return undefined;
+      }
+      case 'merging': {
+        const c = m.merging?.conflict;
+        if (tries > 1) return undefined;
+        if (!c) {
+          this.stepMerges(plan);
+          return `merged “${title}” again`;
+        }
+        this.deps.allowFixup?.(plan.home, c.dir);
+        this.deps.askClaude(mergeFixupPrompt(title, plan.branch ?? planBranchName(plan), c.key ?? c.merging, c), plan.home, false);
+        return `asked the plan’s Claude to fix the merge conflict in ${c.files.slice(0, 3).join(', ')}`;
+      }
+      default:
+        return tries <= 1 ? head() : undefined;
+    }
+  }
+
+  /**
+   * A milestone's work that nothing runs: its Claude is sent on (fresh: what was left of its turn
+   * is stopped first), or it gets one when it has none; failed starts are tried again.
+   */
+  private kick(plan: Plan, view: PlanView, m: MilestoneView, fresh: boolean): string | undefined {
+    const todo = agentTasks(m).filter((t) => !FINISHED.has(t.state));
+    for (const t of todo) if (t.issue) this.failed.delete(t.issue.id);
+    const key = `${plan.id}:${m.milestone.id}`;
+    this.sentOn.delete(key);
+    const ready = todo.filter((t) => t.state === 'ready' || t.state === 'idle' || t.state === 'running');
+    if (!ready.length) return undefined;
+    if (!m.agent || !this.byMilestone) {
+      this.schedule();
+      return `started “${m.milestone.title}” again`;
+    }
+    const channel = `${WS_PREFIX}${m.agent.worktree}`;
+    const send = (): void => {
+      this.deps.askClaude(milestoneNextPrompt(view, m, ready, 'continue'), channel, false);
+      // What it was sent now is what it has to answer (the pilot's own sending on waits for that).
+      this.sentOn.set(key, { sig: ready.map((t) => t.issue!.id).join(','), ...this.after(channel), count: 1 });
+    };
+    if (fresh && this.deps.takeOver) void this.deps.takeOver(channel).then(send, send);
+    else send();
+    return `sent the Claude doing “${m.milestone.title}” on`;
+  }
+
+  /** Stalled tasks started over: what's left of their turn stopped, then woken. */
+  private restartTasks(planId: string, tasks: readonly TaskView[]): void {
+    const wake = (t: TaskView): void => {
+      try {
+        this.resume(planId, t.task.id, 'beluga');
+      } catch {
+        // Gone since: nothing to wake.
+      }
+    };
+    for (const t of tasks) {
+      const channel = t.worktree ? `${WS_PREFIX}${t.worktree}` : undefined;
+      if (channel && this.deps.takeOver) void this.deps.takeOver(channel).then(() => wake(t), () => wake(t));
+      else wake(t);
+    }
   }
 
   /** Tasks only you can do that came up: to the hook, once each (a milestone's Claude never does them). */
@@ -413,7 +751,7 @@ export class PlanPilot {
     const fresh = waitingOnYou(view).filter((t) => !this.toldYou.has(`${plan.id}:${t.task.id}`));
     if (!fresh.length) return;
     for (const t of fresh) this.toldYou.add(`${plan.id}:${t.task.id}`);
-    for (const t of fresh) this.deps.plans.note(plan.id, 'note', `${t.issue?.key ?? t.task.id} “${t.task.title}” waits for you: only you can do it${this.byMilestone ? ', so its milestone’s Claude leaves it to you' : ''}`, { kind: 'beluga' });
+    for (const t of fresh) this.deps.plans.note(plan.id, 'note', `${t.issue?.key ?? t.task.id} “${t.task.title}” waits for you: only you can do it${this.byMilestone ? ', so its milestone’s agent leaves it to you' : ''}`, { kind: 'beluga' });
     this.deps.forYou?.(plan, fresh);
   }
 
@@ -457,7 +795,7 @@ export class PlanPilot {
       if (sent?.sig === sig && sent.count >= 1) {
         if (!sent.told) {
           this.sentOn.set(key, { ...sent, told: true });
-          this.deps.plans.note(plan.id, 'problem', `the Claude doing “${m.milestone.title}” stopped again with ${ready.map((t) => t.issue!.key).join(', ')} not begun: open its chat, or Start one`, { kind: 'beluga' });
+          this.deps.plans.note(plan.id, 'problem', `the agent doing “${m.milestone.title}” stopped again with ${ready.map((t) => t.issue!.key).join(', ')} not begun: open its chat, or Start one`, { kind: 'beluga' });
         }
         continue;
       }
@@ -465,7 +803,7 @@ export class PlanPilot {
       this.handed.delete(key);
       this.deps.askClaude(milestoneNextPrompt(view, m, ready, fresher ? 'new' : 'continue'), channel, false);
       this.sentOn.set(key, { sig, ...this.after(channel), count: sent?.sig === sig ? sent.count + 1 : 1 });
-      this.deps.plans.note(plan.id, 'note', `sent the Claude doing “${m.milestone.title}” on to ${ready[0]!.issue!.key} “${ready[0]!.task.title}”`, { kind: 'beluga' });
+      this.deps.plans.note(plan.id, 'note', `sent the agent doing “${m.milestone.title}” on to ${ready[0]!.issue!.key} “${ready[0]!.task.title}”`, { kind: 'beluga' });
     }
   }
 
@@ -497,9 +835,9 @@ export class PlanPilot {
    * A milestone's one Claude: one worktree for its tasks (`only`: just these, when you start them
    * one by one), from the plan's branch (or what its first task builds on), and its brief.
    */
-  private async launch(plan: Plan, milestoneId: string, by: Actor, only?: readonly string[]): Promise<string> {
+  private async launch(plan: Plan, milestoneId: string, by: Actor, only?: readonly string[], pick?: AgentRef): Promise<string> {
     const key = `${plan.id}:${milestoneId}`;
-    if (this.launching.has(key)) return 'Its Claude is starting';
+    if (this.launching.has(key)) return 'Its agent is starting';
     this.launching.add(key);
     let ids: string[] = [];
     try {
@@ -514,10 +852,12 @@ export class PlanPilot {
       const ordered = [first, ...tasks.filter((t) => t !== first)];
       ids = ordered.map((t) => t.issue!.id);
       const base = first.bases?.length ? plan.branch : first.base;
-      const ws = await this.deps.work.startShared(ids, `${first.issue.key} ${m.milestone.title}`, { quiet: true, ...(base ? { base } : {}) });
+      // The agent you started it with (BLG-506), else the plan's (BLG-497); none: your default.
+      const agent = pick ?? plan.agent;
+      const ws = await this.deps.work.startShared(ids, `${first.issue.key} ${m.milestone.title}`, { quiet: true, ...(base ? { base } : {}), ...(agent ? { agent } : {}) });
       const fresh = this.deps.plans.setAgent(plan.id, milestoneId, { worktree: ws.id, ...(ws.branch ? { branch: ws.branch } : {}), at: Date.now(), tasks: ordered.map((t) => t.task.id) });
       const keys = ordered.map((t) => t.issue!.key);
-      const said = `started one Claude for “${m.milestone.title}” (${keys.join(', ')}) in a new worktree${base ? ` from ${base}` : ''}`;
+      const said = `started one agent for “${m.milestone.title}” (${keys.join(', ')}) in a new worktree${base ? ` from ${base}` : ''}`;
       this.deps.plans.note(plan.id, 'started', said, by);
       const now = this.view(fresh);
       const mv = now.milestones.find((x) => x.milestone.id === milestoneId)!;
@@ -531,7 +871,7 @@ export class PlanPilot {
     } catch (err) {
       for (const id of ids) this.failed.add(id);
       const why = err instanceof Error ? err.message : String(err);
-      this.deps.plans.note(plan.id, 'problem', `couldn’t start the Claude for “${milestoneName(plan, milestoneId)}”: ${why}`, { kind: 'beluga' });
+      this.deps.plans.note(plan.id, 'problem', `couldn’t start the agent for “${milestoneName(plan, milestoneId)}”: ${why}`, { kind: 'beluga' });
       throw err;
     } finally {
       this.launching.delete(key);
@@ -551,15 +891,106 @@ export class PlanPilot {
       return;
     }
     if (m.run.checkAsked === undefined) {
-      // Asked first: if asking fails, the check isn't marked as asked (it's tried again).
-      const id = this.deps.askClaude(checkPrompt(view, m), plan.home, false);
-      if (id) this.checkRuns.set(`${plan.id}:${m.milestone.id}`, id);
-      this.deps.plans.checkAsked(plan.id, m.milestone.id);
-      this.deps.system(plan.home, `Every task of “${m.milestone.title}” is finished: Claude is checking its pass criteria.`);
+      if (!this.deps.checkerChat) {
+        // Asked first: if asking fails, the check isn't marked as asked (it's tried again).
+        const id = this.deps.askClaude(checkPrompt(view, m), plan.home, false);
+        if (id) this.checkRuns.set(`${plan.id}:${m.milestone.id}`, id);
+        this.deps.plans.checkAsked(plan.id, m.milestone.id);
+        this.deps.system(plan.home, `Every task of “${m.milestone.title}” is finished: the agent is checking its pass criteria.`);
+        return;
+      }
+      const key = `${plan.id}:${m.milestone.id}`;
+      if (this.askingCheck.has(key)) return;
+      this.askingCheck.add(key);
+      void this.askCheck(plan.id, m.milestone)
+        .catch((err: unknown) => this.deps.plans.note(plan.id, 'problem', `couldn’t start the check of “${m.milestone.title}”: ${err instanceof Error ? err.message : String(err)}`, { kind: 'beluga' }))
+        .finally(() => {
+          this.askingCheck.delete(key);
+          this.schedule();
+        });
       return;
     }
     const check = m.run.check;
     if (m.autonomy === 'autopilot' && check?.verdict === 'pass' && check.at >= m.run.checkAsked) this.autoPass(plan.id, m.milestone.id, check.by);
+    else if (m.state === 'checking') this.watchCheck(plan, m);
+  }
+
+  /**
+   * A milestone's check, by a Claude of its own: a conversation made for it (once; later rounds go
+   * to the same one, which remembers what failed before), folded into the plan. The head Claude's
+   * conversation stays free for you, and milestones finishing together are checked side by side.
+   * No conversation could be made: the head Claude checks, as before.
+   */
+  private async askCheck(planId: string, milestone: PlanMilestone): Promise<void> {
+    const channel = (await this.checkerChannel(planId, milestone).catch(() => undefined)) ?? this.deps.plans.need(planId).home;
+    const plan = this.deps.plans.need(planId);
+    const run = plan.runs[milestone.id];
+    // Passed (or asked) while its conversation was being made.
+    if (run?.passedAt || run?.checkAsked !== undefined || plan.merging?.[milestone.id] || plan.status !== 'active') return;
+    const view = this.view(plan);
+    const m = view.milestones.find((x) => x.milestone.id === milestone.id);
+    if (!m) return;
+    const own = channel !== plan.home;
+    const id = this.deps.askClaude(checkPrompt(view, m, { checker: own }), channel, false);
+    if (id) this.checkRuns.set(`${plan.id}:${milestone.id}`, id);
+    this.deps.plans.checkAsked(plan.id, milestone.id);
+    this.deps.system(plan.home, own ? `Every task of “${milestone.title}” is finished: a Claude of its own is checking its pass criteria. You can keep talking here.` : `Every task of “${milestone.title}” is finished: Claude is checking its pass criteria.`);
+  }
+
+  /** The conversation that checks a milestone: the one it had (still there), or a new one. */
+  private async checkerChannel(planId: string, milestone: PlanMilestone): Promise<string | undefined> {
+    const was = this.deps.plans.need(planId).runs[milestone.id]?.checker;
+    const ws = was ? this.deps.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === was) : undefined;
+    if (ws && !ws.archived) return `${WS_PREFIX}${ws.id}`;
+    const made = await this.deps.checkerChat?.(this.deps.plans.need(planId), milestone);
+    if (!made) return undefined;
+    this.deps.plans.setChecker(planId, milestone.id, made);
+    return `${WS_PREFIX}${made}`;
+  }
+
+  /**
+   * A check whose turn ended without a verdict would leave the plan waiting for good (on every mode,
+   * Autopilot too): it's asked once more for its plan_gate, and if it ends without one again, the
+   * plan says so and it's yours (open its conversation, or Check Again).
+   */
+  private watchCheck(plan: Plan, m: MilestoneView): void {
+    const asked = m.run.checkAsked;
+    if (asked === undefined) return;
+    const key = `${plan.id}:${m.milestone.id}`;
+    const round = `${key}:${asked}`;
+    const channel = m.run.checker ? `${WS_PREFIX}${m.run.checker}` : plan.home;
+    const state = this.deps.store.getState();
+    const id = this.checkRuns.get(key);
+    let ended: boolean;
+    if (id) {
+      const item = state.log.find((l) => l.type === 'agent' && l.requestId === id);
+      ended = item?.type === 'agent' && !RUNNING.has(item.status);
+    } else {
+      // Asked before a restart: nothing has run there for a while.
+      ended = !liveFrom(state).busy(channel) && (this.deps.now?.() ?? Date.now()) - asked > CHECK_QUIET_MS;
+    }
+    if (!ended) return;
+    // A check the head Claude was running (from before checkers, or a restart): a checker of its own takes it, fresh.
+    if (!m.run.checker && this.deps.checkerChat && !this.handedOver.has(key)) {
+      this.handedOver.add(key);
+      this.checkRuns.delete(key);
+      this.deps.plans.newRound(plan.id, m.milestone.id);
+      this.deps.plans.note(plan.id, 'note', `the check of “${m.milestone.title}” ended without a verdict: a checker of its own takes it from here`, { kind: 'beluga' });
+      this.schedule();
+      return;
+    }
+    const was = this.checkNudged.get(round);
+    if (was === 'told') return;
+    if (was === 'asked') {
+      this.checkNudged.set(round, 'told');
+      this.deps.plans.note(plan.id, 'problem', `the check of “${m.milestone.title}” ended twice without a verdict: open its conversation, or Check Again`, { kind: 'beluga' });
+      return;
+    }
+    this.checkNudged.set(round, 'asked');
+    const again = this.deps.askClaude(checkNudgePrompt(m.milestone.title), channel, false);
+    if (again) this.checkRuns.set(key, again);
+    else this.checkRuns.delete(key);
+    this.deps.plans.note(plan.id, 'note', `the check of “${m.milestone.title}” ended without a verdict: asked for it again`, { kind: 'beluga' });
   }
 
   /** Autopilot's pass: a task still being worked on (see stillWorking) leaves it for the next look. */
@@ -682,7 +1113,7 @@ export class PlanPilot {
     if (!stuck) {
       const after = this.lastRun(plan.home);
       this.fixAsked.set(issue.id, { asks: asks + 1, ...(after ? { after } : {}) });
-      if (!asks) this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: ${res.merging} conflicts in ${res.files.join(', ')}; Claude is fixing it`, { kind: 'beluga' });
+      if (!asks) this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: ${res.merging} conflicts in ${res.files.join(', ')}; the agent is fixing it`, { kind: 'beluga' });
       this.deps.askClaude(fixupPrompt(issue.key, t.task.title, from, res), plan.home, false);
     } else if (!was?.conflict?.stuck) {
       this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and ${issue.key} starts`, { kind: 'beluga' });
@@ -700,15 +1131,17 @@ export class PlanPilot {
     return undefined;
   }
 
-  private async start(plan: Plan, t: TaskView, by: Actor): Promise<string> {
+  private async start(plan: Plan, t: TaskView, by: Actor, pick?: AgentRef): Promise<string> {
     const issue = t.issue;
     if (!issue) throw new Error('That task isn’t on the board');
     if (this.starting.has(issue.id)) return `${issue.key} is starting`;
     this.starting.add(issue.id);
     try {
       const base = t.bases?.length ? await this.combinedBase(plan, t, issue) : t.base;
-      if (t.bases?.length && !base) return `${issue.key} builds on several tasks: combining their branches hit a conflict, and Claude is fixing it`;
-      await this.deps.work.start(issue.id, { claude: true, quiet: true, ...(base ? { base } : {}) });
+      if (t.bases?.length && !base) return `${issue.key} builds on several tasks: combining their branches hit a conflict, and the agent is fixing it`;
+      // The agent you started it with (BLG-506), else the task's own, else the plan's (BLG-497), else your default.
+      const agent = pick ?? issue.agent ?? plan.agent;
+      await this.deps.work.start(issue.id, { claude: true, quiet: true, ...(base ? { base } : {}), ...(agent ? { agent } : {}) });
       if (t.bases?.length) this.deps.plans.setCombining(plan.id, t.task.id, undefined);
       this.deps.plans.note(plan.id, 'started', `started ${issue.key} “${t.task.title}”${base ? ` from ${base}` : ''}`, by);
       return `Started ${issue.key} “${t.task.title}” in a new worktree${base ? ` from ${base}` : ''}`;
@@ -735,6 +1168,76 @@ export class PlanPilot {
     }
     // Catching up (merging and clearing away what passed before the branch) waits for your Yes: see tidyUp.
     this.stepMerges(this.deps.plans.need(plan.id));
+    this.stepMainMerge(this.deps.plans.need(plan.id));
+  }
+
+  /** Main merging into the plan's branch, stopped at a conflict: tried again once the head Claude's fix-up came and went (or, stuck, every so often). */
+  private stepMainMerge(plan: Plan): void {
+    const c = plan.mainMerge?.conflict;
+    const key = `main:${plan.id}`;
+    if (!c || this.mergingNow.has(key) || plan.shipped) return;
+    if (c.stuck) {
+      const wait = (this.stuckTried.get(key) ?? c.at) + STUCK_RETRY_MS - Date.now();
+      if (wait > 0) return void this.wakeIn(wait);
+      this.stuckTried.set(key, Date.now());
+    } else {
+      const asked = this.fixAsked.get(key);
+      if (asked && (liveFrom(this.deps.store.getState()).busy(plan.home) || this.lastRun(plan.home) === asked.after)) return;
+    }
+    void this.bringInMain(plan.id).catch(() => undefined);
+  }
+
+  /**
+   * The plan's pull request conflicts with main: main is merged into the plan's branch (in its hidden
+   * worktree), as a milestone is. A conflict goes to the plan's Claude to fix there, and is tried again
+   * after; once it's in, the branch is pushed and the pull request can merge.
+   */
+  async bringInMain(planId: string): Promise<Plan> {
+    const { git, plan, branch } = this.shippable(planId);
+    const key = `main:${planId}`;
+    if (this.mergingNow.has(key)) return plan;
+    this.mergingNow.add(key);
+    const beluga: Actor = { kind: 'beluga' };
+    try {
+      const main = plan.mainMerge?.main ?? (await git.mainRef(plan.projectId));
+      if (!plan.mainMerge) this.deps.plans.setMainMerge(planId, { at: Date.now(), main });
+      let res: CombineResult;
+      try {
+        res = await git.mergeInto(plan.projectId, branch, [main]);
+      } catch (err) {
+        this.deps.plans.setMainMerge(planId, undefined);
+        throw new Error(`Couldn’t merge ${main} into ${branch}: ${(err instanceof Error ? err.message : String(err)).split('\n')[0]}`);
+      }
+      if (!res.ok) {
+        const asks = this.fixAsked.get(key)?.asks ?? 0;
+        const stuck = asks >= FIXUP_ASKS;
+        const was = this.deps.plans.need(planId).mainMerge?.conflict;
+        this.deps.plans.setMainMerge(planId, { at: plan.mainMerge?.at ?? Date.now(), main, conflict: { at: was?.stuck && stuck ? was.at : Date.now(), dir: res.dir, files: res.files, ...(stuck ? { stuck } : {}) } });
+        this.deps.allowFixup?.(plan.home, res.dir);
+        if (!stuck) {
+          const after = this.lastRun(plan.home);
+          this.fixAsked.set(key, { asks: asks + 1, ...(after ? { after } : {}) });
+          if (!asks) this.deps.plans.note(planId, 'problem', `merging ${main} into ${branch}: it conflicts in ${res.files.join(', ')}; Claude is fixing it`, beluga);
+          this.deps.askClaude(mainFixupPrompt(branch, main, plan.pr?.number, res), plan.home, false);
+        } else if (!was?.stuck) {
+          this.deps.plans.note(planId, 'problem', `merging ${main} into ${branch}: the conflict in ${res.files.join(', ')} is still there; fix it and it goes on`, beluga);
+        }
+        return this.deps.plans.need(planId);
+      }
+      if (plan.mainMerge?.conflict) this.deps.allowFixup?.(plan.home, undefined);
+      this.fixAsked.delete(key);
+      this.stuckTried.delete(key);
+      this.deps.plans.setMainMerge(planId, undefined);
+      this.deps.plans.note(planId, 'passed', `merged ${main} into ${branch}`, beluga);
+      await git.push(plan.projectId, branch).catch((err: unknown) => {
+        throw new Error(`Merged ${main} into ${branch}, but couldn’t push it: ${(err instanceof Error ? err.message : String(err)).split('\n')[0]}`);
+      });
+      const pr = await git.findPr(plan.projectId, branch).catch(() => undefined);
+      if (pr) this.prSeen(planId, pr);
+      return this.deps.plans.need(planId);
+    } finally {
+      this.mergingNow.delete(key);
+    }
   }
 
   /** plan/<slug> from main (one that's there already is the plan's, never made twice). */
@@ -841,10 +1344,12 @@ export class PlanPilot {
         // A milestone's one Claude: its tasks share one branch, merged once.
         res = await git.mergeInto(plan.projectId, branch, [...new Set(tasks.map((t) => t.issue!.branch!))]);
       } catch (err) {
-        // Not a conflict (a dirty checkout, no git identity): said once, and you pass it again.
+        // Not a conflict (a dirty checkout, no git identity): kept on the milestone (its gate says why), and you pass it again.
+        const why = err instanceof Error ? err.message : String(err);
         this.deps.plans.setMerging(planId, milestoneId, undefined);
+        this.deps.plans.setMergeFailed(planId, milestoneId, why.split('\n').find((l) => l.trim())?.trim().slice(0, 300) ?? 'git said no');
         this.deps.allowFixup?.(plan.home, undefined);
-        this.deps.plans.note(planId, 'problem', `couldn’t merge “${m.milestone.title}” into ${branch}: ${err instanceof Error ? err.message : String(err)}`, beluga);
+        this.deps.plans.note(planId, 'problem', `couldn’t merge “${m.milestone.title}” into ${branch}: ${why}`, beluga);
         return;
       }
     }
@@ -861,7 +1366,7 @@ export class PlanPilot {
       if (!stuck) {
         const after = this.lastRun(plan.home);
         this.fixAsked.set(key, { asks: asks + 1, ...(after ? { after } : {}) });
-        if (!asks) this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: ${conflictKey} conflicts in ${res.files.join(', ')}; Claude is fixing it`, beluga);
+        if (!asks) this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: ${conflictKey} conflicts in ${res.files.join(', ')}; the agent is fixing it`, beluga);
         this.deps.askClaude(mergeFixupPrompt(m.milestone.title, branch, conflictKey, res), plan.home, false);
       } else if (!was?.stuck) {
         this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and the milestone passes`, beluga);
@@ -944,13 +1449,68 @@ export class PlanPilot {
     return this.deps.plans.need(planId);
   }
 
-  /** Merge the plan's pull request on GitHub. */
-  async mergePr(planId: string): Promise<Plan> {
-    const { git, plan } = this.shippable(planId);
-    if (!plan.pr || plan.pr.state !== 'OPEN') throw new Error('The plan has no open pull request');
-    await git.mergePr(plan.projectId, plan.pr.number);
-    this.prSeen(planId, { ...plan.pr, state: 'MERGED' });
+  /**
+   * Merge the plan's pull request on GitHub, as a worktree's is: GitHub asked first (what's saved can
+   * be minutes old), the branch pushed (nothing merged here is left out), then merged now or (auto)
+   * once its checks and reviews pass. GitHub's no comes back in plain words.
+   */
+  async mergePr(planId: string, opts: { readonly auto?: boolean } = {}): Promise<Plan> {
+    const { git, plan, branch } = this.shippable(planId);
+    if (this.prMerging.has(planId)) throw new Error('The plan’s pull request is already being merged');
+    this.prMerging.add(planId);
+    try {
+      const pr = (await git.findPr(plan.projectId, branch).catch(() => undefined)) ?? plan.pr;
+      if (!pr) throw new Error('The plan has no pull request yet: open one first');
+      if (pr !== plan.pr) this.prSeen(planId, pr);
+      if (pr.state === 'MERGED') return this.deps.plans.need(planId);
+      if (pr.state === 'CLOSED') throw new Error(`Pull request #${pr.number} was closed on GitHub: open it again first`);
+      try {
+        await git.push(plan.projectId, branch);
+      } catch (err) {
+        throw new Error(`Couldn’t push ${branch} to GitHub, so #${pr.number} isn’t merged (it would leave work out): ${(err instanceof Error ? err.message : String(err)).split('\n')[0]}`);
+      }
+      try {
+        await git.mergePr(plan.projectId, pr.number, opts.auto ? { auto: true } : {});
+      } catch (err) {
+        // GitHub may know more now (a conflict, a review): shown on the page.
+        const now = await git.findPr(plan.projectId, branch).catch(() => undefined);
+        if (now) this.prSeen(planId, now);
+        throw err;
+      }
+      const after = await git.findPr(plan.projectId, branch).catch(() => undefined);
+      this.prSeen(planId, after ?? (opts.auto ? { ...pr, autoMerge: true } : { ...pr, state: 'MERGED' }));
+      return this.deps.plans.need(planId);
+    } finally {
+      this.prMerging.delete(planId);
+    }
+  }
+
+  /** A conflict Claude couldn't fix (it waits for you): Claude is asked again now, from a clean count. */
+  retryConflicts(planId: string): Plan {
+    const plan = this.deps.plans.need(planId);
+    for (const [id, merge] of Object.entries(plan.merging ?? {})) {
+      if (!merge.conflict) continue;
+      const key = `merge:${planId}:${id}`;
+      this.fixAsked.delete(key);
+      this.stuckTried.delete(key);
+      const { stuck: _s, ...conflict } = merge.conflict;
+      this.deps.plans.setMerging(planId, id, { ...merge, conflict });
+    }
+    if (plan.mainMerge?.conflict) {
+      const key = `main:${planId}`;
+      this.fixAsked.delete(key);
+      this.stuckTried.delete(key);
+      const { stuck: _s, ...conflict } = plan.mainMerge.conflict;
+      this.deps.plans.setMainMerge(planId, { ...plan.mainMerge, conflict });
+    }
+    this.schedule();
     return this.deps.plans.need(planId);
+  }
+
+  /** Where the plan's conflict waits to be fixed (a hidden worktree): undefined when there's none. */
+  conflictDir(planId: string): string | undefined {
+    const plan = this.deps.plans.need(planId);
+    return plan.mainMerge?.conflict?.dir ?? Object.values(plan.merging ?? {}).find((m) => m.conflict)?.conflict?.dir ?? Object.values(plan.combining ?? {}).find((c) => c.conflict)?.conflict?.dir;
   }
 
   /** Merge the plan's branch into main here. */
@@ -987,13 +1547,13 @@ export class PlanPilot {
   }
 
   /** You resume a task whose Claude stopped (it waits for you): woken now, with what it missed. */
-  resume(planId: string, taskId: string): string {
+  resume(planId: string, taskId: string, by: 'you' | 'beluga' = 'you'): string {
     const plan = this.deps.plans.need(planId);
     const t = this.view(plan)
       .milestones.flatMap((m) => m.tasks)
       .find((x) => x.task.id === taskId || x.issue?.key === taskId.toUpperCase());
     if (!t) throw new Error(`There's no task "${taskId}" in this plan`);
     const live = liveFrom(this.deps.store.getState());
-    return this.watchdog.resume(plan, t, (channel) => live.run?.(channel));
+    return this.watchdog.resume(plan, t, (channel) => live.run?.(channel), by);
   }
 }

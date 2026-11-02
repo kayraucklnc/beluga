@@ -11,13 +11,13 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
   const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-  const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+  const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
   if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
   await row.click();
   await expect(toolbar(page)).toContainText('add-auth');
 
   // On GitHub, the next step is the pull request; merging locally is under ⋯, named for what it is.
-  await expect(toolbar(page).getByRole('button', { name: 'Create PR…' })).toBeVisible();
+  await expect(toolbar(page).getByRole('button', { name: 'Create PR', exact: true })).toBeVisible();
   await expect(toolbar(page).getByRole('button', { name: /Merge Locally into/ })).toHaveCount(0);
   const openMerge = async (): Promise<void> => {
     await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
@@ -58,6 +58,17 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
 const ghFile = (): string => path.join(process.env.BELUGA_HOME!, 'fake-gh.json');
 const readGh = (): { prs: Record<string, Record<string, unknown>>; merges?: string[][]; mergeError?: string } => JSON.parse(readFileSync(ghFile(), 'utf8'));
 const writeGh = (state: object): void => writeFileSync(ghFile(), JSON.stringify(state, null, 2));
+/**
+ * Look add-auth's PR up now, as the PR sheet's Refresh does: a test writes its PR after the daemon's
+ * first look, and a branch with no PR yet is looked at again only every minute.
+ */
+const lookAgain = (page: Page): Promise<void> =>
+  page.evaluate(async () => {
+    const boot = await import('/src/lib/boot.ts');
+    const c = await boot.connect(boot.capabilities(() => ({ ok: true, message: '' })));
+    const w = c.store.getState().projects.flatMap((p) => p.workspaces).find((x) => x.name === 'add-auth')!;
+    await c.api.workbench.refreshPrs(w.id);
+  });
 const ago = (s: number): string => new Date(Date.now() - s * 1000).toISOString();
 
 function openPr(more: object = {}): Record<string, unknown> {
@@ -89,13 +100,15 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
+    await lookAgain(page);
     await expect(toolbar(page)).toContainText('add-auth');
 
-    // The PR item opens the sheet and looks the PR up at once (the toolbar's own button once the PR is known).
-    await toolbar(page).getByRole('button', { name: /^PR #7|^Create PR…$/ }).click();
+    // Once the PR is known, the branch pill at the top ("Checks running #7") opens its sheet.
+    const known = toolbar(page).getByRole('group', { name: /^Branch:/ }).getByRole('button', { name: /#7$/ });
+    await known.click();
     const sheet = page.getByRole('dialog', { name: /Pull Request/ });
     await expect(sheet).toContainText('#7');
     await expect(sheet).toContainText('Protect the payments routes');
@@ -116,7 +129,8 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     for (const way of ['Squash and Merge', 'Create a Merge Commit', 'Rebase and Merge', 'Merge When Checks Pass', 'Merge Now, Skipping Checks']) await expect(page.getByRole('menuitem', { name: new RegExp(`^${way}`) })).toBeVisible();
     await page.getByRole('menuitem', { name: /Merge When Checks Pass/ }).click();
     await expect(sheet).toContainText('Merges when checks pass');
-    expect(readGh().merges).toEqual([['pr', 'merge', '7', '--squash', '--auto']]);
+    // Beluga waits for the checks itself and merges then: GitHub isn't asked yet.
+    expect(readGh().merges ?? []).toEqual([]);
 
     // GitHub says no: the sheet says why, in words you can act on.
     writeGh({ ...readGh(), mergeError: 'GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)' });
@@ -135,8 +149,10 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     expect(readGh().merges?.at(-1)).toEqual(['pr', 'merge', '7', '--squash']);
     await page.screenshot({ path: test.info().outputPath('pr-sheet-merged.png') });
     await sheet.getByRole('button', { name: 'Done' }).click();
-    await expect(toolbar(page).locator('[data-pr-state="MERGED"]')).toContainText('PR #7');
-    await expect(toolbar(page)).toContainText('Merged on GitHub');
+    // Said once, by the branch pill (with its PR's number): not again in the subtitle.
+    await expect(toolbar(page).locator('[data-branch-state="merged"]')).toContainText('#7');
+    await expect(toolbar(page)).not.toContainText('Merged on GitHub');
+    await expect(toolbar(page).locator('[data-pr-state]')).toHaveCount(0);
     await expect(toolbar(page).getByRole('button', { name: 'Archive Worktree' })).toBeVisible();
     // The local merge is named for what it is.
     await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
@@ -172,65 +188,72 @@ test('The chat watches the PR’s checks live, and an admin can merge past them'
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
+    await lookAgain(page);
 
-    // Above the chat: the PR, its checks open while they run, and Merge on GitHub.
+    // Above the chat: the PR and its checks, open while they run. Merging is at the top only.
     const strip = page.locator('[data-pr-strip="OPEN"]');
     await expect(strip).toContainText('#7', { timeout: 20_000 });
     await expect(strip).toContainText('1 of 2 passed · 1 running');
     await expect(strip.getByRole('list', { name: 'Checks' }).locator('[data-check="running"]')).toContainText('e2e');
+    await expect(strip.getByRole('button', { name: 'Merge on GitHub' })).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('pr-strip-running.png') });
 
-    // Override: merge now, past the running checks (gh's --admin).
-    await strip.getByRole('button', { name: 'More ways to merge' }).click();
+    // Override: merge now, past the running checks (gh's --admin), from the branch's menu at the top.
+    await toolbar(page).getByRole('button', { name: 'Other steps for this branch' }).click();
     await page.getByRole('menuitem', { name: /^Merge Now, Skipping Checks/ }).click();
-    await expect(page.locator('[data-pr-strip="MERGED"]')).toBeVisible();
+    await expect(toolbar(page).locator('[data-branch-state="merged"]')).toBeVisible({ timeout: 20_000 });
     expect(readGh().merges?.at(-1)).toEqual(['pr', 'merge', '7', '--squash', '--admin']);
-    await expect(page.locator('[data-pr-strip="MERGED"]').getByRole('button', { name: 'Archive Worktree' })).toBeVisible();
+    // Merged: the strip goes, and the top says so once, with Archive Worktree next.
+    await expect(page.locator('[data-pr-strip]')).toHaveCount(0);
+    await expect(toolbar(page).getByRole('button', { name: 'Archive Worktree' })).toBeVisible();
   } finally {
     if (existsSync(ghFile())) rmSync(ghFile());
   }
 });
 
-test('A PR that conflicts says so and offers Resolve Merge Conflicts; a merged one offers Archive, Continue After Merge or Delete', async ({ page }) => {
+test('A PR that conflicts says so at the top and offers Resolve with Claude; a merged one offers Archive, Continue After Merge or Delete there', async ({ page }) => {
   writeGh({ prs: { 'add-auth': openPr({ mergeable: 'CONFLICTING' }) } });
   try {
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
+    await lookAgain(page);
 
-    // Conflicts: no Merge button, Resolve Merge Conflicts instead (in the chat and the toolbar), asking first.
+    // Conflicts: said once, at the top, with Resolve with Claude (asking first); the strip only has the checks.
     const strip = page.locator('[data-pr-strip="OPEN"]');
-    await expect(strip).toContainText('Conflicts with the base', { timeout: 20_000 });
+    await expect(strip).toContainText('#7', { timeout: 20_000 });
     await expect(strip.getByRole('button', { name: 'Merge on GitHub' })).toHaveCount(0);
-    await expect(toolbar(page).getByRole('button', { name: 'Resolve Merge Conflicts…' })).toBeVisible();
+    await expect(strip).not.toContainText('Conflicts');
+    await expect(toolbar(page).locator('[data-branch-state="conflicts"]')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('pr-strip-conflicts.png') });
-    await strip.getByRole('button', { name: 'Resolve Merge Conflicts…' }).click();
-    const ask = page.getByRole('dialog', { name: 'Ask Claude to resolve the merge conflicts?' }).or(page.getByRole('alertdialog', { name: 'Ask Claude to resolve the merge conflicts?' }));
+    await toolbar(page).getByRole('button', { name: 'Resolve with Your Agent…' }).click();
+    const ask = page.getByRole('dialog', { name: 'Ask your agent to resolve the merge conflicts?' }).or(page.getByRole('alertdialog', { name: 'Ask your agent to resolve the merge conflicts?' }));
     await expect(ask).toContainText('merges the latest base');
     await ask.getByRole('button', { name: 'Cancel' }).click();
     await expect(ask).toBeHidden();
 
-    // Merged: done, and the three ways on from here.
+    // Merged: done. The top says so and leads with Archive Worktree; its menu has the other two ways.
     writeGh({ prs: { 'add-auth': openPr({ state: 'MERGED', statusCheckRollup: passed() }) } });
-    const merged = page.locator('[data-pr-strip="MERGED"]');
-    await expect(merged).toContainText('Merged · done', { timeout: 30_000 });
-    await expect(merged.getByRole('button', { name: 'Archive Worktree' })).toBeVisible();
-    await merged.getByRole('button', { name: 'Other ways to finish' }).click();
+    await expect(toolbar(page).locator('[data-branch-state="merged"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-pr-strip]')).toHaveCount(0);
+    await expect(toolbar(page).getByRole('button', { name: 'Archive Worktree' })).toBeVisible();
+    await toolbar(page).getByRole('button', { name: 'Other steps for this branch' }).click();
     await expect(page.getByRole('menuitem', { name: /^Delete Worktree…/ })).toBeVisible();
     await page.getByRole('menuitem', { name: /^Continue After Merge…/ }).click();
     const carry = page.getByRole('dialog', { name: 'Continue working after the merge?' }).or(page.getByRole('alertdialog', { name: 'Continue working after the merge?' }));
     await expect(carry).toContainText('the next change gets a new pull request');
     await page.screenshot({ path: test.info().outputPath('continue-after-merge.png') });
     await carry.getByRole('button', { name: 'Cancel' }).click();
-    // The toolbar's ⋯ has it too.
+    // Not again in ⋯: the branch's steps live in its own menu.
     await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
-    await expect(page.getByRole('menuitem', { name: /^Continue After Merge…/ })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /^Continue After Merge…/ })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: /^Archive/ })).toHaveCount(0);
     await page.keyboard.press('Escape');
   } finally {
     if (existsSync(ghFile())) rmSync(ghFile());

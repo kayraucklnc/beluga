@@ -121,3 +121,21 @@ test('archiving several at once keeps everything of theirs, and they leave the l
   await expect.poll(() => existsSync(path.join(dir, 'draft.md')), { timeout: 20_000 }).toBe(true);
   expect(readFileSync(path.join(dir, 'draft.md'), 'utf8')).toBe('not committed');
 });
+
+test('Delete… removes a worktree for good, after saying what goes', async ({ page }) => {
+  const dir = await folderOf(page, 'webhook-retries');
+  writeFileSync(path.join(dir, 'scratch.md'), 'not committed');
+  await sidebar(page).getByRole('button', { name: 'Worktrees' }).click();
+  await row(page, 'webhook-retries').getByRole('checkbox').check();
+  await page.getByRole('toolbar', { name: 'Selected worktrees' }).getByRole('button', { name: 'Delete…' }).click();
+  const alert = page.getByRole('alertdialog', { name: /Delete 1 worktree permanently\?/ });
+  await expect(alert).toContainText('Its folder goes, with its conversation');
+  await expect(alert).toContainText('You can’t undo this');
+  await shot(page, 'worktrees-delete');
+  await alert.getByRole('button', { name: 'Delete 1 Worktree' }).click();
+  await expect(row(page, 'webhook-retries')).toHaveCount(0, { timeout: 30_000 });
+  await expect.poll(() => existsSync(dir), { timeout: 30_000 }).toBe(false);
+  // Gone for good: not under Archived either.
+  await page.getByRole('tab', { name: /^Archived/ }).click();
+  await expect(page.getByRole('grid', { name: 'Archived worktrees' }).getByRole('row', { name: 'webhook-retries', exact: true })).toHaveCount(0);
+});

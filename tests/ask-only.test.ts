@@ -7,7 +7,7 @@ import { ASK_ONLY_REASON, DENY_REASON, decideTool, denyReason } from '../src/age
 import { buildAskOnlyAppend } from '../src/agent/prompt.js';
 import { isReadOnlyCommand } from '../src/agent/read-only.js';
 import { carrySession } from '../src/agent/session-carry.js';
-import { encodeProjectDir } from '../src/agent/claude-sessions.js';
+import { encodeProjectDir } from '../src/agent/runtime/claude/claude-sessions.js';
 import { createMockBackend } from '../src/agent/mock.js';
 import type { AgentRunInput, RoomBridge } from '../src/agent/types.js';
 import { status } from '../src/workspaces/git.js';
@@ -200,7 +200,8 @@ describe('main folders in the workspace list', () => {
 });
 
 describe('carrySession', () => {
-  it('copies a Claude Code conversation next to the folder it continues in', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('copies a Claude Code conversation next to the folder it continues in', () => {
     const config = mkdtempSync(path.join(os.tmpdir(), 'klaud-cc-'));
     const from = path.join(config, 'projects', encodeProjectDir('/work/app'));
     mkdirSync(from, { recursive: true });
@@ -279,5 +280,17 @@ describe('a plan’s Claude fixing a conflict in a hidden worktree', () => {
     expect(decideTool('Write', { file_path: '/k/workspaces/.bases/app/kld-10-base/.env' }, fixing)).toBe('deny');
     expect(decideTool('Bash', { command: 'git -C /k/workspaces/.bases/app/kld-10-base commit -am x' }, fixing)).toBe('deny');
     expect(decideTool('Edit', { file_path: '/k/workspaces/.bases/app/kld-10-base/src/a.ts' }, main)).toBe('deny');
+  });
+});
+
+describe('an epic’s worktree working in its sub-tasks’ worktrees in other repos (BLG-561)', () => {
+  const epic = { cwd: '/k/workspaces/app/blg-1-pay', roots: ['/k/workspaces/app/blg-1-pay', '/k/workspaces/api/blg-1-pay'], autoEdit: true, scope: 'full' as const, alsoEdit: ['/k/workspaces/api/blg-1-pay'] };
+
+  it('edits there like its own folder, nowhere else; secrets stay refused', () => {
+    expect(decideTool('Edit', { file_path: '/k/workspaces/api/blg-1-pay/src/fees.ts' }, epic)).toBe('allow');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/app/blg-1-pay/src/fees.ts' }, epic)).toBe('allow');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/api/other/src/fees.ts' }, epic)).toBe('ask');
+    expect(decideTool('Write', { file_path: '/k/workspaces/api/blg-1-pay/.env' }, epic)).toBe('deny');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/api/blg-1-pay/src/fees.ts' }, { ...epic, autoEdit: false })).toBe('ask');
   });
 });

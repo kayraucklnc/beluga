@@ -7,15 +7,19 @@ import { ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Empty, IconButton, Segmented, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
+import { useMyAgentName } from '../../lib/agent-words.js';
 import { focusFor, openFocus, showPanelTab, forgetChangeAsk, peekChangeAsk, usePanelRuntime } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
+import { useWsBusy, whileBusy } from '../../lib/ws-busy.js';
 import { STATE, UnifiedDiff, useCommitItems, useFileItems } from '../../views/DiffView.js';
 import { type ChangeLook, ChangedFileView, canShowFile, fileLookLabel, onlyAsFile, useChangeLocation } from '../../views/ChangedFile.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
+import { showGitTrouble } from '../../lib/git-trouble.js';
 import s from './panel.module.css';
+import { shortcutKeys } from '../../lib/shortcuts.js';
 
 /** The last answer Claude finished in this workspace (its edits may have changed what's shown). */
 function useLastTurn(wsId: string): string {
@@ -99,7 +103,11 @@ function Summary({ data, loading, onReload }: { data: Review; loading: boolean; 
 
 /** Commit, a pull request, Claude's review: what you do with changes, right under them. */
 function Actions({ wsId }: { wsId: string }) {
+  const agent = useMyAgentName();
   const actions = useActions();
+  const api = useApi();
+  // Shared with the toolbar's Create PR, and kept per worktree when you switch to another.
+  const opening = useWsBusy(wsId);
   const ws = useApp((st) => findWorkspace(st.projects, wsId));
   const pr = useApp((st) => st.prs[wsId]);
   if (!ws) return null;
@@ -107,23 +115,43 @@ function Actions({ wsId }: { wsId: string }) {
   const ahead = ws.status?.ahead ?? 0;
   const worktree = ws.kind === 'worktree';
   const run = (action: 'commit' | 'pr' | 'review_claude'): void => actions.run({ type: 'ws', id: wsId, action });
+  const quick = (draft = false): void => void whileBusy(wsId, async () => showGitTrouble(wsId, await api.workbench.quickPr(wsId, draft ? { draft: true } : {}), draft ? 'pr_draft' : 'pr'));
   return (
     <div className={s.actions}>
       {worktree && changed ? (
-        <Tip label={`Commit ${changed} changed file${changed === 1 ? '' : 's'}`} keys={`⇧${mod()}C`}>
+        <Tip label={`Commit ${changed} changed file${changed === 1 ? '' : 's'}`} keys={shortcutKeys('ws-commit')}>
           <Button size="small" variant="primary" icon="check" onClick={() => run('commit')}>
             Commit
           </Button>
         </Tip>
       ) : null}
-      {worktree && (ahead || changed || pr) ? (
-        <Tip label={pr ? 'Open it, fix checks, or update it' : 'Claude pushes and opens a pull request'} keys={`⇧${mod()}P`}>
+      {worktree && pr ? (
+        <Tip label="Open it, fix checks, or update it" keys={shortcutKeys('ws-pr')}>
           <Button size="small" icon="pr" onClick={() => run('pr')}>
-            {pr ? `PR #${pr.number}` : 'Create PR…'}
+            {`PR #${pr.number}`}
           </Button>
         </Tip>
+      ) : worktree && (ahead || changed) ? (
+        <>
+          <Tip label="Pushes and opens a pull request, titled from its commits">
+            <Button size="small" icon="pr" disabled={opening} onClick={() => quick()}>
+              {opening ? 'Opening…' : 'Create PR'}
+            </Button>
+          </Tip>
+          <ActionsDropdown
+            items={[
+              { label: `Create PR with ${agent}`, hint: 'Your agent writes the title and description: what, why, how to test', icon: 'claude', onSelect: () => void api.workbench.createPr(wsId) },
+              { label: 'Create PR with Instructions…', hint: 'Tell your agent anything extra for this one', icon: 'claude', onSelect: () => requestAnimationFrame(() => run('pr')) },
+              { label: 'Create Draft PR', hint: 'It can’t merge until it’s marked ready', icon: 'pr', onSelect: () => quick(true) },
+            ]}
+          >
+            <Button size="small" variant="quiet" disabled={opening} aria-label="Other ways to create the pull request">
+              <Icon name="chevronDown" size={11} />
+            </Button>
+          </ActionsDropdown>
+        </>
       ) : null}
-      <Tip label="Ask Claude to check everything: bugs, security, tests and quality" keys={`⇧${mod()}R`}>
+      <Tip label="Ask your agent to check everything: bugs, security, tests and quality" keys={shortcutKeys('ws-review')}>
         <Button size="small" variant="quiet" icon="claude" onClick={() => run('review_claude')}>
           Review
         </Button>
@@ -274,7 +302,7 @@ export function ChangesTab({ wsId }: { wsId: string }) {
   if (!files.length && !data.commits.length) {
     return (
       <div className={s.emptyTab}>
-        <Empty icon="check" title="No changes yet" detail={`Everything matches ${data.base}. Claude’s edits show up here as they happen.`} />
+        <Empty icon="check" title="No changes yet" detail={`Everything matches ${data.base}. Your agent’s edits show up here as they happen.`} />
       </div>
     );
   }

@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 
 /** A scripted Claude Code: for each prompt it reads, it yields the next scripted turn (a promise in it: waited for). */
 type Turn = (prompt: string) => Array<object | Promise<object>>;
-const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options; interrupt?: () => void; queue?: unknown } = { turns: [], extra: [], prompts: [] };
+const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options; interrupt?: () => void; queue?: unknown; exitAfter?: string; models: Array<{ model: string | undefined; afterPrompts: number }> } = { turns: [], extra: [], prompts: [], models: [] };
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
   ...(await original<object>()),
@@ -27,8 +27,13 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
           // Turns Claude starts by itself once a background agent is done.
           for (const extra of script.extra.splice(0)) for (const m of extra) yield m;
         }
+        if (script.exitAfter) throw new Error(script.exitAfter);
       })(),
-      { interrupt: async () => script.interrupt?.() },
+      {
+        interrupt: async () => script.interrupt?.(),
+        // Recorded with how many prompts Claude Code had read by then: a switch must come before the message it is for.
+        setModel: async (model?: string) => void script.models.push({ model, afterPrompts: script.prompts.length }),
+      },
     ),
 }));
 
@@ -75,16 +80,24 @@ describe('PromptQueue', () => {
 });
 
 describe('BackgroundAgents', () => {
-  it('follows the level signal, ignoring shells and ambient watchers', () => {
+  it('follows the level signal, ignoring ambient watchers', () => {
     const bg = new BackgroundAgents();
-    bg.observe({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'sh', task_type: 'local_bash' }, { task_id: 'w', task_type: 'local_agent', ambient: true }] });
+    bg.observe({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'w', task_type: 'local_agent', ambient: true }] });
     expect(bg.busy).toBe(false);
     bg.observe(tasks('a'));
-    expect(bg.busy).toBe(true);
+    expect(bg).toMatchObject({ busy: true, agents: true });
     bg.observe(tasks());
     expect(bg.busy).toBe(false);
     bg.observe({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'sh2', task_type: 'local_bash', parent_task_id: 'a' }] });
-    expect(bg.busy).toBe(true); // an agent's own shell: the agent will come back for it
+    expect(bg).toMatchObject({ busy: true, agents: true }); // an agent's own shell: the agent will come back for it
+  });
+
+  it('keeps a run open for a command the main conversation left running (its end wakes Claude), as a shell', () => {
+    const bg = new BackgroundAgents();
+    bg.observe({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'e2e', task_type: 'local_bash' }] });
+    expect(bg).toMatchObject({ busy: true, agents: false });
+    bg.observe({ type: 'system', subtype: 'task_notification', task_id: 'e2e', status: 'completed' });
+    expect(bg.busy).toBe(false);
   });
 
   it('falls back to start/finish edges', () => {
@@ -151,6 +164,33 @@ describe('live runs', () => {
     expect(script.prompts[1]).toContain('also this');
     expect(send).toBeUndefined(); // closed again
   });
+
+  it('a follow-up for another model switches Claude Code to it before it reads the message; the same model, nothing', async () => {
+    let send: ((f: FollowUp) => boolean) | undefined;
+    script.prompts = [];
+    script.models = [];
+    script.turns = [
+      () => [tasks('job'), text('started'), result('started')],
+      () => [text('still here'), result('still here')],
+      () => {
+        script.extra.push([tasks(), text('job finished'), result('job finished')]);
+        return [text('on opus'), result('on opus')];
+      },
+    ];
+    const input = runInput({ model: 'sonnet', onFollowUps: (s) => void (send = s) });
+    const done = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    await vi.waitFor(() => expect(send).toBeDefined());
+    const followUp = (prompt: string, model: string) => ({ prompt, model, requesterName: 'kay', viaAgent: false, context: [], onEvent: () => undefined, onDone: () => undefined, onError: () => undefined });
+    // The conversation still uses the model the run started on: no switch.
+    expect(send!(followUp('same', 'sonnet'))).toBe(true);
+    await vi.waitFor(() => expect(script.prompts).toHaveLength(2));
+    expect(script.models).toEqual([]);
+    // Opus was picked meanwhile: switched, and before the message went in.
+    expect(send!(followUp('now opus', 'opus'))).toBe(true);
+    expect(await done).toBe('started\n\njob finished');
+    expect(script.models).toEqual([{ model: 'opus', afterPrompts: 2 }]);
+    expect(script.prompts[2]).toContain('now opus');
+  });
 });
 
 describe('steering', () => {
@@ -191,6 +231,39 @@ describe('steering', () => {
     expect(got).toEqual(['a folded']);
     turns.current();
     expect(got).toEqual(['a folded', 'f started']);
+  });
+
+  it('a steered message is read once Claude Code lists it mid-turn, not only when the turn ends', () => {
+    const got: string[] = [];
+    const turns = new TurnRouter({ onEvent: () => undefined });
+    turns.current();
+    turns.queue(route(got, 'a'), 'ua', true);
+    turns.queue(route(got, 'b'), 'ub', true);
+    turns.queue(route(got, 'n'), 'un', false);
+    turns.read(['u0', 'ua', 'un']);
+    // Only steered messages: one sent to be its own turn (Send now) never reads as folded in early.
+    expect(got).toEqual(['a folded']);
+    turns.end(true, 'did it', ['u0', 'ua', 'ub']);
+    expect(got).toEqual(['a folded', 'b folded']);
+  });
+
+  it('a long turn says a steered message was read at the step that took it in', async () => {
+    let steer: ((f: FollowUp) => boolean) | undefined;
+    const got: string[] = [];
+    let release!: () => void;
+    const held = new Promise<object>((r) => (release = () => r(result('all done'))));
+    script.prompts = [];
+    script.turns = [
+      () => {
+        expect(steer!({ prompt: 'use pnpm', promptId: 'p-steer', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'steer') })).toBe(true);
+        return [text('working'), { ...text('switching to pnpm'), user_message_uuids: ['p-first', 'p-steer'] }, held];
+      },
+    ];
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ promptId: 'p-first', onSteer: (s) => void (steer = s) }));
+    await vi.waitFor(() => expect(got).toEqual(['steer folded']));
+    release();
+    expect(await running).toBe('all done');
+    expect(got).toEqual(['steer folded']);
   });
 
   it('offers steering while the run works, without stopping the turn', async () => {
@@ -286,6 +359,35 @@ describe('Send now: a steered message Claude hasn’t read yet, answered at once
     script.interrupt = undefined;
   });
 
+  it('Claude Code took it in before it stopped: not taken as read, sent again and answered; exit 1 once let go is no crash', async () => {
+    let steer: Steer | undefined;
+    const got: string[] = [];
+    script.prompts = [];
+    const items = (): Array<{ uuid: string }> => (script.queue as { items: Array<{ uuid: string }> }).items;
+    script.turns = [
+      () => [
+        { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'npm run build' } }] } },
+        // Claude Code had read the steered message off its input; the stopped turn lists it.
+        new Promise<object>((resolve) => (script.interrupt = () => resolve({ ...result(''), subtype: 'error_during_execution', user_message_uuids: items().splice(0).map((i) => i.uuid) }))),
+      ],
+      () => [text('on it'), result('on it')],
+    ];
+    // As Claude Code does when its last turn was stopped: exit 1 once its input ends.
+    script.exitAfter = 'Claude Code process exited with code 1';
+    const input = runInput({ onSteer: (s) => void (steer = s) });
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    for (let i = 0; i < 50 && !steer?.status?.().tool; i++) await new Promise((r) => setTimeout(r, 5));
+    const followUp = { prompt: 'do the docs too', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'f') };
+    expect(steer!(followUp)).toBe(true);
+    const note = 'Interrupted: npm run build to read your message';
+    expect(await steer!.force!(followUp, note)).toBe(true);
+    expect(await running).toBe(note);
+    expect(got).toEqual(['f started', 'f:on it']);
+    expect(script.prompts[1]).toContain('do the docs too');
+    script.interrupt = undefined;
+    script.exitAfter = undefined;
+  });
+
   it('nothing to force for a message the run never took as a steer', async () => {
     let steer: Steer | undefined;
     script.prompts = [];
@@ -347,7 +449,8 @@ describe('what a steer sees of the run', () => {
     expect(seen[1]).not.toHaveProperty('thinking');
   });
 
-  it('ends Claude Code for sure: SIGTERM, then SIGKILL when it ignores that', async () => {
+  // Not on Windows: Windows has no signals to ignore: a kill is final.
+  it.skipIf(process.platform === 'win32')('ends Claude Code for sure: SIGTERM, then SIGKILL when it ignores that', async () => {
     const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000); console.log('up')"], { stdio: ['ignore', 'pipe', 'ignore'] });
     await new Promise((r) => child.stdout.once('data', r));
     const t0 = Date.now();
@@ -366,9 +469,9 @@ describe('sub-agents get a scratch folder of their own', () => {
     const cwd = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-run-')));
     try {
       script.turns = [() => [text('ok'), result('ok')]];
-      await createClaudeBackend({ cwd, autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ scratchDir: '.klaud/scratch' }));
+      await createClaudeBackend({ cwd, autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ scratchDir: '.beluga/scratch' }));
       const out = (await call('Agent', { description: 'Check the UI', prompt: 'Look at it.' })) as { hookSpecificOutput: { permissionDecision: string; updatedInput: { prompt: string; description: string } } };
-      const dir = path.join(cwd, '.klaud/scratch/agents/0123456789');
+      const dir = path.join(cwd, '.beluga/scratch/agents/0123456789');
       expect(out.hookSpecificOutput.permissionDecision).toBe('allow');
       expect(out.hookSpecificOutput.updatedInput.prompt).toContain(`Look at it.`);
       expect(out.hookSpecificOutput.updatedInput.prompt).toContain(`${dir}/`);

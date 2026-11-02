@@ -14,8 +14,14 @@
     "dialog:allow-save",
     "opener:allow-open-url",
     "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-write-html",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-read-image",
-    "window-state:default"
+    "window-state:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize"
   ]
 }

@@ -1,0 +1,145 @@
+/* Lines of code: a repo excerpt in chat, or the diff a PR comment is on. */
+.lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px 0;
+  overflow-x: auto;
+  background: var(--code-bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.row {
+  display: flex;
+  min-width: max-content;
+}
+.num {
+  flex: none;
+  width: 42px;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  text-align: right;
+  user-select: none;
+  opacity: 0.7;
+}
+.numButton {
+  cursor: pointer;
+}
+.numButton:hover {
+  color: var(--text);
+  opacity: 1;
+}
+.sign {
+  flex: none;
+  width: 14px;
+  color: var(--text-3);
+  user-select: none;
+}
+.text {
+  flex: 1;
+  padding: 0 12px 0 6px;
+  background: none;
+  white-space: pre;
+  font: inherit;
+}
+.diff .num {
+  width: 36px;
+}
+.add {
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+}
+.del {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+}
+.marked {
+  background-image: linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--accent) 9%, transparent));
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.row:not(.add):not(.del).marked {
+  background-color: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.marked .num {
+  color: var(--accent);
+  opacity: 1;
+}
+.picked {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+}
+:global([data-theme='dark']) .text span {
+  color: var(--shiki-dark) !important;
+}
+
+/* A beluga-code block in chat: where, the lines, and what to do with them. */
+.ref {
+  max-width: 100%;
+  margin: 0.4em 0 0.7em;
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  overflow: hidden;
+}
+.refHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--bg-sunken) 70%, var(--bg));
+  font-size: 12px;
+}
+.refPath {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.refPath:hover span {
+  text-decoration: underline;
+}
+.refPath span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.refLines {
+  color: var(--text-3);
+}
+.grow {
+  flex: 1;
+}
+.refNote {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.refBody {
+  max-height: 420px;
+  overflow: auto;
+}
+.refProblem {
+  padding: 8px 12px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.refPicked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 5px 12px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text-2);
+  font-size: 12px;
+}

@@ -1307,6 +1307,16 @@
   min-width: 0;
   margin: 0 0 0 -4px;
 }
+.chatCompose {
+  position: relative;
+  min-width: 0;
+  /* The @ list sits just above the box, as wide as it. */
+  --composer-inset: 10px;
+}
+.chatCompose > [role='listbox'] {
+  left: 10px;
+  right: 10px;
+}
 .chatQueue {
   min-width: 0;
   margin: 0 10px;
@@ -1342,6 +1352,12 @@
   background: var(--bg-raised);
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
   cursor: pointer;
+}
+/* The box over its image chips (see MentionHighlighter). */
+.chatInputWrap {
+  flex: 1;
+  display: flex;
+  min-width: 0;
 }
 .chatInput {
   flex: 1;
@@ -1525,6 +1541,29 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 8px;
+}
+/* More options (who works it): a quiet disclosure under the main choices (BLG-497). */
+.newPlanMore {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 6px;
+  padding: 2px 4px 2px 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: default;
+}
+.newPlanMore:hover {
+  color: var(--text);
+}
+.newPlanMore:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 /* Six lines to start; it grows with the text (set from its scrollHeight) to ~60% of the sheet (72vh at most),
    never so far that the buttons scroll away (the rest of the sheet is under 400px). */
@@ -1769,21 +1808,31 @@ textarea.goalBox {
 .outline {
   container-type: inline-size;
 }
+/* Side by side only as many as keep room for their names and tasks (420 px each); the rest wrap to the
+   next line, so four parallel milestones are two by two in a 1100 px outline and one under the other when narrow. */
 .oRow {
+  --gap: 12px;
+  --min: 420px;
   display: grid;
-  grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--min), (100% - (var(--cols, 1) - 1) * var(--gap)) / var(--cols, 1))), 1fr));
+  gap: var(--gap);
   align-items: start;
 }
-/* Side by side only where each milestone keeps room for its name and tasks; else one under the other. */
-@container (max-width: 820px) {
-  .oRow {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+/* A name in a side-by-side card takes two lines before it shortens. */
 .oRow[data-parallel] .oTitle {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.3;
+}
+.oRow[data-parallel] .oHead {
+  align-items: flex-start;
+}
+.oRow[data-parallel] .oHead > :not(.oTitle) {
+  margin-top: 1px;
 }
 .oAfter {
   display: flex;
@@ -1819,4 +1868,142 @@ textarea.goalBox {
   top: 0;
   bottom: 0;
   left: 0;
+}
+
+/* ---------- Shipping the plan: what went wrong, conflicts, the PR, the branch flow ---------- */
+
+/* Kept on the page until dismissed or it works: soft amber, never a flash. */
+.trouble {
+  background: color-mix(in srgb, var(--warn) 9%, var(--bg));
+  border-bottom-color: color-mix(in srgb, var(--warn) 26%, transparent);
+}
+.trouble > svg {
+  color: var(--warn);
+}
+.troubleWhy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conflictFile {
+  margin-right: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* The button says what's under way while it waits. */
+.busyButton {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+/* The plan's pull request in the header: its state in the icon's colour. */
+.prChip[data-state='open'] svg {
+  color: var(--info);
+}
+.prChip[data-state='problem'] svg {
+  color: var(--warn);
+}
+.prChip[data-state='merged'] svg {
+  color: var(--ok);
+}
+
+/* Where the work goes: one line down the steps, each with its mark. */
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.flowStep {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 16px;
+}
+.flowStep:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 10.5px;
+  top: 22px;
+  bottom: 0;
+  border-left: 1.5px solid var(--hairline-strong);
+}
+.flowStep[data-state='done']:not(:last-child)::before {
+  border-left-color: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+.flowMark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+.flowStep[data-state='done'] .flowMark {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 10%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.flowStep[data-state='active'] .flowMark {
+  color: var(--claude);
+  background: color-mix(in srgb, var(--claude) 10%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--claude) 35%, transparent);
+}
+.flowStep[data-state='problem'] .flowMark {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.flowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.flowLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.flowLabel code {
+  font-size: 12px;
+}
+/* Its state stays one word on the right; a long name wraps beside it. */
+.flowState {
+  flex: none;
+  white-space: nowrap;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.flowStep[data-state='problem'] .flowState {
+  color: var(--warn);
+}
+.flowDetail {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+/* A long branch name stays one line in the toolbar (whole in its tooltip). */
+.branchButton {
+  min-width: 0;
+  max-width: 240px;
+}
+.branchButton > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

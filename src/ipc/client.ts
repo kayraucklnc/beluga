@@ -8,6 +8,39 @@ import type { Result } from './handlers.js';
  * How a screen talks to Beluga, whether Beluga runs in the same process (tests) or in
  * the daemon (several screens at once, the Mac app). Browser-safe.
  */
+/** A phone's live screen as this screen sees it (BLG-173): frames in, status, and stop. */
+export interface PhoneMirror {
+  onFrame(listener: (f: { b64: string; mime: string; w: number; h: number }) => void): () => void;
+  /** Live video pieces (when watched with `video`): H.264 Annex B, `w`×`h` of a `sw`×`sh` screen. */
+  onVideo(listener: (p: PhoneVideoPiece) => void): () => void;
+  /** What Claude does on the phone meanwhile (BLG-186), in the screen's pixels. */
+  onTouch(listener: (t: PhoneTouchData) => void): () => void;
+  onStatus(listener: (s: PhoneMirrorStatus) => void): () => void;
+  close(): void;
+}
+
+export type { PhoneTouchData } from './protocol.js';
+import type { PhoneTouchData } from './protocol.js';
+
+export interface PhoneVideoPiece {
+  readonly b64: string;
+  readonly key: boolean;
+  readonly ts: number;
+  readonly w: number;
+  readonly h: number;
+  readonly sw: number;
+  readonly sh: number;
+}
+
+/** How the mirror is doing; `video`: live video is waiting for "Start now" on the phone, or flowing. */
+export interface PhoneMirrorStatus {
+  readonly on: boolean;
+  readonly route?: string;
+  readonly error?: string;
+  readonly video?: 'asking' | 'on';
+  readonly note?: string;
+}
+
 export interface BelugaClient {
   /** Which kind of screen this is. */
   readonly kind: ClientKind;
@@ -21,6 +54,8 @@ export interface BelugaClient {
   onIntent(listener: (intent: Intent) => void): () => void;
   /** Attach to a terminal program by key (bytes both ways). */
   attachTerminal(key: string): PtyLink;
+  /** Watch a phone's screen live (BLG-173): frames in, until close(). */
+  watchPhone(device: string, opts?: { fps?: number; max?: number; video?: boolean }): PhoneMirror;
   /** Folder this screen was started in (new stand-alone chats run here). */
   readonly launchDir: string;
   /** Detach (the core keeps running for other screens). */

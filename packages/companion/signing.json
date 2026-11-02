@@ -1,0 +1,4 @@
+{
+  "//": "The certificate both phone apps are signed with (BLG-430): scripts/build-apk.mjs refuses an APK signed with anything else. The key itself is on the maintainer's Mac, never in the repo.",
+  "sha256": "cc:aa:9c:8b:af:b6:a1:c0:42:d2:23:57:a5:37:04:61:29:ca:5d:d3:f7:f0:2f:f2:c7:4b:e1:9b:1c:73:64:d0"
+}

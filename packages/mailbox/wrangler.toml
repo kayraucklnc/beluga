@@ -1,0 +1,13 @@
+# Beluga's mailbox (BLG-272): see src/net/mailbox/handler.ts. Deploy with `npx wrangler deploy`.
+name = "beluga-mailbox"
+main = "src/worker.ts"
+compatibility_date = "2025-09-01"
+
+[[durable_objects.bindings]]
+name = "BOX"
+class_name = "Mailbox"
+
+# SQLite-backed Durable Objects: the only kind the Workers Free plan has.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Mailbox"]

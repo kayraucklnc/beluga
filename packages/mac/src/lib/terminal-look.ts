@@ -1,5 +1,8 @@
 import type { ITerminalOptions } from '@xterm/xterm';
 import type { UiPrefs } from './prefs.js';
+import { colorsFor, xtermColors } from './terminal-import-model.js';
+
+export { SCROLLBACK_CHOICES } from './terminal-import-model.js';
 
 /** How the terminal looks: fonts to offer, and the xterm options for your choices. */
 
@@ -47,10 +50,8 @@ export function fontChoices(picked: string): Array<{ value: string; label: strin
   return [{ value: '', label: 'SF Mono (system)' }, ...fonts.map((f) => ({ value: f, label: f })), ...extra];
 }
 
-export const SCROLLBACK_CHOICES: readonly number[] = [1000, 5000, 10_000, 50_000, 100_000];
-
 /** xterm's options for your terminal look. */
-export const terminalOptions = (p: UiPrefs): Pick<ITerminalOptions, 'fontFamily' | 'fontSize' | 'lineHeight' | 'cursorStyle' | 'cursorBlink' | 'scrollback' | 'cursorInactiveStyle'> => ({
+export const terminalOptions = (p: UiPrefs): Pick<ITerminalOptions, 'fontFamily' | 'fontSize' | 'lineHeight' | 'cursorStyle' | 'cursorBlink' | 'scrollback' | 'cursorInactiveStyle' | 'macOptionIsMeta'> => ({
   fontFamily: fontStack(p.termFont),
   fontSize: p.termFontSize,
   lineHeight: p.termLineHeight,
@@ -58,4 +59,14 @@ export const terminalOptions = (p: UiPrefs): Pick<ITerminalOptions, 'fontFamily'
   cursorInactiveStyle: 'outline',
   cursorBlink: p.termCursorBlink,
   scrollback: p.termScrollback,
+  macOptionIsMeta: p.termOptionMeta,
 });
+
+/** Whether the window looks dark right now (prefs.ts puts it on the document). */
+export const looksDark = (): boolean => document.documentElement.dataset.theme === 'dark';
+
+/**
+ * The colours you brought from another terminal (Settings › Terminal › Import from…), as xterm
+ * wants them, or undefined for Beluga's own (which follow the window's appearance).
+ */
+export const importedTheme = (p: UiPrefs, dark: boolean = looksDark()): Record<string, string> | undefined => xtermColors(colorsFor(p.termTheme, dark));

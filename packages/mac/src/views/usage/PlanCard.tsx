@@ -1,87 +1,189 @@
-import type { PeerInfo, Usage } from '@beluga/protocol.js';
+import { useState } from 'react';
+import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
 import type { AppState } from '@beluga/core/store.js';
-import { Avatar } from '../../components/ui.js';
+import { type CardWindow, type FriendRoom, type ProviderCard, friendRooms, providerCards, shortTokens } from '@beluga/ui/usage-cards.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
+import { Icon } from '../../components/Icon.js';
+import { Avatar, IconButton, cx } from '../../components/ui.js';
+import { toast, useApi, useBeluga } from '../../lib/beluga.js';
 import { Card, Meter } from './parts.js';
 import { ago, resetsAt } from './usage-model.js';
 import s from './usage.module.css';
 
-type Window = NonNullable<Usage['fiveHour']>;
-
-function WindowMeter({ title, w, now }: { title: string; w: Window; now: number }) {
+function WindowMeter({ w, now }: { w: CardWindow; now: number }) {
   return (
     <div className={s.window}>
       <div className={s.windowHead}>
-        <span className={s.windowTitle}>{title}</span>
+        <span className={s.windowTitle}>{w.label}</span>
         <span className={s.windowPct}>
           {w.pct}
           <small>%</small>
         </span>
       </div>
-      <Meter pct={w.pct} label={`${title}: ${w.pct}% used`} />
+      <Meter pct={w.pct} label={`${w.label}: ${w.pct}% used`} />
       <div className={s.windowFoot}>{w.resetsAt && w.resetsAt > now ? `Resets ${resetsAt(w.resetsAt, now)}` : `${100 - w.pct}% left`}</div>
     </div>
   );
 }
 
-function FriendWindow({ name, label, w }: { name: string; label: '5h' | 'wk'; w: Window | undefined }) {
+/** A local model has no plan: what it used, and how fast it answers. */
+function TokensFigures({ card }: { card: ProviderCard }) {
+  return (
+    <div className={s.windows}>
+      <div className={s.window}>
+        <div className={s.windowHead}>
+          <span className={s.windowTitle}>Tokens</span>
+          <span className={s.windowPct}>{card.tokens ? shortTokens(card.tokens.input + card.tokens.output) : '–'}</span>
+        </div>
+        <div className={s.windowFoot}>{card.tokens ? `${shortTokens(card.tokens.input)} in · ${shortTokens(card.tokens.output)} out` : 'Since Beluga started'}</div>
+      </div>
+      <div className={s.window}>
+        <div className={s.windowHead}>
+          <span className={s.windowTitle}>Speed</span>
+          <span className={s.windowPct}>
+            {card.tokensPerSec !== undefined ? Math.round(card.tokensPerSec) : '–'}
+            <small> tok/s</small>
+          </span>
+        </div>
+        <div className={s.windowFoot}>Over its last run</div>
+      </div>
+    </div>
+  );
+}
+
+/** The chip on each card: says which one is your default, or makes this one it. */
+function DefaultChip({ card }: { card: ProviderCard }) {
+  const api = useApi();
+  const { client } = useBeluga();
+  if (card.isDefault)
+    return (
+      <span className={cx(s.defaultChip, s.defaultChipOn)}>
+        <Icon name="check" size={12} />
+        Default
+      </span>
+    );
+  // Claude back as the default is "no default set" (null), like Settings › Agent.
+  const agent: AgentRef | null = card.agent.runtime === CLAUDE_AGENT.runtime ? null : { runtime: card.agent.runtime, label: card.agent.label, ...(card.agent.model ? { model: card.agent.model } : {}) };
+  const make = () =>
+    void api.session.setPrefs({ defaultAgent: agent }).catch((err: unknown) => toast(client, `Couldn’t change your default agent: ${err instanceof Error ? err.message : String(err)}`, 'warn'));
+  return (
+    <button type="button" className={s.defaultChip} onClick={make} aria-label={`Make ${card.agent.label} your default agent`}>
+      Make default
+    </button>
+  );
+}
+
+/** What runs the agent, by name: Claude Code, Codex, or a local model. */
+const runtimeName = (runtime: string): string => (runtime === 'claude' ? 'Claude Code' : runtime === 'codex' ? 'Codex' : 'Local model');
+
+function ProviderBox({ card, now }: { card: ProviderCard; now: number }) {
+  const [details, setDetails] = useState(false);
+  return (
+    <Card
+      label={`${card.agent.label} usage`}
+      title={
+        <span className={s.agentTitle}>
+          <Icon name={agentMark(card.agent)} size={13} />
+          {card.agent.label}
+        </span>
+      }
+      aside={
+        <>
+          {card.plan ? <span className={s.planBadge}>{card.plan}</span> : null}
+          <DefaultChip card={card} />
+          <IconButton icon="more" label={details ? 'Hide details' : 'Details'} active={details} onClick={() => setDetails(!details)} />
+        </>
+      }
+    >
+      {!card.signedIn ? (
+        <p className={s.quiet}>Not signed in. Sign in to {card.agent.label} on this Mac to use it.</p>
+      ) : card.shape === 'quota' ? (
+        <div className={s.windows}>
+          {card.windows.map((w) => (
+            <WindowMeter key={w.label} w={w} now={now} />
+          ))}
+        </div>
+      ) : card.shape === 'tokens' ? (
+        <TokensFigures card={card} />
+      ) : (
+        <p className={s.quiet}>{card.agent.label}’s usage shows up here after its next run.</p>
+      )}
+      {details ? (
+        <dl className={s.providerDetails}>
+          <dt>Runtime</dt>
+          <dd className={s.agentTitle}>
+            <Icon name={agentMark(card.agent)} size={11} />
+            {runtimeName(card.agent.runtime)}
+          </dd>
+          {card.agent.model ? (
+            <>
+              <dt>Model</dt>
+              <dd>{card.agent.model}</dd>
+            </>
+          ) : null}
+          <dt>Updated</dt>
+          <dd>{card.updatedAt ? ago(card.updatedAt, now) : 'not yet'}</dd>
+        </dl>
+      ) : null}
+    </Card>
+  );
+}
+
+function FriendWindow({ room, w }: { room: FriendRoom; w: CardWindow | undefined }) {
   if (!w) return <span />;
   return (
     <span className={s.friendMeter}>
-      <span className={s.friendLabel}>{label}</span>
-      <Meter pct={w.pct} size="mini" label={`${name}: ${label === '5h' ? '5-hour' : 'week'} ${w.pct}% used`} />
+      <span className={s.friendLabel}>{w.short}</span>
+      <Meter pct={w.pct} size="mini" label={`${room.name}’s ${room.agent.label}: ${w.label} ${w.pct}% used`} />
       <span className={s.friendPct}>{w.pct}%</span>
     </span>
   );
 }
 
-function Friend({ peer }: { peer: PeerInfo }) {
+function Friend({ room }: { room: FriendRoom }) {
   return (
     <li className={s.friend}>
       <span className={s.friendName}>
-        <Avatar name={peer.name} id={peer.peerId} size={18} />
-        {peer.name}
+        <Avatar name={room.name} id={room.peerId} size={18} />
+        {room.name}
+        <span className={s.friendAgent}>{room.agent.label}</span>
       </span>
-      <FriendWindow name={peer.name} label="5h" w={peer.usage?.fiveHour} />
-      <FriendWindow name={peer.name} label="wk" w={peer.usage?.week} />
+      <FriendWindow room={room} w={room.windows[0]} />
+      <FriendWindow room={room} w={room.windows[1]} />
     </li>
   );
 }
 
-/** Your Claude plan's 5-hour and weekly windows as meters; friends' (from the room) underneath. */
+/** Whose agent has room left: every friend's providers that share plan windows. */
+function FriendsCard({ rooms }: { rooms: FriendRoom[] }) {
+  return (
+    <Card label="Friends’ agents" title="Friends">
+      <ul className={s.friendList} aria-label="Friends’ agent plan usage">
+        {rooms.map((r) => (
+          <Friend key={`${r.peerId}:${r.agent.runtime}`} room={r} />
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+/**
+ * One card per provider you have: Claude's 5-hour and weekly windows, Codex's plan windows, a
+ * local model's tokens and speed; each with the chip that makes it your default agent. Friends'
+ * plans underneath.
+ */
 export function PlanCard({ state, now }: { state: AppState; now: number }) {
   const selfId = state.self?.peerId ?? state.selfId;
-  const mine = state.peers.find((p) => p.peerId === selfId)?.usage ?? state.self?.usage;
-  const friends = state.peers.filter((p) => p.peerId !== selfId && (p.usage?.fiveHour || p.usage?.week));
-  const known = Boolean(mine?.fiveHour || mine?.week);
+  const me = state.peers.find((p) => p.peerId === selfId) ?? state.self;
+  // Your setting (unset: Claude) answers at once; the peer card friends see follows it.
+  const cards = providerCards(me, state.prefs.defaultAgent);
+  const rooms = friendRooms(state.peers, selfId);
   return (
-    <Card
-      label="Claude plan"
-      title="Claude plan"
-      aside={
-        <>
-          {mine?.plan ? <span className={s.planBadge}>{mine.plan}</span> : null}
-          {mine && known ? <span className={s.updated}>Updated {ago(mine.updatedAt, now)}</span> : null}
-        </>
-      }
-    >
-      {known && mine ? (
-        <div className={s.windows}>
-          {mine.fiveHour ? <WindowMeter title="5-hour" w={mine.fiveHour} now={now} /> : null}
-          {mine.week ? <WindowMeter title="Weekly" w={mine.week} now={now} /> : null}
-        </div>
-      ) : (
-        <p className={s.quiet}>Your plan’s limits show up here after Claude’s next run.</p>
-      )}
-      {friends.length ? (
-        <div className={s.friends}>
-          <div className={s.subhead}>Friends</div>
-          <ul className={s.friendList} aria-label="Friends’ Claude usage">
-            {friends.map((p) => (
-              <Friend key={p.peerId} peer={p} />
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </Card>
+    <>
+      {cards.map((c) => (
+        <ProviderBox key={c.key} card={c} now={now} />
+      ))}
+      {rooms.length ? <FriendsCard rooms={rooms} /> : null}
+    </>
   );
 }

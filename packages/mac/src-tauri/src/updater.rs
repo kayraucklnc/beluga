@@ -25,7 +25,8 @@ pub const BACKGROUND_ARG: &str = "--beluga-background";
 /// The same, from a Klaud that installed the update to Beluga.
 const OLD_BACKGROUND_ARG: &str = "--klaud-background";
 
-/// Automatically when idle / Ask me / Off (Settings › General › Updates).
+/// Automatically when idle / Ask me / Off (Settings › General › Updates). `Ask` stays the
+/// default for a saved file without a mode: only a new install starts on `NEW_INSTALL_MODE`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
@@ -147,8 +148,41 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
+/// What a new install starts on (BLG-99): update automatically when idle.
+const NEW_INSTALL_MODE: Mode = Mode::Idle;
+const SAVED_FILE: &str = "updates.json";
+
 fn saved_path(app: &AppHandle) -> Option<PathBuf> {
-    Some(app.path().app_config_dir().ok()?.join("updates.json"))
+    Some(app.path().app_config_dir().ok()?.join(SAVED_FILE))
+}
+
+/// Whether Beluga ran here before without saving its update settings: it left something else in
+/// its folder (the window's place, .window-state.json, written when it quits). Nothing else
+/// writes there during launch, so a new install finds the folder missing or empty.
+fn ran_before(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries
+            .flatten()
+            .any(|e| !e.file_name().to_string_lossy().starts_with(SAVED_FILE))
+    })
+}
+
+/// The saved settings, and whether to write them now. `text`: updates.json, `None` when it isn't
+/// there. A saved file is kept as it is (an unreadable one, or one without a mode, is "Ask me" as
+/// before), and so is an earlier install that never saved one: its mode was "Ask me". Only a new
+/// install starts on `NEW_INSTALL_MODE`, written right away so the next launch reads it back.
+fn first_saved(text: Option<&str>, ran_before: bool) -> (Saved, bool) {
+    match text {
+        Some(t) => (serde_json::from_str(t).unwrap_or_default(), false),
+        None if ran_before => (Saved::default(), false),
+        None => (
+            Saved {
+                mode: NEW_INSTALL_MODE,
+                ..Saved::default()
+            },
+            true,
+        ),
+    }
 }
 
 fn download_dir(app: &AppHandle) -> Option<PathBuf> {
@@ -156,10 +190,21 @@ fn download_dir(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn load(app: &AppHandle) -> Saved {
-    saved_path(app)
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
+    let Some(path) = saved_path(app) else {
+        return Saved::default();
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => Some(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        // There but unreadable: someone's settings, not a new install.
+        Err(_) => Some(String::new()),
+    };
+    let before = text.is_none() && path.parent().is_some_and(ran_before);
+    let (saved, write) = first_saved(text.as_deref(), before);
+    if write {
+        save(app, &saved);
+    }
+    saved
 }
 
 fn save(app: &AppHandle, saved: &Saved) {
@@ -677,6 +722,7 @@ fn relaunch(app: &AppHandle, background: bool) {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
@@ -805,5 +851,62 @@ mod tests {
         assert!(saved.pending.is_none());
         let empty: Saved = serde_json::from_str("{}").unwrap();
         assert_eq!(empty.mode, Mode::Ask);
+    }
+
+    #[test]
+    fn a_new_install_updates_automatically() {
+        let (saved, write) = first_saved(None, false);
+        assert_eq!(saved.mode, Mode::Idle);
+        assert!(write, "saved right away, so the next launch keeps it");
+        // What was written reads back the same, now that Beluga has run.
+        let text = serde_json::to_string(&saved).unwrap();
+        let (again, write) = first_saved(Some(&text), true);
+        assert_eq!(again.mode, Mode::Idle);
+        assert!(!write);
+    }
+
+    #[test]
+    fn turning_it_off_stays_off() {
+        for mode in [Mode::Ask, Mode::Off] {
+            let saved = Saved {
+                mode,
+                ..Saved::default()
+            };
+            let text = serde_json::to_string(&saved).unwrap();
+            assert_eq!(first_saved(Some(&text), true).0.mode, mode);
+            assert_eq!(first_saved(Some(&text), false).0.mode, mode);
+        }
+    }
+
+    #[test]
+    fn earlier_installs_keep_what_they_had() {
+        // Saved before, with "Ask me" or no mode at all: still "Ask me".
+        assert_eq!(
+            first_saved(Some(r#"{"mode":"ask"}"#), true).0.mode,
+            Mode::Ask
+        );
+        assert_eq!(
+            first_saved(Some(r#"{"lastCheck":1}"#), true).0.mode,
+            Mode::Ask
+        );
+        assert_eq!(first_saved(Some("not json"), true).0.mode, Mode::Ask);
+        // Ran before but never saved: it was "Ask me", and isn't written over.
+        let (saved, write) = first_saved(None, true);
+        assert_eq!(saved.mode, Mode::Ask);
+        assert!(!write);
+    }
+
+    #[test]
+    fn knows_an_earlier_install_by_what_it_left() {
+        let dir = std::env::temp_dir().join(format!("beluga-ran-before-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(!ran_before(&dir), "no folder: a new install");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!ran_before(&dir), "an empty folder: a new install");
+        std::fs::write(dir.join("updates.json.tmp"), "{}").unwrap();
+        assert!(!ran_before(&dir), "our own half-written file doesn't count");
+        std::fs::write(dir.join(".window-state.json"), "{}").unwrap();
+        assert!(ran_before(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

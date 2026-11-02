@@ -16,6 +16,13 @@ import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
 import { runId, setupId } from '../src/core/workbench.js';
 import { attach, waitFor } from './helpers.js';
+import { posixSh } from '../src/terminal/pty.js';
+
+/** Windows' runners make worktrees and start Git Bash several times slower. */
+const SLOW = process.platform === 'win32' ? 3 : 1;
+
+/** bash, or Git Bash on Windows. */
+const BASH = process.platform === 'win32' ? (posixSh() ?? 'bash') : '/bin/bash';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -56,7 +63,7 @@ function repo(files: Record<string, string> = {}): string {
   return dir;
 }
 
-async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Promise<PullRequest | undefined>; script?: (i: AgentRunInput) => Promise<string>; fixSetup?: AgentBackend['fixSetup'] } = {}) {
+async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Promise<PullRequest | undefined>; script?: (i: AgentRunInput) => Promise<string>; fixSetup?: AgentBackend['fixSetup']; agent?: Partial<AgentBackend> } = {}) {
   const store = new Store(initialState('test', 'ask'));
   const client = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name: 'kay', shares: [], agent: true }, reconnect: false });
   const wsStore = new WorkspaceStore(path.join(base, 'home'));
@@ -87,6 +94,7 @@ async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Prom
         return opts.script ? opts.script(input) : 'done';
       },
       ...(opts.fixSetup ? { fixSetup: opts.fixSetup } : {}),
+      ...opts.agent,
     }),
   });
   const screen = attach(session);
@@ -110,9 +118,9 @@ describe('setup and run scripts', () => {
     expect(kay.state().approvals[0]?.title).toBe("app's klaud.json wants to run its setup in new worktrees");
     kay.session.answerApproval('always');
     // A new worktree and a login shell can take a while on a busy CI runner: generous waits.
-    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 20_000);
+    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', SLOW * 20_000);
     const next = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'second');
-    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', 20_000);
+    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', SLOW * 20_000);
     expect(kay.state().approvals).toHaveLength(0);
     const setup = terminals.get(setupId(ws!.id))!;
     expect(setup.backlog()).toContain('installing');
@@ -135,10 +143,16 @@ describe('setup and run scripts', () => {
     expect(kay.state().setup[ws!.id]?.detail).toBe('exit code 3');
     // You're looking at it, so it's a toast; from elsewhere it goes to the inbox (and the desktop).
     expect(kay.screen.getState().toast?.text).toContain('Setup failed in broken');
+    // Your Claude is on, so it offers to fix it; yes sends it the failure, in that worktree.
+    await waitFor(() => kay.state().approvals.length === 1, 4000);
+    expect(kay.state().approvals[0]?.title).toBe("The setup didn't work in broken. Do you want me to fix it?");
+    kay.session.answerApproval('yes');
+    await waitFor(() => kay.runs.some((r) => r.prompt.includes('`exit 3` stopped with exit code 3')), 4000);
     kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
     kay.bench.runSetup(ws!.id); // you asked for it: no question
     await waitFor(() => kay.state().inbox.some((n) => n.title === 'Setup failed in broken'), 8000);
-    await waitFor(() => kay.desktop.includes('Setup failed in broken'), 4000);
+    // The failure and the new "fix it?" question can reach the desktop as one.
+    await waitFor(() => kay.desktop.some((t) => t === 'Setup failed in broken' || /^\d+ updates in Beluga$/.test(t)), 4000);
     kay.session.setPrefs({ autoSetup: false });
     const quiet = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'quiet');
     expect(kay.state().setup[quiet!.id]).toBeUndefined();
@@ -174,6 +188,115 @@ describe('setup and run scripts', () => {
     expect(asked).toEqual(['echo nope && exit 2|true']);
     await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'touch .ready', 4000);
   });
+
+  it("a project's first new worktree has Claude work out its commands, once, and they're kept as Claude's", async () => {
+    hub = await startHub({ keys });
+    const dir = repo({ 'main.sh': 'echo hi' });
+    const looked: Array<{ setup: boolean; run: boolean }> = [];
+    let answer!: () => void;
+    const answered = new Promise<void>((r) => (answer = r));
+    const kay = await solo(dir, {
+      agent: {
+        workOutScripts: async (_d, want) => (looked.push(want), await answered, { setup: { command: 'touch .ready' }, run: { command: 'echo serving; sleep 30' } }),
+      },
+    });
+    const id = projectOf(kay.workspaces).id;
+    expect(projectOf(kay.workspaces).scripts).toEqual({});
+    // Two while Claude is still looking still make one look.
+    const one = await kay.session.workspaces!.newWorktree(id, 'one');
+    const two = await kay.session.workspaces!.newWorktree(id, 'two');
+    await waitFor(() => looked.length === 1, 4000);
+    expect(looked).toEqual([{ setup: true, run: true }]);
+    answer();
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'claude', 4000);
+    expect(projectOf(kay.workspaces).scripts).toMatchObject({ setup: { command: 'touch .ready', source: 'claude' }, run: { command: 'echo serving; sleep 30', source: 'claude' } });
+    // It came from reading the repository, so it asks before running by itself.
+    await waitFor(() => kay.state().approvals.length >= 1, 4000);
+    expect(kay.state().approvals[0]?.title).toBe("Claude worked out app's setup for new worktrees");
+    kay.session.answerApproval('always');
+    // Flaky on CI's runners only (BLG-268 PR): if it hangs again, say how far each worktree got.
+    await waitFor(() => kay.state().setup[one!.id]?.status === 'done' && kay.state().setup[two!.id]?.status === 'done', 20_000).catch((err: unknown) => {
+      const at = (id: string) => ({ setup: kay.state().setup[id], listed: Boolean(kay.workspaces.find(id)), terminal: terminals.get(setupId(id))?.backlog().slice(-300) });
+      throw new Error(`${String(err)}: ${JSON.stringify({ one: at(one!.id), two: at(two!.id), approvals: kay.state().approvals.map((a) => a.title) })}`);
+    });
+    // Remembered: the next worktree just sets up, without asking Claude again.
+    const three = await kay.session.workspaces!.newWorktree(id, 'three');
+    await waitFor(() => kay.state().setup[three!.id]?.status === 'done', 20_000);
+    expect(looked).toHaveLength(1);
+    // Setting one yourself makes it yours.
+    kay.bench.setScript(id, 'run', 'echo mine');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'yours', 4000);
+    expect(projectOf(kay.workspaces).scripts?.setup?.source).toBe('claude');
+  }, 90_000);
+
+  it("uses the project's own tooling (a Makefile) without asking Claude", async () => {
+    hub = await startHub({ keys });
+    const dir = repo({ Makefile: '.PHONY: setup dev\nsetup:\n\ttouch .ready\ndev:\n\techo dev\n' });
+    const looked: unknown[] = [];
+    const kay = await solo(dir, { agent: { workOutScripts: async (_d, want) => (looked.push(want), {}) } });
+    expect(projectOf(kay.workspaces).scripts).toMatchObject({ setup: { command: 'make setup', source: 'detected' }, run: { command: 'make dev', source: 'detected' } });
+    const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'made');
+    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 20_000);
+    expect(looked).toEqual([]);
+  }, 60_000);
+
+  it('a setup guessed from a lockfile is checked by Claude once: the same answer keeps the guess, a fuller one is kept as Claude’s', async () => {
+    hub = await startHub({ keys });
+    const dir = repo({ 'package.json': '{}', 'package-lock.json': '{}', 'Makefile': 'dev:\n\techo dev\n' });
+    const looked: Array<{ setup: boolean; run: boolean }> = [];
+    const kay = await solo(dir, { agent: { workOutScripts: async (_d, want) => (looked.push(want), { setup: { command: 'npm install && (cd app && npm install)' } }) } });
+    const id = projectOf(kay.workspaces).id;
+    expect(projectOf(kay.workspaces).scripts?.setup).toEqual({ command: 'npm install', source: 'detected' });
+    await kay.session.workspaces!.newWorktree(id, 'guess');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.source === 'claude', 4000);
+    expect(looked).toEqual([{ setup: true, run: false }]);
+    expect(projectOf(kay.workspaces).scripts?.setup?.command).toBe('npm install && (cd app && npm install)');
+  }, 60_000);
+
+  it("your Claude in a worktree is told the setup, and can correct it for the next worktree", async () => {
+    hub = await startHub({ keys });
+    const dir = repo();
+    const kay = await solo(dir);
+    const id = projectOf(kay.workspaces).id;
+    kay.bench.setScript(id, 'setup', 'true');
+    const ws = await kay.session.workspaces!.newWorktree(id, 'tells');
+    const tools = kay.bench.setupForRun(ws!.id)!;
+    expect(tools.brief).toContain('Beluga runs its setup once: `true` (set by the owner)');
+    expect(tools.set('true', 'same')).toBe('The setup is already `true`.');
+    expect(tools.set('true && (cd app && npm install)', 'app had no node_modules')).toContain('Saved');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.source === 'claude', 4000);
+    expect(projectOf(kay.workspaces).scripts?.setup?.command).toBe('true && (cd app && npm install)');
+    // Its runs get them.
+    kay.session.askOwnClaude('hi', `ws:${ws!.id}`);
+    await waitFor(() => kay.runs.length === 1, 4000);
+    expect(kay.runs[0]?.setup?.brief).toContain('`true && (cd app && npm install)` (worked out by an agent)');
+  }, 60_000);
+
+  it("when the run fails it asks whether to fix it; yes has Claude find the right command, which starts", async () => {
+    hub = await startHub({ keys });
+    const dir = repo();
+    const fixes: string[] = [];
+    const kay = await solo(dir, { agent: { fixRun: async (_d, failed, output) => (fixes.push(`${failed}|${output.includes('no such thing')}`), { command: 'echo fixed; sleep 30' }) } });
+    const id = projectOf(kay.workspaces).id;
+    kay.bench.setScript(id, 'run', 'echo no such thing; exit 4');
+    kay.bench.setScript(id, 'setup', 'true');
+    const ws = await kay.session.workspaces!.newWorktree(id, 'runs');
+    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 20_000);
+    kay.bench.run(ws!.id);
+    await waitFor(() => kay.state().approvals.length === 1, 20_000);
+    expect(kay.state().approvals[0]?.title).toBe("The run didn't work in runs. Do you want me to fix it?");
+    expect(kay.state().approvals[0]?.detail).toContain('no such thing');
+    kay.session.answerApproval('yes');
+    await waitFor(() => terminals.get(runId(ws!.id))?.backlog().includes('fixed'), 20_000);
+    expect(fixes).toEqual(['echo no such thing; exit 4|true']);
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'claude', 4000);
+    expect(projectOf(kay.workspaces).scripts?.run).toEqual({ command: 'echo fixed; sleep 30', source: 'claude' });
+    // Stopping it yourself isn't a failure.
+    kay.bench.stopRun(ws!.id);
+    await waitFor(() => !terminals.get(runId(ws!.id))?.running, 8000);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(kay.state().approvals).toHaveLength(0);
+  }, 90_000);
 
   it('lets you set the commands for yourself or for the team (beluga.json)', async () => {
     hub = await startHub({ keys });
@@ -364,13 +487,13 @@ describe('your shell, its names and your variables', () => {
     const kay = await solo(dir);
     const project = projectOf(kay.workspaces);
     await waitFor(() => kay.state().projects.some((p) => p.id === project.id), 4000);
-    kay.session.setPrefs({ shell: '/bin/bash', shellLogin: false, shellArgs: ['--norc', '--noprofile'] });
+    kay.session.setPrefs({ shell: BASH, shellLogin: false, shellArgs: ['--norc', '--noprofile'] });
     kay.session.env.set(undefined, [{ key: 'KLAUD_T_MINE', value: 'mine' }, { key: 'KLAUD_T_BOTH', value: 'mine' }]);
     kay.session.env.set(project.id, [{ key: 'KLAUD_T_BOTH', value: 'project' }]);
     const shell = kay.bench.globalShell('shell:1', dir)!;
     shell.run('echo "got:$KLAUD_T_MINE:$KLAUD_T_BOTH:$0"');
     await waitFor(() => shell.backlog().includes('got:mine:project:'), 8000);
-    expect(shell.shell).toBe('/bin/bash');
+    expect(shell.shell).toBe(BASH);
 
     // Setup and run commands get them too (alongside Beluga's own).
     const ws = await kay.session.workspaces!.newWorktree(project.id, 'envy');

@@ -10,3 +10,6 @@ export const runAsClient = <T>(clientId: string, fn: () => T): T => current.run(
 
 /** The client whose request is being handled, or undefined for things that just happen (a friend's message). */
 export const currentClient = (): string | undefined => current.getStore();
+
+/** The phone's link calls as `phone:<device>` (companion/host.ts): whether this request is the phone's. */
+export const fromPhone = (): boolean => currentClient()?.startsWith('phone:') ?? false;

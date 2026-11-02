@@ -2,9 +2,11 @@ node_modules/
 .expo/
 dist/
 web-build/
-android/
-ios/
+/android/
+/ios/
 worklet/dist/
 *.bundle
 expo-env.d.ts
 worklet/build/
+modules/*/android/build/
+modules/phone-control/addon/build/

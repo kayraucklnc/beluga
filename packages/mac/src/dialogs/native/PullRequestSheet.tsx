@@ -10,10 +10,12 @@ import { useActions } from '../../lib/actions.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { MERGE_METHODS, canAutoMerge, canSkipChecks, checkDuration, checkTone, checksSummary, sortChecks } from '../../lib/pr-checks.js';
 import { openExternal } from '../../lib/system.js';
+import { showGitTrouble } from '../../lib/git-trouble.js';
 import { askBeforeWork } from '../../lib/work-confirm.js';
 import { useClock } from '../../lib/window-active.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
+import { openPrPage } from '../../pr/use-pr-conversation.js';
 import s from './menus.module.css';
 
 const STATE: Record<PullRequest['state'], string> = { OPEN: 'Open', CLOSED: 'Closed', MERGED: 'Merged' };
@@ -27,12 +29,20 @@ const REVIEW = { APPROVED: { label: 'Approved', tone: s.pillOk }, CHANGES_REQUES
 
 /** The way you last merged (squash until you pick another). */
 const METHOD_KEY = 'beluga.mergeMethod';
-function lastMethod(): MergeMethod {
+export function lastMethod(): MergeMethod {
   try {
     const m = localStorage.getItem(METHOD_KEY);
     return m === 'merge' || m === 'rebase' ? m : 'squash';
   } catch {
     return 'squash';
+  }
+}
+
+export function rememberMethod(how: MergeMethod): void {
+  try {
+    localStorage.setItem(METHOD_KEY, how);
+  } catch {
+    // No storage: squash next time.
   }
 }
 
@@ -85,16 +95,13 @@ export function MergeButton({ wsId, pr, onError, size }: { wsId: string; pr: Pul
   const merge = async (how: MergeMethod, mode?: 'auto' | 'admin'): Promise<void> => {
     if (busy) return;
     setMethod(how);
-    try {
-      localStorage.setItem(METHOD_KEY, how);
-    } catch {
-      // No storage: squash next time.
-    }
+    rememberMethod(how);
     setBusy(true);
     onError(undefined);
     try {
       const out = await api.workbench.mergePr(wsId, { method: how, ...(mode ? { [mode]: true } : {}) });
-      if (out && !out.ok) onError(out.message);
+      // Couldn't reach GitHub: its card (why, and the fix) instead of the line.
+      if (out && !out.ok && !showGitTrouble(wsId, out, 'none')) onError(out.message);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -128,7 +135,7 @@ export function MergeButton({ wsId, pr, onError, size }: { wsId: string; pr: Pul
 /** GitHub can't merge a PR that conflicts with its base: Claude resolves it in the chat (asks first). */
 export function ResolveConflictsButton({ wsId, size }: { wsId: string; size?: 'small' }) {
   return (
-    <Tip label="Claude merges the latest base into this branch, resolves the conflicts in the chat, and pushes">
+    <Tip label="Your agent merges the latest base into this branch, resolves the conflicts in the chat, and pushes">
       <Button variant="danger" icon="merge" size={size ?? 'regular'} data-pr-next="resolve" onClick={() => askBeforeWork(wsId, 'resolve_pr')}>
         Resolve Merge Conflicts…
       </Button>
@@ -161,12 +168,14 @@ export function AfterMergeButton({ wsId, size }: { wsId: string; size?: 'small' 
 }
 
 /** The PR you have: its state and checks at a glance, and what to do next. */
-function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pick: (id: string) => boolean; refresh: () => void }) {
+function PrCard({ wsId, pr, pick, refresh, close }: { wsId: string; pr: PullRequest; pick: (id: string) => boolean; refresh: () => void; close: () => void }) {
   const actions = useActions();
   const [error, setError] = useState<string>();
   const checks = CHECKS[pr.checks];
   const review = pr.review ? REVIEW[pr.review] : undefined;
   const open = pr.state === 'OPEN';
+  // Beluga waits for the checks and merges then (Merge When Checks Pass), or GitHub's own auto-merge is on.
+  const waiting = useApp((st) => Boolean(st.projects.flatMap((p) => p.workspaces).find((w) => w.id === wsId)?.mergeWhenReady));
   return (
     <div className={s.pr} data-pr-state={pr.state}>
       <div className={s.prTop}>
@@ -190,7 +199,7 @@ function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pi
         ) : null}
         {review && open ? <span className={cx(s.pill, review.tone)}>{review.label}</span> : null}
         {open && pr.conflicts ? <span className={cx(s.pill, s.pillBad)}>Conflicts with the base</span> : null}
-        {open && pr.autoMerge ? (
+        {open && (pr.autoMerge || waiting) ? (
           <span className={cx(s.pill, s.pillWait)}>
             <Icon name="clock" size={11} />
             Merges when checks pass
@@ -201,6 +210,11 @@ function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pi
       <div className={s.prActions}>
         {open ? pr.conflicts ? <ResolveConflictsButton wsId={wsId} /> : <MergeButton wsId={wsId} pr={pr} onError={setError} /> : null}
         {pr.state === 'MERGED' ? <AfterMergeButton wsId={wsId} /> : null}
+        <Tip label="The PR’s page: what reviewers said, with the code they mean; reply, resolve, or ask your agent">
+          <Button icon="chat" onClick={() => (openPrPage(wsId), close())}>
+            Comments
+          </Button>
+        </Tip>
         <Button onClick={() => pick('pr-open')}>Open on GitHub</Button>
         {pr.checks === 'failing' && open ? (
           <Button icon="claude" onClick={() => pick('pr-fix')}>
@@ -277,7 +291,7 @@ export function PullRequestSheet({ menu, close }: NativeMenuProps<'pr'>) {
   if (pr) {
     return (
       <FormSheet width={560} title={`Pull Request · ${ws.name}`} intro={<>From <code>{ws.branch ?? 'this branch'}</code></>} submitLabel="" hideSubmit onSubmit={() => undefined} onCancel={close} footer={instructions}>
-        <PrCard wsId={menu.id} pr={pr} pick={pick} refresh={() => void api.workbench.refreshPrs(menu.id).then(() => toast(client, 'Pull request status refreshed'))} />
+        <PrCard wsId={menu.id} pr={pr} pick={pick} refresh={() => void api.workbench.refreshPrs(menu.id).then(() => toast(client, 'Pull request status refreshed'))} close={close} />
       </FormSheet>
     );
   }
@@ -288,7 +302,7 @@ export function PullRequestSheet({ menu, close }: NativeMenuProps<'pr'>) {
       icon="pr"
       intro={
         <>
-          Claude commits what belongs to the work on <code>{ws.branch ?? 'this branch'}</code>, pushes it and opens a pull request with a short description: what, why, and how to test.
+          Your agent commits what belongs to the work on <code>{ws.branch ?? 'this branch'}</code>, pushes it and opens a pull request with a short description: what, why, and how to test.
         </>
       }
       submitLabel="Create Pull Request"

@@ -70,7 +70,7 @@ export function UsageView() {
       <Empty
         icon="gauge"
         title="Nothing to measure yet"
-        detail="Add your projects: the disk their worktrees take and what Claude uses in them show up here."
+        detail="Add your projects: the disk their worktrees take and what your agent uses in them show up here."
         action={
           <EmptyActions>
             <Button variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
@@ -84,10 +84,12 @@ export function UsageView() {
   return (
     <div className={s.page}>
       <div className={s.inner}>
-        <div className={s.summary}>
-          <PlanCard state={state} now={now} />
-          <ActivityCard state={state} now={now} />
-          <EarningsSummaryCard />
+        <div className={s.summaryFit}>
+          <div className={s.summary}>
+            <PlanCard state={state} now={now} />
+            <ActivityCard state={state} now={now} />
+            <EarningsSummaryCard />
+          </div>
         </div>
         <StorageCard rows={rows} measuring={measuring} measured={measured} onMeasure={measure} />
         {measured ? <CleanupCard items={cleanups(state, rows, now)} state={state} onDone={measure} /> : null}

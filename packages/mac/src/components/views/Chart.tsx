@@ -19,7 +19,12 @@ const dayF = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric'
 const timeF = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 const monthF = new Intl.DateTimeFormat(undefined, { month: 'short', year: '2-digit' });
 
-export default function Chart({ view, data, kind, full }: { view: View; data: ViewData; kind: ChartKind; full: boolean }) {
+/**
+ * `onPoint`: a click on the plot hears the row under the crosshair, as the view has it (Sentinel's
+ * numbers open its run). `fit`: a line's axis fits its values instead of starting at zero (a
+ * number over time, like subscribers, that moves a little on a big base).
+ */
+export default function Chart({ view, data, kind, full, onPoint, fit }: { view: View; data: ViewData; kind: ChartKind; full: boolean; onPoint?: (row: Readonly<Record<string, unknown>>) => void; fit?: boolean }) {
   const theme = useDocTheme();
   const plan = useMemo(() => planChart(view, data.columns, data.rows), [view, data.columns, data.rows]);
   const [off, setOff] = useState<ReadonlySet<string>>(new Set());
@@ -53,7 +58,7 @@ export default function Chart({ view, data, kind, full }: { view: View; data: Vi
         ) : kind === 'scatter' ? (
           <Dots plan={plan} colorOf={colorOf} view={view} off={off} />
         ) : (
-          <Cartesian plan={plan} kind={kind} view={view} colorOf={colorOf} off={off} />
+          <Cartesian plan={plan} kind={kind} view={view} colorOf={colorOf} off={off} fit={Boolean(fit) && kind === 'line'} {...(onPoint ? { onPoint: (r: Readonly<Record<string, unknown>>) => onPoint(data.rows.find((d) => d[plan.x] === r[plan.x]) ?? r) } : {})} />
         )}
       </div>
     </div>
@@ -80,7 +85,7 @@ function timeSpan(plan: ChartPlan): number {
   return Math.abs(last - first);
 }
 
-function Cartesian({ plan, kind, view, colorOf, off }: { plan: ChartPlan; kind: 'line' | 'area' | 'bar'; view: View; colorOf: (i: number, s?: { color?: string | undefined }) => string; off: ReadonlySet<string> }) {
+function Cartesian({ plan, kind, view, colorOf, off, onPoint, fit }: { plan: ChartPlan; kind: 'line' | 'area' | 'bar'; view: View; colorOf: (i: number, s?: { color?: string | undefined }) => string; off: ReadonlySet<string>; onPoint?: (row: Readonly<Record<string, unknown>>) => void; fit?: boolean }) {
   const id = useId().replace(/:/g, '');
   const span = timeSpan(plan);
   const curve = view.curve === 'smooth' ? 'monotone' : view.curve === 'step' ? 'stepAfter' : 'linear';
@@ -104,7 +109,7 @@ function Cartesian({ plan, kind, view, colorOf, off }: { plan: ChartPlan; kind: 
   );
   const yAxis = (
     <YAxis
-      {...(horizontal ? { type: 'category' as const, dataKey: plan.x, width: 132, tickFormatter: (val: unknown) => tickX(plan, val, span, 21) } : { tickFormatter: tickY(plan.yColumn), width: 52 })}
+      {...(horizontal ? { type: 'category' as const, dataKey: plan.x, width: 132, tickFormatter: (val: unknown) => tickX(plan, val, span, 21) } : { tickFormatter: tickY(plan.yColumn), width: 52, ...(fit ? { domain: ['auto', 'auto'] as [string, string] } : {}) })}
       {...axis}
       tickMargin={6}
       {...(view.yLabel ? { label: { value: view.yLabel, angle: -90, position: 'insideLeft', fill: 'var(--text-3)', fontSize: 11 } } : {})}
@@ -112,7 +117,23 @@ function Cartesian({ plan, kind, view, colorOf, off }: { plan: ChartPlan; kind: 
   );
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart data={plan.rows as Record<string, unknown>[]} layout={horizontal ? 'vertical' : 'horizontal'} margin={{ top: 8, right: 14, bottom: view.xLabel ? 14 : 2, left: 2 }} barCategoryGap="22%" barGap={2}>
+      <ComposedChart
+        data={plan.rows as Record<string, unknown>[]}
+        layout={horizontal ? 'vertical' : 'horizontal'}
+        margin={{ top: 8, right: 14, bottom: view.xLabel ? 14 : 2, left: 2 }}
+        barCategoryGap="22%"
+        barGap={2}
+        {...(onPoint
+          ? {
+              style: { cursor: 'pointer' },
+              onClick: (state: { activeTooltipIndex?: number | string | null; activeIndex?: number | string | null; activeLabel?: unknown }) => {
+                const at = Number(state?.activeTooltipIndex ?? state?.activeIndex);
+                const row = Number.isInteger(at) ? plan.rows[at] : state?.activeLabel !== undefined ? plan.rows.find((r) => r[plan.x] === state.activeLabel) : undefined;
+                if (row) onPoint(row);
+              },
+            }
+          : {})}
+      >
         <defs>
           {plan.series.map((s, i) => (
             <linearGradient key={s.key} id={`${id}-${i}`} x1="0" y1="0" x2="0" y2="1">

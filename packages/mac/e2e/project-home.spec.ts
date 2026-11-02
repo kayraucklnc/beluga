@@ -29,6 +29,16 @@ test('clicking a project opens its home', async ({ page }) => {
   await expect(page.getByRole('tab', { name: 'New Worktree' })).toHaveAttribute('aria-selected', 'true');
 });
 
+test('the home box has a microphone beside Create Worktree', async ({ page }) => {
+  await openHome(page);
+  const section = page.getByRole('region', { name: 'Start something' });
+  const mic = section.getByRole('button', { name: 'Speak instead of typing' });
+  await expect(mic).toBeVisible();
+  await mic.hover();
+  await expect(page.getByText(/hold ⌥Space to talk/)).toBeVisible();
+  if (process.env.BELUGA_SHOTS) await section.screenshot({ path: `${process.env.BELUGA_SHOTS}/home-composer-mic.png` });
+});
+
 test('New Worktree from the home makes a worktree and starts Claude there', async ({ page }) => {
   await openHome(page);
   await page.getByLabel('Task for the new worktree').fill('Add request logging');
@@ -48,7 +58,7 @@ test('Just Ask starts a questions-only chat in main, with the banner', async ({ 
   await page.getByLabel('Question about bob-api').press('Enter');
   const banner = page.getByRole('note', { name: 'Questions only' });
   await expect(banner).toBeVisible({ timeout: 15_000 });
-  await expect(banner).toContainText('Claude won’t change anything in main');
+  await expect(banner).toContainText('your agent won’t change anything in main');
   await expect(page.locator('textarea[placeholder="Ask about bob-api…"]')).toBeVisible();
   await expect(home(page).getByText('Where are the routes defined?').first()).toBeVisible();
 });
@@ -68,7 +78,7 @@ test('Continue in New Worktree carries the conversation to a new worktree', asyn
   // Now in the worktree: the conversation came along, Claude works on the task.
   await expect(page.getByRole('note', { name: 'Questions only' })).toHaveCount(0, { timeout: 15_000 });
   await expect(home(page).getByText('Explain the billing flow').first()).toBeVisible();
-  await expect(home(page).getByText(/Continued from/)).toBeVisible();
+  await expect(home(page).getByText(/This chat is now the worktree/)).toBeVisible();
   await expect(home(page).getByText('Add idempotency keys to billing').first()).toBeVisible();
 });
 
@@ -78,7 +88,7 @@ test('asking for a change in a questions-only chat moves to a new worktree on it
   await page.getByLabel('Question about bob-api').fill('Fix the typo in the README');
   await page.getByLabel('Question about bob-api').press('Enter');
   await expect(page.getByRole('note', { name: 'Questions only' })).toHaveCount(0, { timeout: 20_000 });
-  await expect(home(page).getByText(/Continued from/)).toBeVisible();
+  await expect(home(page).getByText(/This chat is now the worktree/)).toBeVisible();
   await expect(sidebar(page).getByRole('button', { name: /fix-typo-readme/ }).first()).toBeVisible();
 });
 

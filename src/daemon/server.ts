@@ -6,6 +6,8 @@ import { type Cap, type DaemonFrame, IPC_VERSION, encodeFrame, parseClientFrame 
 import type { PtyProcess, TerminalManager } from '../terminal/index.js';
 import { ClientRegistry, type ConnectedClient } from './clients.js';
 import { dispatchCall } from './dispatch.js';
+import { companionOf } from '../companion/registry.js';
+import type { MirrorStatus, PhoneTouch, VideoPiece } from '../companion/phone-control.js';
 
 export interface DaemonServerOptions {
   readonly session: Session;
@@ -56,6 +58,22 @@ export class DaemonServer {
   private readonly termViewers = new Map<string, Set<string>>();
 
   constructor(private readonly opts: DaemonServerOptions) {}
+
+  /** The frame just encoded, and its text: one going to every screen is encoded once, not once per screen (BLG-407). */
+  private lastFrame?: DaemonFrame;
+  private lastText = '';
+
+  private encoded(frame: DaemonFrame): string {
+    if (frame === this.lastFrame) return this.lastText;
+    const text = encodeFrame(frame);
+    this.lastFrame = frame;
+    this.lastText = text;
+    // Kept only while this frame goes out to each screen (one synchronous loop), never for a later send.
+    queueMicrotask(() => {
+      if (this.lastFrame === frame) this.lastFrame = undefined;
+    });
+    return text;
+  }
 
   private get session(): Session {
     return this.opts.session;
@@ -144,13 +162,17 @@ export class DaemonServer {
         this.opts.log?.(`${client?.id ?? 'a screen'} fell too far behind; letting it go`);
         return ws.terminate();
       }
-      ws.send(encodeFrame(frame));
+      ws.send(this.encoded(frame));
     };
+    // Phone mirrors this screen is watching (BLG-173), by device id → stop().
+    const mirrors = new Map<string, () => void>();
     const helloTimer = setTimeout(() => ws.close(4001, 'No hello'), this.opts.helloTimeoutMs ?? 5000);
     helloTimer.unref?.();
     const detachAll = (): void => {
       for (const off of attached.values()) off();
       attached.clear();
+      for (const off of mirrors.values()) off();
+      mirrors.clear();
     };
 
     ws.on('message', (raw, isBinary) => {
@@ -233,6 +255,28 @@ export class DaemonServer {
           if (!pty) return;
           this.termOwner.set(frame.term, me.id);
           pty.resize(frame.cols, frame.rows);
+          return;
+        }
+        case 'phone_watch': {
+          mirrors.get(frame.device)?.();
+          const host = companionOf(this.session);
+          if (!host) return send({ t: 'phone_mirror', device: frame.device, on: false, error: 'No phone support' });
+          mirrors.set(
+            frame.device,
+            host.mirrorPhone(
+              frame.device,
+              { ...(frame.fps ? { fps: frame.fps } : {}), ...(frame.max ? { max: frame.max } : {}), ...(frame.video ? { video: true } : {}) },
+              (f: { b64: string; mime: string; w: number; h: number }) => send({ t: 'phone_frame', device: frame.device, b64: f.b64, mime: f.mime, w: f.w, h: f.h }),
+              (s: MirrorStatus) => send({ t: 'phone_mirror', device: frame.device, on: s.on, ...(s.route ? { route: s.route } : {}), ...(s.error ? { error: s.error } : {}), ...(s.video ? { video: s.video } : {}), ...(s.note ? { note: s.note } : {}) }),
+              (p: VideoPiece) => send({ t: 'phone_video', device: frame.device, b64: p.b64, key: p.key, ts: p.ts, w: p.w, h: p.h, sw: p.sw, sh: p.sh }),
+              (touch: PhoneTouch) => send({ t: 'phone_touch', device: frame.device, touch }),
+            ),
+          );
+          return;
+        }
+        case 'phone_unwatch': {
+          mirrors.get(frame.device)?.();
+          mirrors.delete(frame.device);
           return;
         }
       }

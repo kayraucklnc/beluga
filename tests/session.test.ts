@@ -12,6 +12,7 @@ import { startHub, type Hub } from '../src/net/hub.js';
 import { PeerClient } from '../src/net/peer-client.js';
 import { attach, waitFor } from './helpers.js';
 import type { InProcessClient } from '../src/ipc/in-process.js';
+import { friendRooms, providerCards } from '../src/ui/usage-cards.js';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -132,6 +133,20 @@ describe('Session', () => {
     expect(bob.state().approvals).toHaveLength(0);
   });
 
+  // The ask names Codex since BLG-520; bob's card lists no Codex here, so his default answers (tests/room-agent-tags.test.ts).
+  it('@bob:codex reaches bob, and his Mac decides which agent runs (BLG-476, BLG-520)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    kay.session.submit('@bob:codex check the api');
+    await waitFor(() => bob.state().approvals.length === 1);
+    expect(bob.session.answerApproval('yes')).toBe(true);
+    await waitFor(() => bob.runs.length === 1);
+    expect(bob.runs[0]?.prompt).toContain('check the api');
+    expect(bob.runs[0]?.requesterName).toBe('kay');
+  });
+
   it('reports declined and denied requests', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
@@ -162,6 +177,56 @@ describe('Session', () => {
     await waitFor(() => agentItems(bob.state()).filter((a) => a.type === 'agent' && a.status === 'done').length === 2);
   });
 
+  it('publishes your default agent on your card at once, without reconnecting (BLG-444)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    const opus = { runtime: 'claude' as const, model: 'opus', label: 'Claude' };
+    kay.session.setPrefs({ defaultAgent: opus });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.model === 'opus');
+    expect(bob.state().peers.find((p) => p.name === 'kay')?.agents?.[0]).toEqual(opus);
+    expect(kay.session.agentRef).toEqual(opus);
+    kay.session.setPrefs({ projectAgents: { api: { runtime: 'claude', model: 'sonnet', label: 'Claude' } } });
+    expect(kay.session.agentFor('api').model).toBe('sonnet');
+    expect(kay.session.agentFor('web')).toEqual(opus);
+    kay.session.setPrefs({ defaultAgent: null });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.model === undefined);
+  });
+
+  it('make-default on a usage card sets your default and the peer card friends see (BLG-458)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    const codex = { runtime: 'codex', model: 'gpt-5', label: 'Codex' };
+    kay.session.updateUsage({ windows: [{ label: 'Weekly', pct: 24 }] }, codex);
+    // What the Codex card's chip sends.
+    kay.session.setPrefs({ defaultAgent: codex });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.runtime === 'codex');
+    await waitFor(() => (kay.state().peers.find((p) => p.name === 'kay')?.usages?.length ?? 0) > 0);
+    expect(providerCards(kay.state().peers.find((p) => p.name === 'kay'), kay.state().prefs.defaultAgent).find((c) => c.isDefault)?.key).toBe('codex');
+    const room0 = friendRooms(bob.state().peers, bob.session.selfId).find((r) => r.name === 'kay');
+    expect(room0).toMatchObject({ agent: { runtime: 'codex' }, isDefault: true, left: 76 });
+    // And Claude's chip: back to no default.
+    kay.session.setPrefs({ defaultAgent: null });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.runtime === 'claude');
+  });
+
+  it('runs the person\'s agent with @bob and @agents, and says who a mistyped name may be', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { policy: 'auto' });
+    const bob = peer('bob', { policy: 'auto' });
+    await room(kay, bob);
+    kay.session.submit('@bob status?');
+    await waitFor(() => bob.runs.length === 1);
+    expect(kay.runs).toHaveLength(0);
+    kay.session.submit('@agents status?');
+    await waitFor(() => kay.runs.length === 1 && bob.runs.length === 2);
+    kay.session.submit('@bbo status?');
+    expect(kay.toasts).toContain('Nobody named "bbo" is here. Did you mean @bob?');
+  });
+
   it('streams agent text/tool events and approves tool use', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay', {
@@ -183,6 +248,26 @@ describe('Session', () => {
     expect(agentItems(kay.state())[0]).toMatchObject({ text: 'finished', steps: ['Bash ls'] });
   });
 
+  it('deleting a sentinel or a dashboard asks you first, even when your Claude never asks: once, no Always', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: async (input) => {
+        const ls = await input.canUseTool('Bash', { command: 'ls' });
+        const gone = await input.canUseTool('mcp__beluga_sentinel__sentinel_remove', { id: 'sn_x' });
+        return `${ls ? 'ran' : 'asked'} ${gone ? 'deleted' : 'kept'}`;
+      },
+    });
+    await room(kay);
+    // The default: your Claude doesn't ask (Bash just runs), but a delete still does.
+    expect(kay.state().prefs.selfApproval).toBe('never');
+    kay.session.submit('@claude delete the nightly sentinel');
+    await waitFor(() => kay.state().approvals[0]?.kind === 'tool');
+    expect(kay.state().approvals[0]).toMatchObject({ once: true, title: expect.stringMatching(/sentinel_remove/) });
+    kay.session.answerApproval('no');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
+    expect(agentItems(kay.state())[0]).toMatchObject({ text: 'ran kept' });
+  });
+
   it('surfaces agent failures and stop requests', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay', {
@@ -199,7 +284,7 @@ describe('Session', () => {
     kay.session.submit(':stop');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Stopped by owner'));
     kay.session.submit(':stop');
-    expect(kay.toasts).toContain('Your Claude is not running anything');
+    expect(kay.toasts).toContain('Your agent is not running anything');
   });
 
   it("browses and reads a friend's shared folder, live-reloading on change", async () => {
@@ -294,10 +379,10 @@ describe('Session', () => {
 
     kay.session.submit('@claude:bob audit');
     await waitFor(() => kay.state().viewer?.path.startsWith('.beluga/reports/') && kay.state().viewer?.content.includes('all good'));
-    expect(kay.state().viewer?.by).toBe("bob's Claude");
+    expect(kay.state().viewer?.by).toBe("bob's agent");
     const reports = readdirSync(path.join(bob.root, '.beluga', 'reports'));
     expect(readFileSync(path.join(bob.root, '.beluga', 'reports', reports[0]!), 'utf8')).toBe('# Audit Results\n\nall good');
-    expect(systemText(kay.state()).some((t) => t.includes("bob's Claude wrote a report. Open it with /open bob:proj/.beluga/reports/"))).toBe(true);
+    expect(systemText(kay.state()).some((t) => t.includes("bob's agent wrote a report. Open it with /open bob:proj/.beluga/reports/"))).toBe(true);
 
     kay.session.submit(':unfollow');
     expect(kay.state().follow).toBeUndefined();
@@ -374,19 +459,24 @@ describe('Session', () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
     await room(kay);
+    // /invite adds a friend now (BLG-203); the room's link is still copied from Settings and the room's menus.
     kay.session.submit('/invite');
+    expect(kay.screen.store.getState().overlay).toBe('add_friend');
+    kay.session.submit('/invite @nobody');
+    await waitFor(() => kay.toasts.some((t) => /nobody isn’t your friend yet/.test(t)));
+    void kay.session.copyInvite();
     await waitFor(() => kay.toasts.includes('No invite link available'));
     kay.session.store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel' } });
-    kay.session.submit('/invite');
+    void kay.session.copyInvite();
     await waitFor(() => kay.toasts.includes('The invite link is still being created…'));
     kay.session.store.dispatch({ type: 'invite', invite: 'https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx' });
-    kay.session.submit('/invite');
+    void kay.session.copyInvite();
     await waitFor(() => kay.copied.length === 1);
     expect(kay.copied[0]).toBe('https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx');
     expect(kay.toasts).toContain('Invite copied. Paste it to a friend');
 
     kay.session.submit('/copy');
-    await waitFor(() => kay.toasts.includes('No Claude answer to copy yet'));
+    await waitFor(() => kay.toasts.includes('No agent answer to copy yet'));
     kay.session.submit('@claude hello');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
     kay.session.submit('/copy');
@@ -442,16 +532,16 @@ describe('Session hardening', () => {
 
     // Nothing of yours in another conversation: nothing there (or here) stops.
     expect(kay.session.host.stopRun('ws:elsewhere')).toEqual({ stopped: false, returned: [] });
-    await waitFor(() => kay.toasts.includes("Your Claude isn't working here"));
+    await waitFor(() => kay.toasts.includes("Your agent isn't working here"));
     expect(kay.state().approvals).toHaveLength(1);
 
     expect(kay.session.host.stopRun('room')).toEqual({ stopped: true, returned: ['second', 'third'] });
-    await waitFor(() => kay.toasts.includes('Stopped your Claude here · 2 queued messages back in the box'));
+    await waitFor(() => kay.toasts.includes('Stopped your agent here · 2 queued messages back in the box'));
     expect(kay.state().approvals).toHaveLength(0);
     const text = (prompt: string) => agentItems(kay.state()).find((a) => a.type === 'agent' && a.prompt === prompt);
     // The run that was going (it never queued, so its log line has no prompt) is the first one.
     await waitFor(() => agentItems(kay.state())[0]?.type === 'agent' && agentItems(kay.state())[0]?.text === 'Stopped by you');
-    for (const prompt of ['second', 'third']) expect(text(prompt)).toMatchObject({ status: 'error', text: 'Taken out of the queue when you stopped Claude' });
+    for (const prompt of ['second', 'third']) expect(text(prompt)).toMatchObject({ status: 'error', text: 'Taken out of the queue when you stopped your agent' });
     // Bob's request kept its place and runs next.
     await waitFor(() => agentItems(bob.state()).some((a) => a.type === 'agent' && a.status === 'done' && a.text === 'done: from bob'));
     expect(kay.runs.map((r) => r.prompt)).toEqual(['first', 'from bob']);
@@ -539,6 +629,7 @@ describe('Session hardening', () => {
       policy: 'auto',
       script: async (_input, bridge) => {
         bridge.reportUsage({ fiveHour: { pct: 42 } });
+        bridge.reportUsage({ windows: [{ label: 'Weekly', pct: 7 }] }, { runtime: 'codex', label: 'Codex' });
         return 'ok';
       },
     });
@@ -548,6 +639,12 @@ describe('Session hardening', () => {
     await waitFor(() => bob.runs.length === 1);
     expect(bob.runs[0]?.scope).toBe('folder');
     await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.usage?.fiveHour?.pct === 42);
+    // Each provider's usage lands on its own entry; the old field stays Claude's.
+    await waitFor(() => (kay.state().peers.find((p) => p.name === 'bob')?.usages?.length ?? 0) === 2);
+    const shared = kay.state().peers.find((p) => p.name === 'bob')?.usages ?? [];
+    expect(shared.find((u) => u.agent.runtime === 'claude')?.fiveHour?.pct).toBe(42);
+    expect(shared.find((u) => u.agent.runtime === 'codex')?.windows?.[0]?.pct).toBe(7);
+    expect(shared.find((u) => u.agent.runtime === 'codex')?.fiveHour).toBeUndefined();
 
     bob.session.setAccess(kay.session.selfId, 'full');
     kay.session.submit('@claude:bob again');
@@ -565,7 +662,7 @@ describe('Session hardening', () => {
     await room(bob, kay);
     kay.session.submit('@claude:bob look around');
     await waitFor(() => bob.state().approvals.length === 1);
-    expect(bob.state().approvals[0]?.title).toBe('kay wants your Claude to run this (shared folders; anything else asks you)');
+    expect(bob.state().approvals[0]?.title).toBe('kay wants your agent to run this (shared folders; anything else asks you)');
     bob.session.answerApproval('no');
   });
 
@@ -648,6 +745,52 @@ describe('Session hardening', () => {
     expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'later']);
     expect(agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Cancelled before it started')).toBe(true);
     expect(kay.session.host.promote('nope')).toBe(false);
+  });
+
+  it('a message past the limit of conversations at once says it waits for a free Claude, and stays yours to drop or start', async () => {
+    hub = await startHub({ keys });
+    const hang = (input: AgentRunInput) => new Promise<string>((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('aborted'))));
+    const kay = peer('kay', { script: (input) => (input.prompt === 'slow' ? hang(input) : Promise.resolve(`did ${input.prompt}`)) });
+    await room(kay);
+    (kay.session.host as unknown as { deps: { workspaces: unknown } }).deps.workspaces = { place: () => ({ cwd: kay.root, additionalDirectories: [], autoEdit: false, onSession: () => undefined }), refresh: async () => undefined };
+    (kay.session as unknown as { opts: { store: Store } }).opts.store.dispatch({ type: 'prefs', prefs: { parallelRuns: 1 } });
+    kay.session.submit('slow', { channel: 'ws:a' });
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('drop', { channel: 'ws:b' });
+    const waiting = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.channel === 'ws:b' && a.status === 'queued') as Array<{ requestId: string; prompt?: string; slotWait?: unknown }>;
+    await waitFor(() => waiting().length === 1);
+    // Nothing runs in ws:b: its card says what it waits for, not "the current task".
+    expect(waiting()[0]!.slotWait).toEqual({ running: 1, limit: 1 });
+    // Still in line while it waits: it can be dropped.
+    expect(kay.session.host.cancelQueued(waiting()[0]!.requestId)).toBe(true);
+    kay.session.submit('now', { channel: 'ws:b' });
+    await waitFor(() => waiting().length === 1 && waiting()[0]!.prompt === 'now');
+    // Start now: past the limit, at once.
+    expect(kay.session.host.promote(waiting()[0]!.requestId)).toBe(true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did now'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'now']);
+    expect(agentItems(kay.state()).find((a) => a.type === 'agent' && a.text === 'did now')).not.toHaveProperty('slotWait');
+  });
+
+  it('a run that only waits on its background agents gives its slot back', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'answer then wait'
+          ? new Promise<string>((_resolve, reject) => {
+              // Answered; its background agents still work (the runner offers follow-ups then).
+              input.onFollowUps?.(() => false);
+              input.signal.addEventListener('abort', () => reject(new Error('aborted')));
+            })
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    await room(kay);
+    (kay.session.host as unknown as { deps: { workspaces: unknown } }).deps.workspaces = { place: () => ({ cwd: kay.root, additionalDirectories: [], autoEdit: false, onSession: () => undefined }), refresh: async () => undefined };
+    (kay.session as unknown as { opts: { store: Store } }).opts.store.dispatch({ type: 'prefs', prefs: { parallelRuns: 1 } });
+    kay.session.submit('answer then wait', { channel: 'ws:a' });
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('other', { channel: 'ws:b' });
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did other'));
   });
 
   it('says what waits in the queue, and moves your waiting messages around', async () => {

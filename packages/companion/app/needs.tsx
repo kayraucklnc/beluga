@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ScrollView } from 'react-native';
-import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { LinearTransition, FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { kindOf, NeedsStack } from '../components/Needs';
 import { Header, Screen, useScrolled } from '../components/Screen';
@@ -20,7 +20,7 @@ export default function Needs() {
       <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingTop: 16, paddingBottom: insets.bottom + 40 }}>
         <NeedsStack items={needs} />
         {needs.length > 1 ? (
-          <Animated.View layout={LinearTransition.springify()} style={{ marginTop: 24 }}>
+          <Animated.View layout={LinearTransition.duration(180)} style={{ marginTop: 24 }}>
             <T v="eyebrow" style={{ paddingHorizontal: 20, marginBottom: 10 }}>
               All {needs.length}
             </T>
@@ -28,7 +28,7 @@ export default function Needs() {
               {needs.map((n, i) => {
                 const k = kindOf(n.kind);
                 return (
-                  <Animated.View key={n.id} entering={FadeInDown.delay(i * 30).duration(260)}>
+                  <Animated.View key={n.id} entering={FadeIn.duration(180)}>
                     <Row first={i === 0} Icon={k.Icon} tone={k.tone} label={n.title} sub={[k.label, n.from, ago(n.askedAt)].filter(Boolean).join(' · ')} onPress={() => router.push(`/need/${encodeURIComponent(n.id)}`)} />
                   </Animated.View>
                 );

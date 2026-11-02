@@ -65,9 +65,9 @@ describe('the request pop-up', () => {
   it('shows a friend’s waiting request by its few words, with everything their Claude sent behind See more', () => {
     const [r, ...rest] = popupRequests([{ ...request, askedAt: 5 }, tool], [received()], false);
     expect(rest).toEqual([]);
-    expect(r).toMatchObject({ approval: 'ap1', task: 't_abcdefghijk', claude: true, gist: 'take a screenshot of your desktop', said: 'Please take a screenshot of your whole desktop and send it back to me. I want to see the new dock.', needs: ['See the screen'], where: 'A new scratch folder, just for this request', back: 'A summary of what your Claude did' });
+    expect(r).toMatchObject({ approval: 'ap1', task: 't_abcdefghijk', claude: true, gist: 'take a screenshot of your desktop', said: 'Please take a screenshot of your whole desktop and send it back to me. I want to see the new dock.', needs: ['See the screen'], where: 'A new scratch folder, just for this request', back: 'A summary of what your agent did' });
     expect(r?.full).toContain('I want to see the new dock');
-    expect(popupWho(r!)).toBe('mia’s Claude');
+    expect(popupWho(r!)).toBe('mia’s agent');
   });
 
   it('without a summary it shows the start of the ask; a command and a file are named as they are, never by the sender’s words', () => {

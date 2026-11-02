@@ -25,7 +25,7 @@ const BODY: BodyInput = {
   milestones: [{ id: 'safe', title: 'Safe payments', criteria: ['works'], tasks: [{ id: 'auth', title: 'Auth on payment routes', acceptance: ['401 without session', 'tests pass'] }] }],
 };
 
-async function running(opts: { waited?: readonly string[]; promoteOk?: boolean } = {}) {
+async function running(opts: { waited?: readonly string[]; promoteOk?: boolean; rescueMs?: number } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('main', 'api', 'bob-api', 'chat', { askOnly: true } as Partial<Workspace>)])] });
   let n = 0;
@@ -67,6 +67,8 @@ async function running(opts: { waited?: readonly string[]; promoteOk?: boolean }
     takeOver: async (channel) => (tookOver.push(channel), opts.waited ?? []),
     now: () => now,
     delayMs: 0,
+    // The watchdog alone here; the plan's rescue has its own tests below.
+    rescueMs: opts.rescueMs ?? Number.POSITIVE_INFINITY,
   });
   const claude = boardWork.myClaude();
   const plan = plans.create({ projectId: 'api', home: 'ws:main', autonomy: 'gated' }, claude);
@@ -272,7 +274,7 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     const r = t.newRun();
     t.event(r, 'started');
     t.event(r, 'tool', 'Bash npx playwright test');
-    expect(t.message('Stop: the e2e suite runs at Ship, not here.', 'steer')).toMatch(/^Steered into .+: its Claude gets it now/);
+    expect(t.message('Stop: the e2e suite runs at Ship, not here.', 'steer')).toMatch(/^Steered into .+: its agent gets it now/);
     const [m] = sent(t);
     expect(m!.prompt).toMatch(/^An urgent message from the head of the plan/);
     // It lands in the queue behind the long command: Klaud steers it in at once.
@@ -293,7 +295,7 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     const r = t.newRun();
     t.event(r, 'started');
     t.event(r, 'tool', 'Bash npx playwright test');
-    expect(t.message('FYI: KLD-9 renamed the session helper.')).toMatch(/^Queued for the Claude working on/);
+    expect(t.message('FYI: KLD-9 renamed the session helper.')).toMatch(/^Queued for the agent working on/);
     const [m] = sent(t);
     expect(m!.prompt).toMatch(/^A message from the head of the plan/);
     t.event(m!.id, 'queued', m!.prompt);
@@ -320,7 +322,7 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     await t.later(STEER_UNREAD_MS);
     expect(t.promoted).toEqual([m!.id, m!.id]);
     const feed = () => t.plans.need(t.plan.id).activity.map((a) => a.text);
-    expect(feed().at(-1)).toMatch(/hadn't read the head Claude's message in 2m: interrupted it again/);
+    expect(feed().at(-1)).toMatch(/hadn't read the plan head's message in 2m: interrupted it again/);
     // Taken into the running turn but never read: a fresh turn with it.
     t.event(m!.id, 'text', READS_AFTER_STEP);
     expect(t.task().waiting).toEqual([{ requestId: m!.id, prompt: m!.prompt, queued: false }]);
@@ -385,5 +387,54 @@ describe('a long command in words', () => {
     expect(stepWords('Bash npx playwright test')).toBe('Running npx playwright test');
     expect(stepWords('BashOutput', 'Bash npx playwright test')).toBe('Watching npx playwright test');
     expect(stepWords('Read src/auth.ts')).toBe('Read src/auth.ts');
+  });
+});
+
+describe('a plan never stalls quietly: Beluga moves it along, a step further each time, then tells you (BLG-473)', () => {
+  const quiet = 3 * MIN;
+
+  it('a task that keeps stopping: woken, started over, the head Claude decides, then it’s yours with what was tried', async () => {
+    const t = await running({ rescueMs: quiet });
+    // It stops twice: the watchdog wakes it once, then it would wait for you.
+    for (const text of ['Partway.', 'Still partway.']) {
+      const r = t.newRun();
+      t.event(r, 'started');
+      t.event(r, 'done', text);
+      await t.later(MIN);
+    }
+    expect(t.view().next.kind).toBe('stalled');
+    const rescues = () => t.plans.need(t.plan.id).activity.filter((a) => a.text.includes(' went quiet: '));
+    // Quiet for the spell: woken again.
+    await t.later(quiet);
+    expect(rescues().at(-1)?.text).toContain(`woke ${t.issue().key}`);
+    // Still nothing: what was left of its turn is stopped, and it's started again.
+    await t.later(quiet);
+    expect(rescues().at(-1)?.text).toContain('started it again');
+    expect(t.tookOver).toContain(t.channel);
+    // Still nothing: the plan's Claude decides.
+    await t.later(quiet);
+    expect(t.asked.filter((a) => a.channel === 'ws:main').at(-1)?.prompt).toContain('The plan has gone quiet');
+    // Still nothing: it's yours, and the plan says what was tried. Nothing more after that.
+    await t.later(quiet);
+    const rescue = t.plans.need(t.plan.id).rescue!.safe!;
+    expect(rescue).toMatchObject({ yours: true, tries: 3 });
+    expect(t.plans.need(t.plan.id).activity.at(-1)?.text).toMatch(/^Stuck on .*Beluga tried: woke .*; stopped what was left/);
+    const asks = t.asked.length;
+    await t.later(30 * MIN);
+    expect(t.asked.length).toBe(asks);
+    // It moves (the task comes back for review): the ladder starts over.
+    t.board.update(t.issue().id, { status: 'in_review' }, t.claude);
+    await t.later(MIN);
+    expect(t.plans.need(t.plan.id).rescue).toBeUndefined();
+  });
+
+  it('never while something of it runs, nor while it waits on you', async () => {
+    const t = await running({ rescueMs: quiet });
+    const r = t.newRun();
+    t.event(r, 'started');
+    t.event(r, 'tool', 'Bash npm test');
+    // A long command: busy, never rescued.
+    for (let i = 0; i < 5; i++) await t.later(quiet);
+    expect(t.plans.need(t.plan.id).activity.some((a) => a.text.includes(' went quiet: '))).toBe(false);
   });
 });

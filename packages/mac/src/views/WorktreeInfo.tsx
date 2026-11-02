@@ -47,20 +47,20 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Asks before removing a worktree made outside Beluga; with uncommitted changes the button says what's lost. */
+/**
+ * Asks before removing a worktree made outside Beluga; with uncommitted changes the button says what's lost.
+ * Confirming closes it at once: the removal carries on in the background and says how it went in a toast.
+ */
 export function RemoveWorktreeAlert({ ws, info, onDone, onCancel }: { ws: Workspace; info?: WorktreeInfo; onDone: (removed: boolean) => void; onCancel: () => void }) {
   const api = useApi();
-  const [busy, setBusy] = useState(false);
+  const { client } = useBeluga();
   const changed = info?.changed ?? ws.status?.changed ?? 0;
   const branch = info?.branch ?? ws.branch;
   // Another app made it and may still use it.
   const anotherApp = (info?.origin.source ?? sourceFromPath(ws.path)) === 'conductor';
   const go = (): void => {
-    setBusy(true);
-    void api.workspaces
-      .removeOther(ws.id, changed > 0)
-      .then((done) => onDone(Boolean(done)))
-      .finally(() => setBusy(false));
+    void api.workspaces.removeOther(ws.id, changed > 0).catch((err: unknown) => toast(client, `Couldn't remove ${ws.name}: ${err instanceof Error ? err.message : String(err)}`, 'error'));
+    onDone(true);
   };
   return (
     <Alert
@@ -87,7 +87,7 @@ export function RemoveWorktreeAlert({ ws, info, onDone, onCancel }: { ws: Worksp
           {anotherApp ? <p>If you still use it in the app that made it, remove it there instead: that app would show it as missing.</p> : null}
         </>
       }
-      confirm={{ label: changed > 0 ? 'Remove Anyway' : 'Remove', destructive: true, disabled: busy, onClick: go }}
+      confirm={{ label: changed > 0 ? 'Remove Anyway' : 'Remove', destructive: true, onClick: go }}
       onCancel={onCancel}
     />
   );
@@ -235,7 +235,7 @@ export function WorktreeInfoPage({ ws, agent, origin }: { ws: Workspace; agent?:
             {info?.conductor?.prTitle ? <Field label="Pull request">{info.conductor.prTitle}</Field> : null}
             {info?.creator ? (
               <Field label="Made by">
-                Claude in “{info.creator.title ?? info.creator.sessionId.slice(0, 8)}”{info.creator.at ? `, ${day(info.creator.at)}` : ''}
+                Claude Code in “{info.creator.title ?? info.creator.sessionId.slice(0, 8)}”{info.creator.at ? `, ${day(info.creator.at)}` : ''}
                 {info.creator.cwd ? ` (ran in ${info.creator.cwd})` : ''}
               </Field>
             ) : null}

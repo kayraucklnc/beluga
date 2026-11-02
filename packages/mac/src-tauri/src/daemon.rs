@@ -6,7 +6,9 @@ use std::io::{Read, Seek, SeekFrom};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::{mpsc, Mutex, MutexGuard, OnceLock, PoisonError};
+#[cfg(target_os = "macos")]
+use std::sync::{mpsc, OnceLock};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Manager};
 
@@ -17,6 +19,7 @@ const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a daemon gets to quit on its own before it's forced.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long your shell gets to say what your PATH is.
+#[cfg(target_os = "macos")]
 const SHELL_TIMEOUT: Duration = Duration::from_secs(4);
 const PATH_MARK: &str = "__BELUGA_PATH__";
 
@@ -82,8 +85,26 @@ fn home_in(set: Option<PathBuf>, user_home: &std::path::Path) -> PathBuf {
         .unwrap_or(home)
 }
 
+/// The signals the app sends: only checking, asking to quit and forcing.
+#[cfg(unix)]
+pub mod sig {
+    pub const CHECK: i32 = 0;
+    pub const TERM: i32 = libc::SIGTERM;
+    pub const KILL: i32 = libc::SIGKILL;
+}
+
+/// Windows has no signals: checking opens the process, and quitting ends it outright (the daemon
+/// writes everything as it goes, and a stale daemon.json is told apart by its port).
+#[cfg(windows)]
+pub mod sig {
+    pub const CHECK: i32 = 0;
+    pub const TERM: i32 = 15;
+    pub const KILL: i32 = 9;
+}
+
 /// Send a signal to a process (0 only checks that it's there and ours).
-fn signal(pid: u32, sig: i32) -> bool {
+#[cfg(unix)]
+pub fn signal(pid: u32, sig: i32) -> bool {
     // Never 0 (our whole process group) or 1 (the system's first process).
     let Ok(pid) = i32::try_from(pid) else {
         return false;
@@ -95,8 +116,41 @@ fn signal(pid: u32, sig: i32) -> bool {
     unsafe { libc::kill(pid, sig) == 0 }
 }
 
+#[cfg(windows)]
+pub fn signal(pid: u32, sig: i32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        PROCESS_TERMINATE,
+    };
+    if pid <= 4 {
+        return false;
+    }
+    let access = if sig == sig::CHECK {
+        PROCESS_QUERY_LIMITED_INFORMATION
+    } else {
+        PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE
+    };
+    // SAFETY: plain Win32 calls on a handle we open and close here; a bad pid just fails.
+    unsafe {
+        let handle = OpenProcess(access, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let mut code = 0u32;
+        let running = GetExitCodeProcess(handle, &mut code) != 0 && code == STILL_ACTIVE as u32;
+        let done = if sig == sig::CHECK || !running {
+            running
+        } else {
+            TerminateProcess(handle, 1) != 0
+        };
+        CloseHandle(handle);
+        done
+    }
+}
+
 fn alive(pid: u32) -> bool {
-    signal(pid, 0)
+    signal(pid, sig::CHECK)
 }
 
 /// Whether something answers on Beluga's port (a leftover pid could belong to anything).
@@ -135,6 +189,33 @@ fn outdated(running: Option<&str>, keep_alive: bool, bundled: Option<&str>) -> b
     keep_alive && matches!((running, bundled), (Some(r), Some(b)) if r != b)
 }
 
+/// The process that started `pid` (1 once that one is gone), if it can be told. Windows doesn't
+/// hand orphans to a first process, so a daemon there is never taken for one left behind.
+#[cfg(windows)]
+fn parent_of(_pid: u32) -> Option<u32> {
+    None
+}
+
+#[cfg(unix)]
+fn parent_of(pid: u32) -> Option<u32> {
+    let out = Command::new("/bin/ps")
+        .args(["-o", "ppid=", "-p", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
+/// Whether a running daemon was left behind by a Mac app that's gone (it crashed, was force
+/// quit or killed): kept alive for an app, now launchd's. Quitting never stops one this app
+/// didn't start, and such a daemon can lose your login session (its terminals can't read the
+/// Keychain, so Claude Code isn't signed in, nor open a browser or copy), so it's replaced.
+/// One started by hand is left alone.
+fn orphaned(keep_alive: bool, parent: Option<u32>) -> bool {
+    keep_alive && parent == Some(1)
+}
+
 /// If the daemon this app started has quit, let go of it (so it doesn't linger) and say how.
 fn reap(app: &AppHandle) -> Option<ExitStatus> {
     let state = app.try_state::<AppState>()?;
@@ -150,6 +231,13 @@ fn running(app: &AppHandle) -> Option<Info> {
 }
 
 /// Apps opened from Finder get a bare PATH; Beluga needs yours (git, gh, claude, node tools).
+/// Windows and Linux desktops start apps with your PATH already.
+#[cfg(not(target_os = "macos"))]
+async fn login_path() -> String {
+    std::env::var("PATH").unwrap_or_default()
+}
+
+#[cfg(target_os = "macos")]
 async fn login_path() -> String {
     static PATH: OnceLock<String> = OnceLock::new();
     if let Some(path) = PATH.get() {
@@ -164,6 +252,7 @@ async fn login_path() -> String {
 }
 
 /// Ask your login shell for its PATH, giving up (and stopping it) if it takes too long.
+#[cfg(target_os = "macos")]
 fn shell_path() -> Option<String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let script = format!("printf '{PATH_MARK}%s{PATH_MARK}' \"$PATH\"");
@@ -197,6 +286,7 @@ fn shell_path() -> Option<String> {
 }
 
 /// The PATH between the markers (your shell's startup files may print other things too).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn parse_path(text: &str) -> Option<String> {
     let rest = &text[text.find(PATH_MARK)? + PATH_MARK.len()..];
     let path = rest[..rest.find(PATH_MARK)?].trim();
@@ -204,6 +294,7 @@ fn parse_path(text: &str) -> Option<String> {
 }
 
 /// When the shell can't say: the PATH we have, plus where Homebrew puts things.
+#[cfg(target_os = "macos")]
 fn fallback_path() -> String {
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
@@ -261,7 +352,7 @@ fn base_command(app: &AppHandle) -> Result<(Command, bool), String> {
 #[cfg(debug_assertions)]
 fn dev_command() -> Result<Command, String> {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let mut c = Command::new("npx");
+    let mut c = Command::new(if cfg!(windows) { "npx.cmd" } else { "npx" });
     c.current_dir(&repo).args(["tsx", "src/cli.ts"]);
     c.env("BELUGA_ALLOW_ORIGINS", "http://localhost:1420");
     Ok(c)
@@ -276,7 +367,10 @@ fn dev_command() -> Result<Command, String> {
 fn bundled(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     let resources = app.path().resource_dir().ok()?;
     let script = resources.join("daemon").join("dist").join("cli.js");
-    let node = std::env::current_exe().ok()?.parent()?.join("node");
+    let node = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join(format!("node{}", std::env::consts::EXE_SUFFIX));
     (script.exists() && node.exists()).then_some((node, script))
 }
 
@@ -286,6 +380,12 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
     cmd.arg("daemon").arg("--keep-alive").args(args);
     cmd.env("PATH", login_path().await);
     cmd.stdin(Stdio::null());
+    // No console window for it on Windows.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
     let log = log_file();
     let log_from = log
         .as_ref()
@@ -343,7 +443,7 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
 
 /// Ask a daemon we started to quit; force it if it doesn't.
 async fn terminate_child(mut child: Child) -> bool {
-    signal(child.id(), libc::SIGTERM);
+    signal(child.id(), sig::TERM);
     let deadline = Instant::now() + STOP_TIMEOUT;
     while Instant::now() < deadline {
         if matches!(child.try_wait(), Ok(Some(_))) {
@@ -356,7 +456,7 @@ async fn terminate_child(mut child: Child) -> bool {
 
 /// Ask a daemon this app didn't start to quit; force it if it doesn't.
 async fn terminate_pid(pid: u32) -> bool {
-    if !signal(pid, libc::SIGTERM) {
+    if !signal(pid, sig::TERM) {
         return !alive(pid);
     }
     let deadline = Instant::now() + STOP_TIMEOUT;
@@ -366,7 +466,7 @@ async fn terminate_pid(pid: u32) -> bool {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    signal(pid, libc::SIGKILL);
+    signal(pid, sig::KILL);
     for _ in 0..10 {
         if !alive(pid) {
             return true;
@@ -398,15 +498,24 @@ pub async fn ensure(app: &AppHandle, args: &[String]) -> Result<Endpoint, String
     let _one_at_a_time = state.lock.lock().await;
     if let Some(info) = running(app) {
         let bundled = bundled_version(app);
-        if !outdated(info.version.as_deref(), info.keep_alive, bundled.as_deref()) {
+        let old = outdated(info.version.as_deref(), info.keep_alive, bundled.as_deref());
+        let left = !old && orphaned(info.keep_alive, parent_of(info.pid));
+        if !old && !left {
             return Ok(info.into());
         }
-        // After an update: the screens reconnect to the new one by themselves.
-        eprintln!(
-            "beluga: replacing Beluga {} with this app's {}",
-            info.version.as_deref().unwrap_or("?"),
-            bundled.as_deref().unwrap_or("?")
-        );
+        // After an update, or an app that's gone: the screens reconnect to the new one by themselves.
+        if left {
+            eprintln!(
+                "beluga: replacing the Beluga a closed app left running (pid {})",
+                info.pid
+            );
+        } else {
+            eprintln!(
+                "beluga: replacing Beluga {} with this app's {}",
+                info.version.as_deref().unwrap_or("?"),
+                bundled.as_deref().unwrap_or("?")
+            );
+        }
         stop_running(app).await?;
     }
     start(app, args).await
@@ -454,7 +563,7 @@ pub fn stop(app: &AppHandle) {
     let Some(mut child) = locked(&state.child).take() else {
         return;
     };
-    signal(child.id(), libc::SIGTERM);
+    signal(child.id(), sig::TERM);
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
         if matches!(child.try_wait(), Ok(Some(_))) {
@@ -516,6 +625,24 @@ mod tests {
         // Development (nothing bundled), or a daemon that doesn't say.
         assert!(!outdated(Some("0.4.0"), true, None));
         assert!(!outdated(None, true, Some("0.5.0")));
+    }
+
+    #[test]
+    fn replaces_a_kept_alive_daemon_whose_app_is_gone() {
+        assert!(orphaned(true, Some(1)));
+        // Its app still runs, or we couldn't tell.
+        assert!(!orphaned(true, Some(4730)));
+        assert!(!orphaned(true, None));
+        // A daemon started by hand stays, even under launchd.
+        assert!(!orphaned(false, Some(1)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tells_a_process_parent() {
+        let me = std::process::id();
+        assert_eq!(parent_of(me), Some(std::os::unix::process::parent_id()));
+        assert_eq!(parent_of(u32::MAX), None);
     }
 
     #[test]

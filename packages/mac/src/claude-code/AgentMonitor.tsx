@@ -42,7 +42,7 @@ function Steer({ sub, parent, leadName }: { sub: SubAgent; parent: Workspace | u
     void client.api.session.submit(steerPrompt(sub.agent, body), { channel: `ws:${parent.id}` }).then(
       () => {
         setText('');
-        setSent(`Sent to ${lead}’s Claude: it passes it on.`);
+        setSent(`Sent to ${lead}’s agent: it passes it on.`);
       },
       () => setSent('Couldn’t reach that conversation. Try again.'),
     );
@@ -62,8 +62,8 @@ function Steer({ sub, parent, leadName }: { sub: SubAgent; parent: Workspace | u
           className={`${m.steerInput} selectable`}
           rows={1}
           value={text}
-          placeholder={`Tell ${lead}’s Claude something for this agent…`}
-          aria-label={`Tell ${lead}’s Claude something for this agent`}
+          placeholder={`Tell ${lead}’s main agent something for this one…`}
+          aria-label={`Tell ${lead}’s main agent something for this one`}
           onChange={(e) => {
             setText(e.target.value);
             setSent(undefined);
@@ -76,13 +76,13 @@ function Steer({ sub, parent, leadName }: { sub: SubAgent; parent: Workspace | u
             send();
           }}
         />
-        <Tip label={`Your main Claude in ${lead} gets it and passes it on with SendMessage`} keys={prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`}>
+        <Tip label={`The main agent in ${lead} gets it and passes it on with SendMessage`} keys={prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`}>
           <Button size="small" variant={text.trim() ? 'primary' : 'plain'} icon="send" disabled={!text.trim()} onClick={send}>
-            Send to Main Claude
+            Send to Main Agent
           </Button>
         </Tip>
       </div>
-      <div className={m.steerHint}>{sent ?? `You steer it through ${lead}’s Claude, which started it. Its answer shows in that chat.`}</div>
+      <div className={m.steerHint}>{sent ?? `You steer it through ${lead}’s agent, which started it. Its answer shows in that chat.`}</div>
     </div>
   );
 }

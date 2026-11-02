@@ -71,7 +71,7 @@
 }
 .metaMerged {
   flex: none;
-  color: var(--ok);
+  color: var(--merged);
 }
 .ellipsis {
   min-width: 0;
@@ -102,6 +102,20 @@
   gap: 2px;
   flex: 0 1 auto;
   min-width: 0;
+}
+.right > :not(.extra) {
+  flex: none;
+}
+/* Room around the buttons for their focus rings, so the clip only cuts what really doesn't fit. */
+.extra {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  padding: 4px;
+  margin: -4px -2px -4px -4px;
 }
 .primaryWrap {
   display: inline-flex;

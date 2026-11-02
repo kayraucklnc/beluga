@@ -153,3 +153,14 @@
   border-radius: 4px;
   box-shadow: var(--shadow-pop);
 }
+
+/* Whose folders follow, at the top of Files. */
+.group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+}

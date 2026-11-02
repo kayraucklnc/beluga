@@ -1,6 +1,7 @@
 import { rmSync } from 'node:fs';
+import type { FoundConversation } from '../agent/runtime/claude/claude-sessions.js';
 import type { ConversationSummary } from '../agent/transcript.js';
-import type { WorktreeCreator } from '../agent/worktree-creators.js';
+import type { WorktreeCreator } from '../agent/runtime/claude/worktree-creators.js';
 import type { ConductorWorkspace } from '../workspaces/conductor.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import { type OriginInfo, type WorktreeSource, describeOrigin, sourceFromPath } from '../workspaces/origin.js';
@@ -16,6 +17,8 @@ import type { Project, Workspace } from '../workspaces/types.js';
 /** Reads other tools' data (Claude Code transcripts, Conductor's database). Omitted in the demo and tests. */
 export interface OtherTools {
   conversations(dir: string): Promise<readonly ConversationSummary[]>;
+  /** Those that ran in a folder or any folder inside it (BLG-321). */
+  conversationsUnder(dir: string): Promise<readonly FoundConversation[]>;
   conductor(): Promise<readonly ConductorWorkspace[]>;
   creators(paths: readonly string[], since: number): Promise<ReadonlyMap<string, WorktreeCreator>>;
 }

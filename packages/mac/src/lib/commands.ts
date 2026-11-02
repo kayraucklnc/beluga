@@ -8,6 +8,8 @@ import type { Workspace } from '@beluga/workspaces/types.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import type { Actions } from './actions.js';
 import type { UiStore } from './beluga.js';
+import { convoModeOf, terminalCapable, toggledMode, withConvoMode } from './convo-mode.js';
+import { getPrefs, setPrefs } from './prefs.js';
 
 /**
  * The window's commands that the menu bar, the keyboard and the buttons share: what each does,
@@ -39,6 +41,7 @@ export const COMMAND_IDS = [
   'conv-find-prev',
   'conv-copy',
   'conv-clear',
+  'conv-terminal',
   'ws-commit',
   'ws-pr',
   'ws-merge',
@@ -51,24 +54,6 @@ export const COMMAND_IDS = [
   'ws-prev',
 ] as const;
 export type CommandId = (typeof COMMAND_IDS)[number];
-
-/** Shortcuts as the menu bar shows them (the same keys work in the window, see useCommandKeys). */
-export const COMMAND_KEYS: Partial<Record<CommandId, string>> = {
-  'conv-stop': '⌘.',
-  'conv-plan': '⌥⌘P',
-  'conv-find': '⌘F',
-  'conv-find-next': '⌘G',
-  'conv-find-prev': '⇧⌘G',
-  'conv-clear': '⇧⌘K',
-  'ws-commit': '⇧⌘C',
-  'ws-pr': '⇧⌘P',
-  'ws-merge': '⇧⌘M',
-  'ws-run': '⌘R',
-  'ws-review': '⇧⌘R',
-  'ws-archive': '⌃⌘A',
-  'ws-next': '⌥⌘↓',
-  'ws-prev': '⌥⌘↑',
-};
 
 /** The workspace action behind each workspace command (its toolbar button). */
 const WS_ACTION: Partial<Record<CommandId, WorkspaceAction>> = {
@@ -105,7 +90,7 @@ export function claudeWorkingIn(state: AppState, channel: string): boolean {
 /** The conversation itself is showing (not a workspace's Files, Diff or Terminal tab). */
 const chatShowing = (state: AppState): boolean => {
   const v = state.view;
-  return v.kind === 'room' || v.kind === 'draft' || v.kind === 'draft_worktree' || ((v.kind === 'workspace' || v.kind === 'shared') && v.tab === 'chat');
+  return v.kind === 'room' || v.kind === 'assistant' || v.kind === 'draft' || v.kind === 'draft_worktree' || ((v.kind === 'workspace' || v.kind === 'shared') && v.tab === 'chat');
 };
 
 /** A workspace's run script is running. */
@@ -127,8 +112,8 @@ export function commandState(state: AppState, id: CommandId): CommandState {
   const ws = currentWorkspace(state);
   switch (id) {
     case 'conv-stop':
-      if (!channel || channel === 'draft') return OFF('Open a conversation where Claude is working');
-      return claudeWorkingIn(state, channel) ? ON : OFF("Your Claude isn't working here");
+      if (!channel || channel === 'draft') return OFF('Open a conversation where your agent is working');
+      return claudeWorkingIn(state, channel) ? ON : OFF("Your agent isn't working here");
     case 'conv-plan':
       if (!channel || channel === 'draft' || state.view.kind === 'shared') return OFF('Plan mode is for your own conversations');
       if (isPlanHome(state.plans, channel)) return OFF('A plan’s own conversation has no plan mode: the plan is its plan');
@@ -137,8 +122,13 @@ export function commandState(state: AppState, id: CommandId): CommandState {
     case 'conv-find-next':
     case 'conv-find-prev':
       return chatShowing(state) && state.view.kind !== 'draft' && state.view.kind !== 'draft_worktree' ? ON : OFF('Open a conversation to find in it');
+    case 'conv-terminal': {
+      const w = currentWorkspace(state);
+      if (!getPrefs().termView) return OFF('Turn on the terminal view in Settings › Terminal');
+      return w && terminalCapable(state, w.id) ? { enabled: true, checked: convoModeOf(getPrefs().convoModes, getPrefs().convoDefault, w.id) !== 'chat' } : OFF('Open a worktree or a chat on Claude Code to see it as a terminal');
+    }
     case 'conv-copy':
-      return state.log.some((l) => l.type === 'agent' && l.status === 'done') ? ON : OFF('No Claude answer to copy yet');
+      return state.log.some((l) => l.type === 'agent' && l.status === 'done') ? ON : OFF('No answer to copy yet');
     case 'conv-clear':
       return channel && channel !== 'draft' && state.view.kind !== 'shared' ? ON : OFF('Open a conversation to clear it');
     case 'ws-next':
@@ -185,7 +175,7 @@ export function stopClaude({ client, ui }: CommandCtx, channel: string): void {
       ui.patch({ buffer, cursor: buffer.length });
       document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
     },
-    (err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't stop Claude: ${errorText(err)}`, level: 'error' }),
+    (err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't stop the agent: ${errorText(err)}`, level: 'error' }),
   );
 }
 
@@ -231,6 +221,10 @@ export function runCommand(ctx: CommandCtx, id: CommandId): void {
     case 'conv-find-prev':
       document.dispatchEvent(new CustomEvent('beluga:find-step', { detail: id === 'conv-find-next' ? 1 : -1 }));
       return;
+    case 'conv-terminal':
+      // Chat ⇄ Terminal (Both goes back to the chat), BLG-534.
+      if (ws) setPrefs({ convoModes: withConvoMode(getPrefs().convoModes, ws.id, toggledMode(convoModeOf(getPrefs().convoModes, getPrefs().convoDefault, ws.id))) });
+      return;
     case 'conv-copy':
       void client.api.session.copyLastAnswer();
       return;
@@ -251,28 +245,4 @@ export function runCommand(ctx: CommandCtx, id: CommandId): void {
       actions.run({ type: 'ws', id: ws.id, action: solve ? 'merge_claude' : action });
     }
   }
-}
-
-/** Which key press is which command (the menu bar shows the same keys). */
-export function commandForKey(e: KeyboardEvent): CommandId | undefined {
-  // ⌘ only: ⌃R, ⌃G… belong to the shell in a terminal.
-  if (!e.metaKey) return undefined;
-  const k = e.key.toLowerCase();
-  if (e.ctrlKey) return !e.altKey && !e.shiftKey && e.code === 'KeyA' ? 'ws-archive' : undefined;
-  if (e.altKey && !e.shiftKey && e.code === 'KeyP') return 'conv-plan';
-  if (e.altKey && e.key === 'ArrowDown') return 'ws-next';
-  if (e.altKey && e.key === 'ArrowUp') return 'ws-prev';
-  if (e.altKey) return undefined;
-  if (!e.shiftKey && e.key === '.') return 'conv-stop';
-  if (!e.shiftKey && k === 'f') return 'conv-find';
-  if (k === 'g') return e.shiftKey ? 'conv-find-prev' : 'conv-find-next';
-  if (!e.shiftKey && k === 'r') return 'ws-run';
-  if (e.shiftKey) {
-    if (k === 'c') return 'ws-commit';
-    if (k === 'p') return 'ws-pr';
-    if (k === 'm') return 'ws-merge';
-    if (k === 'r') return 'ws-review';
-    if (k === 'k') return 'conv-clear';
-  }
-  return undefined;
 }

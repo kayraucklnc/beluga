@@ -14,7 +14,7 @@ import s from './popup.module.css';
 
 const KIND_ICON = { ask: 'claude', run: 'terminal', file: 'file' } as const;
 const NEED_ICON = { question: 'claude', decision: 'hand', plan: 'wand', approval: 'lock', milestone: 'flag' } as const;
-const NEED_LEAD = { question: 'Claude asks you', decision: 'Your call', plan: 'Claude has a plan', approval: 'Claude needs your OK', milestone: 'Ready for you' } as const;
+const NEED_LEAD = { question: 'Your agent asks', decision: 'Your call', plan: 'Your agent has a plan', approval: 'Your agent needs your OK', milestone: 'Ready for you' } as const;
 
 /**
  * Your own Claude (or a plan) needs you: what, where, and Open, which takes you there in Beluga
@@ -60,17 +60,18 @@ function Card({ r, act }: { r: PopupRequest; act: (action: RequestAction, r: Pop
     setTimeout(() => setBusy(false), 4000);
   };
   return (
-    <article className={s.card} data-testid="request-popup-card" aria-label={`${popupWho(r)} wants to ${r.gist}`}>
+    <article className={s.card} data-testid="request-popup-card" aria-label={r.secret ? `${popupWho(r)} wants ${r.secret}` : `${popupWho(r)} wants to ${r.gist}`}>
       <header className={s.head}>
         <Avatar name={r.peerName} id={r.peerId} claude={r.claude} size={30} />
         <div className={s.headText}>
           <div className={s.who}>
-            <strong>{popupWho(r)}</strong> wants to
+            <strong>{popupWho(r)}</strong> {r.secret ? 'wants' : 'wants to'}
           </div>
           <div className={s.gist}>
-            <Icon name={KIND_ICON[r.kind]} size={13} />
-            <span>{r.gist}</span>
+            <Icon name={r.secret ? 'lock' : KIND_ICON[r.kind]} size={13} />
+            <span>{r.secret ?? r.gist}</span>
           </div>
+          {r.secret ? <div className={s.said}>A secret: you’re asked each time, and only this one file goes.</div> : null}
           {r.said ? <div className={s.said}>{r.said}</div> : null}
         </div>
       </header>
@@ -89,7 +90,7 @@ function Card({ r, act }: { r: PopupRequest; act: (action: RequestAction, r: Pop
       </button>
       {more ? (
         <div className={s.detail} data-testid="request-popup-detail">
-          <div className={s.label}>{r.kind === 'ask' ? `What ${popupWho(r)} sends your Claude` : r.kind === 'run' ? 'The command' : 'The file'}</div>
+          <div className={s.label}>{r.kind === 'ask' ? `What ${popupWho(r)} sends your agent` : r.kind === 'run' ? 'The command' : 'The file'}</div>
           <pre className={s.full}>{r.full}</pre>
           <dl className={s.facts}>
             <dt>Where</dt>

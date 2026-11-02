@@ -8,26 +8,27 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 
 | Command | Core | Mac |
 |---|---|---|
-| `/invite` | `session.submit` → `runCommand` | typed in the composer · Sidebar footer Invite · File › Invite… · ⌘K |
-| `/overview` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Overview · Go › Overview (⌥2) |
-| `/room` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Chat (⌥1) |
+| `/invite` | the Mac's message boxes route it themselves (`src/shared/invite-route.ts`, `lib/invite-command.ts`); elsewhere `session.submit` → `runCommand` | `/invite` alone: the Add a Friend sheet (link, code, QR) · `/invite @ata` adds ata to what's on screen: a channel (`network.groups.addMember`), a DM (offers “New channel with you, X and Y”, the New Channel sheet), a project or worktree (`sharing.shareWithFriend` once it exists, through `lib/share-with-friend.ts`; until then a friend in your room gets the worktree through the room, otherwise the room's share sheet opens with a note) · `/invite @` completes your friends' names, in the chat box and in a DM's or channel's box · Sidebar footer Invite · File › Invite… · ⌘K › Add a friend… (one entry for inviting and adding a friend) |
+| `/overview` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Overview · Go › Overview (⌘1) |
+| `/room` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Chat (⌘3) |
 | `/new` | `session.submit` → `runCommand` | typed in the composer · Sidebar project ⌥ button · File › New Worktree… (⌘⇧N) · ⌘K · empty Overview / chat › New Worktree |
-| `/chat` | `session.submit` → `runCommand` | typed in the composer · Sidebar + · File › New Chat (⌘N) |
+| `/chat` | `session.submit` → `runCommand` | typed in the composer · Sidebar project + · File › New Chat (⌘N: in a project, a new chat on its main folder; elsewhere a chat of its own) · ⌘K › New chat in … |
 | `/review` | `session.submit` → `runCommand` | typed in the composer · the right panel's Changes tab (⌥⌘1; a diff opens in full with ⌘↩) |
 | `/pr` | `session.submit` → `runCommand` | typed in the composer · Toolbar PR · ⌘K |
 | `/run` | `session.submit` → `runCommand` | typed in the composer · Toolbar Run (shows the terminal, keeps the keyboard in the message box) · the panel's Terminal tab ▶ · person sheet “Run a command…” |
-| `/terminal` | `session.submit` → `runCommand` | typed in the composer · the right panel's Terminal tab (⌥⌘3) or the drawer under the chat (⌘J, Settings › Terminal picks which) · Go › Terminal (⌥6) |
+| `/terminal` | `session.submit` → `runCommand` | typed in the composer · the right panel's Terminal tab (⌥⌘3) or the drawer under the chat (⌘J, Settings › Terminal picks which) · Go › Terminal (⌘6) |
 | `/setup` | `session.submit` → `runCommand` | typed in the composer · the panel terminal's Commands… |
 | `/handoff` | `session.submit` → `runCommand` | typed in the composer · Toolbar ⋯ › Hand off |
-| `/model` | `session.submit` → `runCommand` | typed in the composer · Composer model picker |
+| `/model` | `session.submit` → `runCommand` | typed in the composer (`/model codex:gpt-5` picks another agent: a live conversation is handed off) · Composer agent picker (runtimes as groups, BLG-446) |
 | `/search` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Search · ⌘⇧F |
-| `/usage` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Usage (⌥5) |
+| `/usage` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Usage (⌘5) |
 | `/inbox` | `session.submit` → `runCommand` | typed in the composer · toolbar bell (notification centre) · the right panel's Info › Notifications · Go › Inbox · ⌘K › Notifications |
 | `/template` | `session.submit` → `runCommand` | typed in the composer · Palette › Start from a template… |
 | `/shell` | `session.submit` → `runCommand` (`/shell fish`, `default`, `login on\|off`, `args …`) | typed in the composer · Settings › Terminal › Shell |
 | `/env` | `session.submit` → `runCommand` (`/env KEY=value`, `KEY=` removes, `project KEY=value`) | typed in the composer · Settings › Environment |
+| `/btw` | the Mac's composer calls `session.btw` itself (the answer shows above the box, never in the chat); elsewhere `session.submit` → `runCommand` | typed in the composer: `/btw ` turns the box into a side question, ↩ asks · the answer card's ✕ or esc closes it (`session.btwDismiss`) |
 | `/compact` | `session.submit` → `runCommand` | typed in the composer · Toolbar ⋯ › Compact |
-| `/visualize` | `session.submit` → `runCommand` (`/graph` too): your words in the chat, Claude asked for a `beluga-graph` | typed in the composer · ⌘K › Draw This as a Graph; the graph is drawn (docs/graphs.md) |
+| `/visualize` | `session.submit` → `runCommand` (`/graph` too): your words in the chat, the agent asked for a `beluga-graph` | typed in the composer · ⌘K › Draw This as a Graph; the graph is drawn (docs/graphs.md) |
 | `/merge` | `session.submit` → `runCommand` | typed in the composer · Toolbar Merge (the main button when ready) · Workspace › Merge (⇧⌘M) |
 | `/commit` | `session.submit` → `runCommand` | typed in the composer · Toolbar Commit · Workspace › Commit (⇧⌘C) |
 | `/fork` | `session.submit` → `runCommand` | typed in the composer · Toolbar ⋯ › Fork |
@@ -39,14 +40,14 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/copy` | `session.submit` → `runCommand` | typed in the composer · Hover on an answer › Copy · ⌘K |
 | `/follow` | `session.submit` → `runCommand` | typed in the composer · Person sheet › Follow |
 | `/unfollow` | `session.submit` → `runCommand` | typed in the composer · Person sheet › Stop following |
-| `/open` | `session.submit` → `runCommand` | typed in the composer · Shared files · links in chat |
+| `/open` | `session.submit` → `runCommand` | typed in the composer · Files · links in chat |
 | `/get` | `session.submit` → `runCommand` | typed in the composer · Viewer › Download |
 | `/close` | `session.submit` → `runCommand` | typed in the composer · Viewer › Close |
-| `/stop` | `session.submit` → `runCommand` | typed in the composer · ⌘K › Stop your Claude everywhere (stopping in one conversation: `host.stopRun`, Mac only) |
+| `/stop` | `session.submit` → `runCommand` | typed in the composer · ⌘K › Stop your agent everywhere (stopping in one conversation: `host.stopRun`, Mac only) |
 | `/policy` | `session.submit` → `runCommand` | typed in the composer · Settings › General |
-| `/trust` | `session.submit` → `runCommand` | typed in the composer · Trust card · person sheet · Settings › People |
-| `/untrust` | `session.submit` → `runCommand` | typed in the composer · Person sheet |
-| `/people` | `session.submit` → `runCommand` | typed in the composer · Sidebar › People |
+| `/trust` | `session.submit` → `runCommand` | typed in the composer · a friend's card (their conversation › Info › Trust, the one place it's set) · the room's new-person trust card · a request's “Trust them instead” |
+| `/untrust` | `session.submit` → `runCommand` | typed in the composer · a friend's card › Trust |
+| `/people` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Friends (your room's people are friend rows, or Not friends yet) · the room popover in the sidebar footer |
 | `/share` | `session.submit` → `runCommand` | typed in the composer · File › Share a Folder… |
 | `/unshare` | `session.submit` → `runCommand` | typed in the composer · Share a Folder… › Stop sharing |
 | `/settings` | `session.submit` → `runCommand` | typed in the composer · Beluga › Settings… (⌘,) |
@@ -58,14 +59,14 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/remove` | `session.submit` → `runCommand` | typed in the composer · Person sheet › Remove |
 | `/newlink` | `session.submit` → `runCommand` | typed in the composer · Settings › People › New link |
 | `/lock` | `session.submit` → `runCommand` | typed in the composer · Settings › People › Take new people |
-| `/help` | `session.submit` → `runCommand` | typed in the composer · Help › Keys and Commands · ⌘K |
+| `/help` | `session.submit` → `runCommand` | typed in the composer · ⌘K (Help › Keys and Commands opens Settings › Keyboard) |
 | `/quit` | `session.submit` → `runCommand` | typed in the composer · Beluga › Quit (⌘Q) · tray |
 
 ## UI actions (`UiAction`, in `src/ui/workspace-models.ts`)
 
 | Action | Mac |
 |---|---|
-| `open_ws` | click (`runUiActionWith`) |
+| `open_ws` | click (`runUiActionWith`); a project's main checkout opens its home instead (or the chat its old conversation became) |
 | `toggle_project` | click (`runUiActionWith`) |
 | `toggle_fold` | click (`runUiActionWith`) |
 | `agents_menu` | click (`runUiActionWith`) |
@@ -74,7 +75,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `project_menu` | click (`runUiActionWith`) |
 | `archived_menu` | click (`runUiActionWith`) |
 | `new_worktree` | click (`runUiActionWith`) |
-| `new_chat` | click (`runUiActionWith`) |
+| `new_chat` | click (`runUiActionWith`): a new, separate chat every time (in a project, on its main folder) |
 | `add_project` | click (`runUiActionWith`) |
 | `view` | click (`runUiActionWith`) |
 | `close_tab` | click (`runUiActionWith`) |
@@ -110,7 +111,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `settings` | Settings window |
 | `model` | model picker / sheet |
 | `inbox` | notification centre under the toolbar bell: the same filters and groups, click to go there, hover for read/unread and ×, Mark all read, Clear all |
-| `person` | a card beside the person's row (centred from the palette): trust as a segmented control, Message / Ask Claude / Run / Follow / Files buttons, Remove with an alert; your own row is your account card (name, who may use your Claude). Right-click: Trust submenu and the same actions |
+| `person` | the room card (`RoomPeerCard`), beside their row in Friends (a friend in your room, or Not friends yet) or the room popover's people: Message / Ask Your Agent / Run / Follow / Files buttons, their trust as a line with “Change in their card…” (a friend: their conversation's Info, the one place trust is set) or “Add as a friend”, Remove with an alert; you are your account card (name, who may use your agent), from the room popover. Right-click: Trust (read-only), Change in Their Card… / Add as Friend, and the same actions |
 | `confirm` | sheet |
 | `project` | sheet and right-click menu |
 | `archived` | sheet and right-click menu |
@@ -119,7 +120,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `shared` | sheet (Chat / Files / Changes, who's in it, Leave… with an alert; the people button on its toolbar) and right-click menu |
 | `clear` | sheet |
 | `invite_person` | sheet: workspaces with Invite buttons, Work here / Follow |
-| `share_folder` | Share a Folder sheet: the Open panel (or a path), your projects, who sees it (everyone or only some people), Claude may edit, what you share now with Stop Sharing |
+| `share_folder` | Share a Folder sheet: the Open panel (or a path), your projects, who sees it (everyone or only some people), the agent may edit, what you share now with Stop Sharing |
 | `share_who` | the Share a Folder sheet with the folder filled in |
 | `pr` | sheet |
 | `scripts` | sheet |
@@ -127,7 +128,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `handoff` | sheet |
 | `remote_ws` | sheet |
 | `ws_more` | sheet |
-| `invite_link` | Invite People sheet: Invite to popup, They can (Watch / Prompt / Edit), link checkboxes, Copy Invite Link (Return, says Copied), how they join, people waiting, active links with Copy and Revoke |
+| `invite_link` | Invite People sheet (the room's own links: the room popover's Invite, the room panel, Hand Off's “invite someone”; `/invite` and File › Invite… add a friend instead): Invite to popup, They can (Watch / Prompt / Edit), link checkboxes, Copy Invite Link (Return, says Copied), how they join, people waiting, active links with Copy and Revoke |
 | `guest_add` | the guest's card: Add ▾ beside the projects they're in |
 
 ## API methods
@@ -141,6 +142,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `session.setPrefs` | ✓ |
 | `session.setPlanMode` | ✓ |
 | `session.compact` | ✓ (context meter › Compact now) |
+| `session.btw` | ✓ (`/btw` in the composer: the side-question card above the box) |
+| `session.btwDismiss` | ✓ (the side-question card's ✕, or esc) |
 | `session.setClaudeSharing` | ✓ |
 | `session.rename` | ✓ |
 | `session.zoom` | ✓ |
@@ -163,8 +166,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `host.answerApproval` | ✓ |
 | `host.promote` | ✓ |
 | `host.sendNext` | ✓ Send Now on a queued message (runs it next, never interrupting) |
-| `host.steerNow` | ✓ Send now on a steered message Claude hasn't read yet · ⇧⌥↩ (stops its step, your message is next) |
-| `host.stopRun` | ■ Stop beside Queue/Steer · ⌘. · Conversation › Stop Claude · Stop on a running answer |
+| `host.steerNow` | ✓ Send now on a steered message the agent hasn't read yet · ⇧⌥↩ (stops its step, your message is next) |
+| `host.stopRun` | ■ Stop beside Queue/Steer · ⌘. · Conversation › Stop the Agent · Stop on a running answer |
 | `host.cancelQueued` | ✓ |
 | `host.reorderQueued` | ✓ queue tray ↑ ↓ |
 | `inbox.read` | ✓ |
@@ -174,10 +177,19 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `questions.pick` | ✓ |
 | `people.setTrust` | ✓ |
 | `people.dismissPrompt` | ✓ |
+| `needs.dismiss` | ✓ Dismiss in a waiting item's right-click menu (the bell's Waiting for you); on the phone, Dismiss on a needs-you card |
 | `people.forget` | ✓ |
 | `sharing.invite` | ✓ |
 | `sharing.remove` | ✓ |
 | `sharing.leave` | ✓ |
+| `sharing.shareWithFriend` | ✓ project ••• › Share with… (pick friends and a role) · `/invite @friend` in a project or worktree · a team project's conversation ••• › Share with Team ▸ (a teammate, or Everyone on the Team: that one worktree, live) |
+| `sharing.unshareFriend` | ✓ Share with… › No access · a team project's conversation ••• › Stop Sharing (or untick a teammate under Share with Team ▸) |
+| `sharing.leaveProject` | ✓ a shared project's ••• › Leave Project |
+| `sharing.copyProject` | ✓ a shared project's ••• › Copy to This Mac Again (it copies by itself when shared whole) |
+| `sharing.scratch` | ✓ a friend's worktree's Scratch tab |
+| `sharing.earlier` | ✓ scrolling back in a friend's worktree |
+| `sharing.runHere` | ✓ a friend's worktree's "Runs on" chip › This Mac |
+| `sharing.fork` | ✓ a friend's worktree's header › Fork to My Mac (a sheet: what comes over, what stays behind, a name), then Open My Fork |
 | `invites.create` | ✓ |
 | `invites.revoke` | ✓ |
 | `invites.copyLink` | ✓ |
@@ -201,10 +213,11 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `files.downloadSpec` | ✓ |
 | `files.closeViewer` | ✓ |
 | `files.readImage` | ✓ |
-| `files.readImageFile` | ✓ images in the Markdown reader (`![](diagram.png)` next to the file); PDFs drawn page by page in Files, Changes and the reader |
-| `workspaces.scratch` | ✓ the panel's Scratch tab: the workspace's `.beluga/scratch/` and `.context/` folders, newest first, live; the preview shows the newest until you pick one, and a file scrolled to its end (or Follow the End) follows what's written to it; drawn in outline (moving while Claude works) until something lands |
+| `files.readImageFile` | ✓ images in the Markdown reader (`![](diagram.png)` next to the file); PDFs drawn page by page in Files, Changes and the reader; videos (MP4, M4V, MOV, WebM, up to 64 MB) played inline in the reader with play, pause and seek |
+| `workspaces.scratch` | ✓ the panel's Scratch tab: the workspace's `.beluga/scratch/` and `.context/` folders, newest first, live; the preview shows the newest until you pick one, and a file scrolled to its end (or Follow the End) follows what's written to it; drawn in outline (moving while the agent works) until something lands; the sort menu puts what can be looked at first (pictures, videos, PDFs, web pages; BLG-111), web pages are drawn in a sandboxed frame (no scripts), and full size ← → steps through the viewable files in that order, stopping at the ends |
 | `files.read` | ✓ a changed file as itself in Changes (Markdown formatted), without moving the Files tab's open file |
 | `files.searchContent` | ✓ the Files tab's search box on Contents: lines by file (ripgrep, else Node), Match Case / Whole Word / Regular Expression; a line opens the file there |
+| `files.searchNames` | ✓ the Files tab's search box on Names: every file in the folder whose path matches (ripgrep's list, else git's), Match Case / Whole Word / Regular Expression; shown as a tree, a file opens |
 | `files.save` | ✓ Edit in a file's header (files open read-only), then Save or ⌘S; asks before overwriting a change made since |
 | `files.formatter` | ✓ whether a file's Format button is on (the project's Prettier), and why not in its tooltip |
 | `files.format` | ✓ Format (the wand) in a file's header: the project's Prettier lays out the text you're editing (Save writes it) |
@@ -212,21 +225,58 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.pair.approve` | ✓ the Phone popover's “Pair Kayra's Pixel 9?” with the four-picture fingerprint › Pair |
 | `companion.pair.cancel` | ✓ the Phone popover's Cancel while a pairing is open (a waiting phone hears no) |
 | `companion.devices.remove` | ✓ the Phone popover › a phone › Remove (its link drops at once, its key is refused from then on) |
+| `companion.phone.use` | ✓ Settings › Phone › Let your agent use this phone: Off · Ask each time · Use · Full (BLG-150) |
+| `companion.phone.pairAdb` | ✓ Settings › Phone › Connect, once the phone shows a Wireless-debugging pairing code (runs `adb pair`) |
+| `companion.phone.wifi` | ✓ Settings › Phone › Over Wi‑Fi: Use over Wi‑Fi while the phone is on a cable (turns on its Wireless debugging, reached through the link), or Turn Off (BLG-187) |
+| `companion.phone.setUpLink` | ✓ Settings › Phone › Beluga Link › Set Up Beluga Link, while the phone lacks Link and adb reaches it (a cable or Wireless debugging): installs it and turns on its Accessibility (BLG-391) |
+| `companion.phone.pairCable` | ✓ Settings › Phone › On the cable › Pair over the Cable, when Beluga is on the plugged-in phone but it isn't paired with this Mac (BLG-190) |
+| `companion.phone.settings` | ✓ Settings › Phone › On the cable › Open on the Phone, while USB debugging is off: the phone shows its Developer options, or About phone (BLG-190) |
+| `companion.phone.act` | ✓ the Your phone page's live mirror (full size, from the Phone tab’s ⤢ in Your Mac’s panel, BLG-196, BLG-292): click to tap, drag to swipe, the hardware-key buttons, the type line (BLG-171) |
+| `companion.phone.macros` | ✓ the Your phone page's Macros strip: the saved flows (BLG-175) |
+| `companion.phone.macroRun` | ✓ the Your phone page's Macros strip › Run |
+| `companion.phone.macroDelete` | ✓ the Your phone page's Macros strip › a macro's × |
 | `companion.older` | – the phone only: older turns of a conversation (or messages of a chat) as you scroll up (docs/companion.md) |
-| `companion.ask` | – the phone only: Ask your Mac (a new chat in a project, as New Chat does, or a message in a conversation), with photos and files the phone sent (`put`) |
+| `companion.ask` | – the phone only: Ask your Mac (a question in a project, as New Chat does, or a message in a conversation, Your Mac's `conv:mac:assistant` included), with photos and files the phone sent (`put`) |
 | `companion.post` | – the phone only: a message in a friends' chat with files from the phone |
-| `companion.askPerson` | – the phone only: ask a friend's Claude yourself, as from their card in Requests (their approval and trust rules apply) |
+| `companion.askPerson` | – the phone only: ask a friend's agent yourself, as from their card in Requests (their approval and trust rules apply) |
+| `companion.keepAwake` | Settings › Phone › Keep this Mac awake (the phone's Settings has the same switch) |
+| `companion.defaultAgent` | Usage › a provider's card › Make default (the phone's usage cards have the same chip) |
 | `companion.signOut` | – the phone only: Sign Out removes that phone's own certificate (the Mac's Remove is `companion.devices.remove`) |
+| `companion.openOnMac` | – the phone only: ••• › Open on your Mac brings this window to the front on that conversation, plan or task (the window's `raise` capability and a navigate intent) |
+| `companion.icon` | – the phone only: a project's icon, small, by the checksum its views carry (the Mac shows `projects.icon`) |
+| `companion.mergeCheck` | – the phone only: the Merge sheet's checks (the Mac's own: `git.mergePreview` and its review) |
+| `companion.merge` | – the phone only: Merge from a worktree's •••, the Mac's own merge (`workspaces.merge`), its progress in the conversation |
+| `companion.resolve` | – the phone only: Ask Your Agent to resolve, as the Mac's Solve merge conflict (`workspaces.askClaudeToMerge`) |
+| `companion.branchStep` | – the phone only: the branch band's steps in a worktree's conversation (Archive, Continue After Merge, Squash and Merge, Fix with Your Agent…), as the Mac's toolbar branch control does them |
+| `companion.viewFetch` | – the phone only: a live view's rows in a conversation, run here as `view.fetch` runs them for the window |
+| `companion.draftTask` | – the phone only: New task by describing it, the agent's draft shown before it's added (the Mac's describe-to-create is `board.create`) |
+| `companion.addTask` | – the phone only: the draft added as a task |
+| `companion.files.list` | – the phone only: a worktree's folder, read-only, through the companion's file gate (the Mac's Files tab reads the folder itself) |
+| `companion.files.find` | – the phone only: a worktree's files by name (the Mac's Files tab filters its tree) |
+| `companion.files.read` | – the phone only: a page of a worktree's file, read-only, secrets refused |
+| `companion.terminals` | – the phone only: a worktree's terminals, as the terminal dock's tabs list them |
+| `companion.termOpen` | – the phone only: a worktree's shell (or a new one) for the phone to stream, the session the dock shows (`terminals.shell`, `terminals.global`) |
+| `companion.termClose` | – the phone only: ends a worktree's terminal for every screen, as the dock's × (`terminals.close`) |
+| `companion.subAgent` | – the phone only: a sub-agent's sheet, its activity in words and the report it gave back (the Mac's sub-agent page reads its transcript itself) |
+| `companion.gone` | – the phone only: which conversations it saved files from were archived or deleted on the Mac, so it removes those files (the Mac archives and deletes them itself) |
+| `companion.voice` | – the phone only: Settings › Voice, which of the Mac's voice models are here or coming (the Mac app has no microphone) |
+| `companion.voicePrepare` | – the phone only: Settings › Voice, get a model on the Mac now |
+| `companion.transcribe` | – the phone only: the Ask sheet's microphone, On your Mac: the recording written down here and deleted |
+| `voice.models` | Settings › Voice: the models on this Mac, here or coming |
+| `voice.prepare` | Settings › Voice › Get now |
+| `voice.transcribe` | The composer's microphone beside Send, and the talk shortcut (Settings › Voice) |
+| `terminalImport.detect` | Settings › Terminal › Import from… (Ghostty, iTerm2, Terminal, Alacritty, kitty, WezTerm, Warp), and the welcome's “Coming from another terminal?” step |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |
 | `workspaces.newWorktree` | ✓ |
 | `workspaces.newChat` | ✓ |
 | `workspaces.startChat` | ✓ |
-| `workspaces.startWorktree` | ✓ |
+| `workspaces.startWorktree` | ✓ (→ the new worktree's id; `plan`: its agent plans first; `quiet`: the window stays put; `agent`: who works it, from the home composer's Create Worktree ▾ › Start with ▸ (BLG-506). The phone's Ask › a project › Worktree, with Plan first, since 1.5, and its agent chip (1.35); Your Mac's `start_worktree`) |
 | `workspaces.branches` | New worktree › Based on popup |
 | `workspaces.fork` | ✓ |
-| `workspaces.continueInWorktree` | Continue in New Worktree… (toolbar and the ask banner) › sheet: Task, Based on, Name |
+| `workspaces.editPrompt` | Edit on your own message (hover, or right-click › Edit Message) › the message opens in place: Rewind Here or New Fork, then ↩ |
+| `workspaces.continueInWorktree` | Continue in New Worktree… (toolbar and the ask banner) › sheet: Task, Based on, Agent (BLG-506: one that can't resume the conversation starts fresh, handed it, and the sheet says so), Name (the chat becomes the worktree) |
 | `workspaces.archive` | ✓ |
 | `workspaces.restore` | ✓ |
 | `workspaces.archivePlan` | ✓ the Archive dialog says how much space it frees |
@@ -235,7 +285,10 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.commit` | ✓ |
 | `workspaces.merge` | ✓ |
 | `workspaces.prepareRemoval` | ✓ |
-| `workspaces.applyEnvBack` | ✓ |
+| `workspaces.applyEnvBack` | ✓ (and Copy to Main Folder on a worktree's env bar) |
+| `workspaces.keepEnvHere` | ✓ a worktree's env bar ••• › Keep in This Worktree Only (project page, worktree) |
+| `workspaces.saveEnvInBeluga` | ✓ Save in Beluga on a worktree's env bar, and Archive/Delete's “Save them in Beluga” |
+| `workspaces.checkEnv` | ✓ when a project's page or a worktree opens |
 | `workspaces.askClaudeToReview` | ✓ |
 | `workspaces.askClaudeToMerge` | ✓ |
 | `workspaces.compact` | ✓ |
@@ -252,6 +305,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.otherActivity` | worktrees made outside Beluga listed after a project's own, most recently active first (5, then Show N more) |
 | `workspaces.worktreeInfo` | the page a worktree from another tool shows when it has no conversation (or About This Worktree) |
 | `workspaces.showConversation` | that page › Earlier conversations › Show |
+| `workspaces.outsideConversations` | project ••• › Import from Claude Code… (the project's folder and the folders inside it; Choose Another Folder…) |
+| `workspaces.importOutside` | that sheet › Continue in a Worktree (one brought in already: Open Its Worktree) |
 | `workspaces.removeOther` | that page › Remove Worktree… (asks first; keeps the branch) |
 | `workspaces.staleOthers` | a project's Clean Up Worktrees… (its right-click menu and its home) |
 | `workspaces.cleanUpOthers` | Clean Up Worktrees… › Remove (only what you ticked; branches kept) |
@@ -265,17 +320,31 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.runSetup` | ✓ |
 | `workbench.setScript` | ✓ |
 | `workbench.shareScripts` | ✓ |
-| `workbench.setModel` | ✓ |
+| `workbench.setModel` | ✓ (the composer's agent picker: a model of the same runtime, for this conversation or new ones; the phone's picker since 1.32) |
+| `workbench.setAgent` | ✓ (the agent picker's other runtimes, grouped Claude › Codex › Local model; a runtime this Mac doesn't run is greyed with why; the phone's picker since 1.32) |
 | `workbench.createPr` | ✓ |
+| `workbench.quickPr` | ✓ the toolbar's Create PR (and Create Draft PR under its chevron), the Changes panel's Create PR |
+| `workbench.mergeToBase` | ✓ the branch control's chevron › Merge into main… (no PR yet, on GitHub): asks first, then lands the branch on origin's base and pushes |
+| `workbench.gitFix` | ✓ the GitHub trouble card that a failed Create PR, Merge or Update Branch opens (Push over HTTPS, Log In to GitHub, Install GitHub CLI, the SSH steps under •••) |
+| `workbench.signInClaude` | ✓ Sign In on a failed Claude card that says Claude Code isn’t signed in or its sign-in expired: a menu of a Claude subscription, an Anthropic Console account (runs `claude auth login --claudeai` or `--console` in a shell, then Claude continues) or a 3rd-party platform (opens its setup page) |
 | `workbench.fixChecks` | ✓ |
 | `workbench.resolvePrConflicts` | ✓ Resolve Merge Conflicts… (toolbar, PR sheet, the PR strip above the chat) when GitHub says the PR conflicts |
-| `workbench.continueAfterMerge` | ✓ Continue After Merge… (⋯, PR sheet, the PR strip) once the PR merged |
+| `workbench.continueAfterMerge` | ✓ Continue After Merge… (⋯, PR sheet, the PR strip) once the PR merged; the chat then shows a divider where that PR ends (the phone shows its words) |
 | `workbench.openPr` | ✓ |
 | `workbench.refreshPrs` | ✓ |
 | `workbench.mergePr` | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass; Merge Now, Skipping Checks), also in the PR strip above the chat |
+| `workbench.prStep` | ✓ the toolbar's branch state › Update Branch (the PR is behind its base), Mark Ready for Review (a draft) |
+| `workbench.prConversation` | ✓ the PR page (the PR strip's comments count, or the PR sheet's Comments): comments, reviews and threads on lines with their code; a `beluga-pr-comments` block in chat shows them read-only (phone: not yet) |
+| `workbench.prPost` | ✓ the PR page: Reply in a thread, Resolve / Reopen, and a comment on the PR |
+| `workbench.addressPrComments` | ✓ the PR page: Ask Claude (one thread) and Address All With Claude |
+| `workbench.excerpt` | ✓ a `beluga-code` block in chat draws those lines of the worktree, highlighted; its path goes to the file at that line |
+| `workbench.openCode` | ✓ Open in Editor on a `beluga-code` block or a PR thread (Cursor, VS Code or Zed at the line, else the default app) |
+| `workbench.cancelMergeWhenReady` | ✓ the toolbar's branch state › Cancel Auto-Merge (while Merge When Ready waits) |
 | `workbench.editPrPrompt` | ✓ |
 | `workbench.resetPrPrompt` | ✓ |
 | `workbench.measureDisk` | ✓ |
+| `workbench.checkAgents` | ✓ Check Again on onboarding's Your agents step and in Settings › Agent › Your agents |
+| `workbench.agentSignIn` | ✓ Sign In beside an agent that isn't signed in (onboarding, Settings › Agent) |
 | `workbench.search` | ✓ |
 | `workbench.openHit` | ✓ |
 | `workbench.saveTemplate` | ✓ |
@@ -285,10 +354,19 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `terminals.close` | ✓ |
 | `terminals.restart` | ✓ the terminal's "started before your variables changed · Restart" |
 | `terminals.rename` | ✓ double-click a shell tab, or right-click › Rename… (Return saves, Escape cancels, empty resets) |
-| `env.get` | ✓ Settings › Environment (values only go to the screen that asks) |
-| `env.set` | ✓ Settings › Environment |
+| `agentTerm.open` | ✓ with Settings › Terminal › Advanced on: the Chat · Terminal · Both switch in a worktree's or chat's header (or ⇧⌘T): the agent's own terminal app on the same conversation (BLG-534) |
+| `agentTerm.takeOver` | ✓ Take over on the chat's “The terminal is driving” banner; closing the terminal (phone: Take over on the conversation's banner) |
+| `agentTerm.visual` | ✓ a graph or view link in the terminal, or ⌘↩ for the newest: opens it in the panel beside the terminal (BLG-535) |
+| `env.get` | ✓ Settings › Environment, and a project's Environment… (••• menu, project page) (values only go to the screen that asks) |
+| `env.set` | ✓ Settings › Environment, and a project's Environment… |
+| `env.importDotenv` | ✓ a project's Environment › Keep a Copy in Beluga |
+| `env.newKeysBack` | ✓ a project's Environment › Worktrees › New keys go to the main folder |
+| `env.endpoints` | ✓ Settings › Claude › Local models |
+| `env.saveEndpoint` | ✓ Settings › Claude › Local models › Add Endpoint / Save |
+| `env.removeEndpoint` | ✓ Settings › Claude › Local models › Remove |
+| `env.checkEndpoints` | ✓ Settings › Claude › Local models › Check Again |
 | `env.testDatabase` | ✓ Settings › Environment › Database (Test Connection) |
-| `env.claudeDotenv` | ✓ Settings › Environment › Your Claude (and a .env approval's Always) |
+| `env.claudeDotenv` | ✓ Settings › Environment › Your agent (and a .env approval's Always) |
 | `attachments.add` | ✓ |
 | `attachments.addFile` | ✓ a pasted path of an image becomes a waiting thumbnail |
 | `attachments.reattach` | ✓ a queued message pulled back to edit gets its images back as thumbnails |
@@ -302,12 +380,16 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `projects.add` | ✓ Add projects sheet, Choose Folders…, drop folders on the sidebar |
 | `projects.addFolder` | ✓ (a dropped folder of projects is watched) |
 | `projects.suggest` | ✓ "On this Mac" in the Add projects sheet |
+| `projects.create` | ✓ Add projects sheet › Start new, New Project… in the Projects + menu and the palette |
+| `projects.newHome` | ✓ the location a new project goes in, in Add projects › Start new |
 | `projects.icon` | ✓ project icons in the sidebar |
 | `projects.iconAt` | ✓ icons of suggested folders |
 | `projects.setIcon` | ✓ right-click a project › Change Icon… |
 | `network.setEnabled` | ✓ the Friends card’s Turn On, Settings › People & access › Talk with friends directly (starts and stops live) |
 | `network.status` | ✓ the network is on (the Friends card, Settings › People & access) |
-| `network.friends.list` | ✓ sidebar Friends (presence dots, notes, unread, relayed link) |
+| `network.friends.list` | ✓ sidebar Friends, the one people list (presence dots, notes, unread, relayed link; a friend in your room also shows their agent on and Following there) |
+| `network.friends.addFromRoom` | ✓ sidebar Friends › Not friends yet › Add as friend (people in your room who aren't friends; never guests); the room card's Add as Friend; after joining a room by link, “Add <host> as a friend?” |
+| `network.friends.answerOffer` | ✓ sidebar Friends › “kay wants to add you as a friend” › Accept / Not Now (right-click); the phone: a NeedsYou item with Accept / Not now |
 | `network.friends.invite` | ✓ Add a Friend sheet › Create Invitation (code, link, QR, expiry) |
 | `network.friends.accept` | ✓ Add a Friend sheet › Have a code or link? (pasted from the clipboard; `beluga://add…` links open it) |
 | `network.friends.cancelInvite` | ✓ Add a Friend sheet › Cancel Invitation; replacing a group link |
@@ -330,8 +412,13 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `network.groups.decline` | ✓ group info › Asking to Join › Decline |
 | `network.presence.set` | ✓ your status (sidebar footer, menu bar, palette), Away when idle |
 | `network.presence.get` | ✓ the shared state’s `network.self` (no call needed) |
+| `network.avatar.set` | ✓ Settings › General, your picture beside your name |
+| `network.avatar.get` | ✓ every avatar (chats, headers, tasks, team), cached as data URLs |
 | `network.read` | ✓ opening a conversation reads it (the `conversation` view is shown); Mark as Read on a group |
-| `network.post` | ✓ a conversation's message box: words, files waiting in the box, and the Ask Claude menu (yours, everyone's, one person's); Send Again on an undelivered one |
+| `network.messages.delete` | ✓ a direct message's right-click menu › Delete… (yours: Delete for them too) |
+| `network.messages.edit` | ✓ your direct message's right-click menu › Edit (in place: Return saves, Esc cancels) |
+| `network.clear` | ✓ a direct conversation's ⋯ menu › Clear Chat… |
+| `network.post` | ✓ a conversation's message box: words, files waiting in the box, and the Ask Your Agent menu (yours, everyone's, one person's); Send Again on an undelivered one |
 | `network.files.add` | ✓ the paper clip (Open panel), files dropped anywhere on a conversation |
 | `network.files.addData` | ✓ files and pictures pasted into the message box (and picked in a browser) |
 | `network.files.download` | ✓ a file card's Download (files up to 50 MB come by themselves); Try Again on one that didn't come |
@@ -341,75 +428,172 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `network.files.saveTo` | ✓ right-click a file › Save As… (the Save panel) |
 | `network.files.preview` | ✓ pictures shown in the chat |
 | `network.channels.main` | ✓ All Friends (the first chat tab, the top of sidebar Channels): made the first time it's opened |
-| `stripe.connect` | ✓ Connect Stripe… (a project's right-click and ⋯ menus, the Inspector's Earnings row, the Overview's hint and Earnings card): the Connect Stripe sheet checks the key with Stripe and shows the account |
+| `stripe.connect` | ✓ Connect Stripe… (a project's right-click and ⋯ menus, the Overview's hint and Earnings card): the Connect Stripe sheet checks the key with Stripe and shows the account |
 | `stripe.disconnect` | ✓ the Connect Stripe sheet › Disconnect |
-| `stripe.refresh` | ✓ Refresh in the Inspector's Earnings row, the sheet and the Overview's Earnings card (the daemon also refreshes once a day by itself) |
+| `stripe.refresh` | ✓ Refresh in the sheet and the Overview's Earnings card (the daemon also looks for new payments every 10 minutes by itself) |
 | `support.answer` | ✓ the Star sheet after your first merge (Star on GitHub / Maybe Later) and the coffee sheet after your fifth (an amount, Not Now, Don't Ask Again) |
+| `assistant.newChat` | ✓ Your Mac's tab strip › + (a new empty chat, open now); on the phone, New chat in Your Mac's chats list or ••• |
+| `assistant.openChat` | ✓ clicking one of Your Mac's tabs (or a notification from one of its chats); kept across restarts, and the phone's Ask your Mac follows it |
+| `assistant.deleteChat` | ✓ a tab's × › Delete Chat (asks first; its run stops, its messages, folder and agent transcript go for good, no archive; the last one leaves a fresh chat); on the phone, long-press in Your Mac's chats list or ••• › Delete this chat |
 | `gateway.list` | ✓ the shared state's `gateway` (task cards in conversations, Requests) |
-| `gateway.confirm` | ✓ the “Ask bob's Claude?” card in a conversation: Ask / Not now |
+| `gateway.confirm` | ✓ the “Ask bob's agent?” card in a conversation: Ask / Always / Not now |
 | `gateway.cancel` | ✓ Cancel on a task card and in Requests (sent), Stop in Requests (received) |
-| `gateway.ask` | ✓ Requests › Ask someone's Claude… |
+| `gateway.forget` | – the phone only: Remove in an asked-of-friends conversation's ••• sheet (cancels it first while it's still going) |
+| `gateway.ask` | ✓ Requests › Ask someone's agent… |
+| `gateway.setAskFreely` | ✓ Settings › Access: “Your agent asks them without checking” › Ask Me First (Always on the card turns it on) |
 | `gateway.setNote` | ✓ Requests › your “Ask me for…” note |
-| `gateway.decide` | ✓ the request sheet (Approve once / Always, with its scope and expiry / Decline with a reason), the notification's and the menu bar's Approve / Always / Decline |
-| `gateway.answer` | ✓ a sent task's card when their Claude asks something: pick an answer or write one, or Let them decide |
+| `gateway.decide` | ✓ the request sheet (Approve once / Always, with its scope and expiry / Decline with a reason), the notification's and the menu bar's Approve / Always / Decline, and the request's card in the friends' chat it came from (BLG-207); a secret only Allow Once / Decline (BLG-209) |
+| `gateway.answer` | ✓ a sent task's card when their agent asks something: pick an answer or write one, or Let them decide |
 | `gateway.saveRule` | ✓ Settings › People & access › Rules, and a friend's card: change a rule's answer or expiry |
 | `gateway.removeRule` | ✓ Settings › People & access › Rules, and a friend's card: Delete |
-| `gateway.setCapabilities` | ✓ Settings › People & access › What your friends’ Claudes can do here (per capability and trust level, the folders) |
+| `gateway.setCapabilities` | ✓ Settings › People & access › What your friends’ agents can do here (per capability and trust level, the folders) |
 | `gateway.image` | ✓ screenshots on a task card's result |
-| `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…), sub-tasks on a task page |
-| `board.update` | ✓ a task's properties (status, priority, assignee, labels, estimate, due date, parent), its title in place, row and card menus |
+| `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…; on a board of several repos, its Repo picker), sub-tasks on a task page; its Agent pop-up (BLG-497) picks the agent and model its worktree runs when it starts |
+| `board.update` | ✓ a task's properties (status, priority, assignee, labels, estimate, due date, parent, and the repo it runs in on a board of several), its title in place, row and card menus |
+| `board.setPrivate` | ✓ a task's ⋯ › Make Private / Share with Team (only offered when teammates or Linear would see it), the Share with Team button on a private task's page, New Task's Who Sees It |
 | `board.move` | ✓ dragging a card between columns on the board, or within one |
 | `board.editBrief` | ✓ a section of the brief on a task page (click to edit, ⌘↩ saves) |
 | `board.restoreRevision` | ✓ History › Restore on a brief section |
 | `board.comment` | ✓ the comment box under a task's activity |
 | `board.relate` | ✓ Blocked by / Blocks / Related on a task page |
-| `board.addProof` | ✓ Add Proof (a picture, a page, a file) on a task page; Claude's task_attach_proof |
+| `board.addProof` | ✓ Add Proof (a picture, a page, a file) on a task page; the agent's task_attach_proof |
 | `board.removeProof` | ✓ a proof item's ✕ |
 | `board.remove` | ✓ Delete Task… (an alert, with Cancel) |
-| `board.start` | ✓ Start on a task (its page, its ⋯ and right-click menu: a new worktree, In Progress, your Claude on it with its brief, and you there); ⋯ › Start Worktree Only; a task a worktree already does or carries shows Open Worktree instead |
+| `board.setAgent` | – kept for phones on 1.35–1.37 (their task page's ⋯ › Agent). Neither the Mac nor a newer phone changes a task's agent from the task any more (BLG-569): a task's Agent row shows the agent at work in its worktree (a click opens its conversation, where it's changed: `workbench.setAgent`), or before it starts the one that will; Start › Start with another agent picks another for one start |
+| `board.start` | ✓ Start on a task (its page, its ⋯ and right-click menu: a new worktree, In Progress, your agent on it with its brief, and you there; the task's own agent, else its plan's, else your default); Start's ▾ and the menus' Start with ▸ (BLG-506): every agent and model, this start only, one not set up greyed with why; ⋯ › Start Worktree Only; a task a worktree already does or carries shows Open Worktree instead. The phone's task › Start, and ⋯ › Start with… (1.35) |
 | `board.settleGone` | ✓ the banner on a task whose worktree was archived or deleted (Cancel Task / Back to Backlog / Keep) |
 | `board.archive` | ✓ a finished task's ⋯ › Archive |
 | `board.archiveDone` | ✓ the archive button on Done (list group, board column), Tasks ⋯ › Archive Done Tasks |
 | `board.unarchive` | ✓ an archived task's banner (Restore), ⋯ › Restore from Archive |
 | `board.emptyArchive` | ✓ Tasks › Archive › Empty Archive |
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
+| `board.createBoard` | ✓ Tasks › the board switcher › New Board… (a name, the repos it covers, its keys) |
+| `board.editBoard` | ✓ Tasks › the board switcher › Board Settings…, ⋯ › Board Settings… / Repos on This Board…, the Repos filter's Repos on This Board…, a task's Repo menu |
+| `board.removeBoard` | ✓ a board of its own's settings sheet › Delete Board…, and Tasks › ⋯ › Delete Board… (its tasks go back to their repos' boards) |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
-| `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder) |
-| `plans.here` | ✓ the composer's mode menu › Plan with Tasks (Claude plans in the conversation you're in) |
-| `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation |
+| `board.createLabel` | ✓ a task's Labels menu › New Label… (a name, an icon, a color) |
+| `board.removeLabel` | ✓ the New Label sheet: a project label's remove button (under Labels of this project) |
+| `board.setContext` | ✓ Tasks › ⋯ › About This Project… (what the agent reads when it writes a task here; shared with teammates) |
+| `board.syncTeams` | ✓ Tasks › ⋯ › Sync with Linear… (the sheet checks the key and lists its teams) |
+| `board.syncConnect` | ✓ the Sync with Linear sheet › Connect (a team, Autosync, Also Send Open Tasks) |
+| `board.syncDisconnect` | ✓ the Sync with Linear sheet › Disconnect… |
+| `board.syncNow` | ✓ Tasks › ⋯ › Sync Now, and the Sync with Linear sheet’s Sync Now (the Linear pill in the Tasks bar opens the sheet) |
+| `board.syncAuto` | ✓ the Sync with Linear sheet › Autosync |
+| `sentinel.create` | ✓ New Sentinel (⌘N on the list, ⌘K › New Sentinel…, the empty list's New Sentinel and Try a Recipe): a recipe from the list (Nightly tests makes its Fix the nightly failure too, after it), Build It Yourself, or Describe It (then `sentinel.ask`); it starts paused · the agent's `sentinel_create` in any of your chats |
+| `sentinel.update` | ✓ a sentinel's page: changes save at once (When, Steps with every kind's fields — an Ask Your Agent step's Agent pop-up picks the agent and model, BLG-497 —, Properties, whose Agent sets every agent step's; unticking the merge step's Ask Me Before Merging asks first) · the agent's `sentinel_update` (a change to what it can do pauses it) |
+| `sentinel.remove` | ✓ a sentinel's ⋯ and right-click › Delete… (confirms) · the agent's `sentinel_remove` (always asks your approval, even when your agent never asks otherwise: the card in the conversation and the phone's needs-you) |
+| `sentinel.runDelete` | ✓ a run's ••• › Delete Chat… and Delete Run… (each confirms; not while it runs) · the agent's `sentinel_delete_runs` (by ids, how they ended or before when; always asks your approval) (BLG-577) |
+| `sentinel.duplicate` | ✓ a sentinel's ⋯ (its page) and its row's ⋯ and right-click › Duplicate (the copy starts paused) |
+| `sentinel.run` | ✓ Run Now on a sentinel's page, and its row's ⋯ and right-click; the phone's sentinel page (Run Now) · the agent's `sentinel_run` |
+| `sentinel.test` | not in the window yet (the Sentinel page rework gives it a Test button); Run Now already runs a paused sentinel without turning it on · the agent's `sentinel_test` (its sources only, paused or not; what they find is kept), and `sentinel_create` / `sentinel_update` run a source they add or change once before saving, answering with its preview; `sentinel_try_source` runs one alone to read the schema (BLG-302, BLG-304) |
+| `sentinel.stop` | ✓ a running run's page › ⋯ › Stop |
+| `sentinel.pause` | ✓ Turn On and Pause on a sentinel's page and its row's ⋯ and right-click; Resume on the paused-after-failures banner; Turn On on the agent's banner; the phone's sentinel page (••• › Pause / Turn On) · the agent's `sentinel_pause` (pause only) |
+| `sentinel.runs` | ✓ a sentinel's page › History (the dot strip, then the runs as rows); the phone's sentinel page draws the same runs from its `sentinel:<id>` topic |
+| `sentinel.runGet` | ✓ a run's page: the steps' outputs (Show output) and the report; the phone opens a run's report |
+| `sentinel.ask` | ✓ a sentinel's page › the box under its header, "Ask Your Agent to change this sentinel…" (⌘↩; the agent's last line while it works, its answer and Open Chat after) · New Sentinel › Describe It (an empty paused sentinel, then this) |
+| `sentinel.recipes` | ✓ New Sentinel › Recipe: the twelve recipes as a list (icon, name, when it runs, one line) |
+| `sentinel.decide` | ✓ Merge and Not Now on a run waiting for you (a run's page), and the phone's needs-you card |
+| `sentinel.setRunAtOnce` | ✓ the Sentinel list's ⋯ › Run at Once ▸ (1 to 6 at once) |
+| `sentinel.rotateSecret` | a webhook sentinel's page › When › Rotate Secret… (asks first; the old URL stops at once) |
+| `sentinel.webhookUrl` | a webhook sentinel's page › When: its URL with Copy (or why there's none now) |
+| `sentinel.metricRead` | ✓ a sentinel's page › Numbers: a number tile opens its chart over time (its whole history; a point opens its run); the phone reads it through `sentinel.metricRead` · the agent's `metric_read` (`mcp__beluga_dashboard__*`) |
+| `sentinel.document` | a kept table's document chip (a typed `html` or `file` column, BLG-345) opens the document in Beluga's viewer (scripts and network off); the phone reads it through the Mac (640 KB at most) · Mac: a kept table's document chip (the column's button words or the file's name, on a dashboard tile, a sentinel's Numbers and Add Tile's preview) opens the document sheet (BLG-381) |
+| `sentinel.documentOpen` | the document viewer's Open in Default App, or Show in Finder (Mac only: its path never leaves the daemon) · Mac: the document sheet's Open in Default App and Show in Finder (BLG-381) · phone: Open on your Mac on a document it doesn't show (BLG-386) |
+| `sentinel.signStorage` | a kept table's storage chip (bucket and path columns): a Supabase link signed on click for 60 s, never kept; the phone asks the Mac to sign it · Mac: the storage sheet's Open Link in Browser, for a file too big to fetch (BLG-381) |
+| `sentinel.storageDocument` | a kept table's storage chip on the Mac: the object fetched now through a signed link (nothing kept) and shown in the document sheet; a kind Beluga can't show gets its kind, size, bucket and path (BLG-381) |
+| `sentinel.storageOpen` | the storage sheet's Open in Default App and Show in Finder: a copy saved in its run's files (readable only by you, swept with its documents) (BLG-381) · phone: Open on your Mac (BLG-386) |
+| `sentinel.dataList` | a sentinel's page › Kept data (BLG-392): each metric with how much it keeps and since when, each run's files · phone: a sentinel's page › Kept data |
+| `sentinel.runFile` | Kept data › a run's file chip (its report, a step's output, a document) opens in the document sheet, text redacted (BLG-392) |
+| `sentinel.runFileOpen` | the document sheet's Open in Default App and Show in Finder for a run's file (BLG-392) · phone: Open on your Mac |
+| `sentinel.dataExport` | Kept data › a metric's sheet › Export CSV / Export JSON, and a run's ••• › Save Its Files to Downloads: written to ~/Downloads/Beluga/<sentinel>/ and shown in Finder (BLG-392) |
+| `sentinel.dataReveal` | Kept data's folder button and a metric's sheet › Show in Finder (its numbers' folder); a run's ••• › Show in Finder (its folder) (BLG-392) |
+| `sentinel.runRow` | a kept table's action button (an `action` column) runs its sentinel with that row as the trigger's payload (the row checked against the latest rows) · Mac: a kept table's action button (its column's words) runs it (BLG-381) |
+| `dashboard.create` | ✓ Sentinel › Dashboard › + beside the tabs, ⋯ › New Dashboard, and the empty page's New Dashboard (the first is made for you when the first number arrives) · the agent's `dashboard_create` |
+| `dashboard.update` | ✓ Sentinel › Dashboard: the compare `Segmented` at the top (Previous · Yesterday · Last week · Last month, every tile); ⋯ › Rename… (or double-click its tab) · the agent's `dashboard_update` |
+| `dashboard.remove` | ✓ Sentinel › Dashboard › ⋯ › Delete Dashboard… (confirms; the numbers stay with their sentinels) · the agent's `dashboard_remove` (always asks your approval first) |
+| `dashboard.addTile` | ✓ Sentinel › Dashboard › Add a Tile › Pick it yourself: a number, a series, a table, an output (an agent, service or script step's latest export, or an output metric), text or a divider, from every metric or step by project and sentinel, its size and title, with a preview · the agent's `dashboard_add_tile` |
+| `dashboard.updateTile` | ✓ a tile's ⋯: Rename…, Width ▸ (1 to 6 columns), Height ▸ (normal or tall), Compare ▸ (as the dashboard's, or pinned), Draw as ▸ (a series), Show as ▸ (an output: Markdown, a JSON tree, a table, text), Shows ▸ (a text tile) · the agent's `dashboard_update_tile` |
+| `dashboard.removeTile` | ✓ a tile's ⋯ › Remove Tile · the agent's `dashboard_remove_tile` |
+| `dashboard.moveTile` | ✓ Sentinel › Dashboard: a tile dragged onto any column and row, where it stays · the agent's `dashboard_move_tile` (a column and row, or an index) |
+| `dashboard.refresh` | ✓ Sentinel › Dashboard › Refresh (Run Now on each sentinel it draws from, one at a time: "Fetching… 2 of 3"); the phone's dashboard: pull to refresh |
+| `dashboard.ask` | ✓ Sentinel › Dashboard › Add a Tile › Describe it (the default): the agent builds the tile, and sets up a draft sentinel that fetches it when nothing does yet (the page then says "Your agent set up … · Review · Turn On"); the agent's last line while it works, its answer and Open Chat after |
+| `sentinel.chatNew` | ✓ Sentinel › Chat › New Chat (the bar, and ⋯ › New Chat) |
+| `sentinel.chatOpen` | ✓ Sentinel › Chat: the chat's name, a picker of the chats when there are several |
+| `sentinel.chatClear` | ✓ Sentinel › Chat › ⋯ › Clear (its messages go, the agent starts afresh; the chat stays) |
+| `sentinel.chatDelete` | ✓ Sentinel › Chat › ⋯ › Delete Chat… (confirms; the next chat opens, or a fresh first one) |
+| `issues.list` | ✓ Issues (Work in the sidebar › Issues, Go › Issues, ⌘K › Go to Issues): a project's open or closed GitHub issues, newest activity first, through gh (GraphQL, so pull requests never take up the page); the search box asks GitHub; each shows what Beluga is doing about it; a project's home lists the latest four |
+| `issues.get` | ✓ an issue's page: the report and its comments in Markdown, its labels, assignees and dates, its task, and what to do next |
+| `issues.investigate` | ✓ Investigate (an issue's page: the composer's first way, with anything the agent should know; its ⋯ and right-click menu): a task for it (or the one it has), a worktree, and your agent finding out why and reproducing it, writing what it found into the task's brief, without fixing it; the page shows it at work, then its report with Fix It · when a teammate on the same repository is already on it (team boards) it asks first (Start Anyway: `anyway`) |
+| `issues.fix` | ✓ Fix It (an issue's page and menus; after an investigation also the task's page and the strip above its conversation): your agent fixes it, in the investigation's worktree when there is one, and opens a pull request with your PR instructions and "Fixes #n" · asks first when a teammate is on it, as Investigate does |
+| `issues.toTask` | ✓ Make a Task in an issue's composer (the agent writes the title, goal and criteria; ☐ Look at the code first: the agent reads the code first, read-only, and adds where it is and the likely cause); also in its ⋯ and right-click menu (Make a Task, Make a Task After a Quick Look) |
+| `issues.comment` | ✓ an issue's page › the Comment box under its thread (Markdown, your send key); and ⋯ › Post the Findings on GitHub… (after an investigation; asks first, shows what goes) |
+| `ci.runs` | ✓ Actions (Work in the sidebar › Actions, Go › Actions, ⌘K › Go to Actions): a project's latest workflow runs, running ones first, through gh; Workflow and branch filters; refreshed every few seconds while one runs · a project's home lists the latest five, live |
+| `ci.run` | ✓ a run's page: its workflow as a graph with each job coloured by how it's going, every job and its steps with their times, live while it runs |
+| `ci.workflows` | ✓ Actions › Workflows: each workflow file drawn as a graph (what starts it, its jobs, what needs what), from the project's folder first; Show the YAML |
+| `ci.log` | ✓ a failed job on a run's page › Show the Log (its end, where it failed) |
+| `ci.rerun` | ✓ a run's page › Re-run Failed Jobs, and ⋯ › Re-run All Jobs; a run's right-click menu |
+| `ci.cancel` | ✓ a running run's page › Cancel Run (asks first); a running run's right-click menu |
+| `team.answer` | ✓ the offer strip on a project's home and at the top of its Tasks (Team Up; ••• › Not Now, or Take Back while you wait for them); project ••• › Invite to Team ▸ (friends with the repository who aren't on the team, BLG-510); the phone's card (Team Up / Not Now) |
+| `team.ackAssignment` | ✓ Got It on the strip a task a teammate gave you shows on its page; the phone's card (Got It) |
+| `team.sharePlan` | ✓ a plan's ••• › Share Plan with Team / Stop Sharing with Team (only in a project worked on as a team) |
+| `team.reviewPlan` | ✓ a teammate's shared plan (Plans › Shared by Your Team): Approve, Comment, and Suggest a Change… on a task or milestone; the phone's card (Approve, or words as a comment) |
+| `team.applySuggestion` | ✓ Apply on a suggestion in Team Reviews on your plan's page; the phone's card (Apply) |
+| `team.dismissSuggestion` | ✓ ••• › Set Aside on a suggestion in Team Reviews; the phone's card (Set Aside) |
+| `team.knock` | ✓ a task's page, after "Ata is working on this": Knock to Join (pick whose worktree when several teammates are on it); Knock Again after a Not Now |
+| `team.cancelKnock` | ✓ Take Back next to "Knocked. Waiting for Ata to let you in" on the task's page |
+| `team.answerKnock` | ✓ the knock's card in the worktree's chat (Let In as Editor, Let In as Viewer; ••• › Not Now) and the bell's row; the phone's card (Let In as Editor / Not Now / Let In as Viewer) |
+| `team.befriend` | ✓ the team badge on a project's row › its card › Add Friend beside someone on the team who isn't a friend (BLG-510); they Accept like any friend request |
+| `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates: off it for everyone, BLG-510) |
+| `plans.create` | ✓ Plans › New Plan (a goal; the agent plans in a conversation of its own in the project's main folder; More options › Agent picks who works its milestones and tasks, BLG-497); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
+| `plans.here` | ✓ the composer's mode menu › Plan with Tasks (the agent plans in the conversation you're in) |
+| `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation; Approve Plan's ▾ › Approve, worked by ▸ (BLG-506: `plans.setWorkAgent`, then approve) |
 | `plans.discard` | ✓ Discard Draft / Discard Changes on a plan's page |
 | `plans.edit` | ✓ editing a plan's outline (rename, criteria, move, remove, what waits on what) |
-| `plans.setAutonomy` | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu) |
+| `plans.setAutonomy` | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu); the phone plan page's autonomy chip (1.5) |
 | `plans.setPaused` | ✓ Pause / Resume on a plan's page |
 | `plans.setParallel` | ✓ a plan's ⋯ › Run at Once ▸ |
+| `plans.setWorkAgent` | ✓ a plan's ⋯ › Agent for Its Work ▸ (BLG-498): who works the milestones and tasks that start from now on (ones at work keep theirs, the toast says so); the phone's plan page › ⋯ › Agent for its work (1.35) |
 | `plans.setTestsAt` | ✓ a plan's ⋯ › When to Run Tests ▸ (each milestone, or once at the end) |
 | `plans.pass` | ✓ Pass Milestone on a plan's page |
-| `plans.recheck` | ✓ Check Again on a milestone Claude is checking or that failed its check |
+| `plans.recheck` | ✓ Check Again on a milestone the agent is checking or that failed its check |
 | `plans.openPr` | ✓ Open PR on a plan whose every milestone passed (plan/<slug> → main) |
-| `plans.mergePr` | ✓ Merge on GitHub once the plan's pull request is open |
+| `plans.mergePr` | ✓ Merge on GitHub (or Merge When Checks Pass, ⋯ › Merge Now) once the plan's pull request is open |
 | `plans.mergeLocal` | ✓ ⋯ › Merge into Main Locally on a plan ready to ship |
+| `plans.bringInMain` | ✓ Resolve Conflicts on a plan whose pull request conflicts with main |
+| `plans.retryConflicts` | ✓ Ask Claude Again on a plan's conflict that waits for you |
+| `plans.showConflict` | ✓ Show in Finder on a plan's conflict that waits for you |
 | `plans.sendBack` | ✓ Not Yet… on a milestone waiting for you |
-| `plans.startTask` | ✓ Start on a ready task (step by step, or a task for you) |
-| `plans.resumeTask` | ✓ Resume on a task that stopped (Claude ran out of usage or crashed) |
+| `plans.startTask` | ✓ Start on a ready task (step by step, or a task for you); `agent` (BLG-506): Start's ▾ in its details, the outline's right-click › Start with ▸, and Start N Tasks' ▾ on the plan's page (a milestone already at work keeps its agent) |
+| `plans.resumeTask` | ✓ Resume on a task that stopped (the agent ran out of usage or crashed) |
 | `plans.remove` | ✓ a plan's ⋯ › Delete Plan… (its tasks stay on the board) |
 | `plans.tidyUp` | ✓ Tidy Up / No on a plan's leftover task worktrees (merged into its branch, then archived) |
 | `plans.setStyle` | ✓ Plans › ⋯ › Planning Style… |
+| `dialogues.start` | ✓ the composer: `@my:claude @my:codex talk about X, 6 turns` or `/dialogue claude codex …` (`session.submit` proposes it; the API starts one too) |
+| `dialogues.confirm` | ✓ the dialogue's card in the chat › Start (Turns and Budget set on the card first) |
+| `dialogues.continue` | ✓ the dialogue's card › Continue (when it paused at its cap) · the phone's card |
+| `dialogues.stop` | ✓ the dialogue's card › Stop / Cancel · `/dialogue stop` in its conversation · the phone's card |
+| `dialogues.interject` | ✓ the composer in a conversation with a dialogue going on: what you type lands as a turn (`session.submit`) |
 | `claudeCode.steps` | ✓ a Claude Code session's or agent's live, read-only transcript (Activity, the strip above a workspace's chat, the Inspector's Claude Code panel) |
 | `claudeCode.step` | ✓ opening a tool call or thinking line in that transcript: the command and its output, the file, the diff, the thinking |
 | `claudeCode.findAgent` | ✓ opening a sub-agent's own worktree whose agent finished a while ago: it's found again and followed live |
 | `claudeCode.outputs` | ✓ a sub-agent's Outputs tab: the screenshots, test output, logs and JSON it made or looked at (from its transcript, wherever it put them, plus its own `.beluga/scratch/agents/<name>/`), still on disk, newest first |
-| `claudeCode.output` | ✓ looking at one of them: pictures inline, text with secrets redacted (only files that agent made or looked at) |
-| `claudeCode.taskOutput` | ✓ following a background command or watch Claude or a sub-agent started (the panel's Background tab, below the terminal; a sub-agent's Background): the end of its output, live, cleaned of terminal codes and secrets; its own log when it writes to one |
-| `agent.steps` | ✓ a Claude card's steps as disclosure rows (an icon per tool, ✓/✗, how long it took), thinking as “Thought for 12s”, sub-agents' steps |
-| `agent.step` | ✓ opening a step on a Claude card: Bash's command and output (colours kept), the file read, an edit's diff, a search's matches, a page fetched, an MCP tool's input and output as JSON, the thinking |
+| `claudeCode.output` | ✓ looking at one of them: pictures inline (GIFs animate), videos playing inline up to 64 MB, text with secrets redacted (only files that agent made or looked at) |
+| `claudeCode.taskOutput` | ✓ following a background command or watch the agent or a sub-agent started (the panel's Background tab, below the terminal; a sub-agent's Background): the end of its output, live, cleaned of terminal codes and secrets; its own log when it writes to one |
+| `claudeCode.skills` | ✓ the message box's / list: the skills and custom commands the agent can use in this conversation (the project's, yours, your plugins'), each with its description |
+| `claudeCode.mcpServers` | ✓ Settings › Agent › MCP servers: your agent's servers (yours, your projects', your plugins', claude.ai's), where each comes from and whether it's connected; with Claude and Codex both set up, one tab each |
+| `claudeCode.mcpSignIn` | ✓ Settings › Agent › MCP servers › Sign In…: opens the server's sign-in page in your browser |
+| `claudeCode.mcpSignedIn` | ✓ Settings › Agent › MCP servers: the row waits for the browser, then says whether you're signed in |
+| `claudeCode.mcpSetEnabled` | ✓ Settings › Agent › MCP servers: a Codex server's switch turns it on or off in its config.toml |
+| `agent.steps` | ✓ an agent card's steps as disclosure rows (an icon per tool, ✓/✗, how long it took), thinking as “Thought for 12s”, sub-agents' steps |
+| `agent.step` | ✓ opening a step on an agent card: Bash's command and output (colours kept), the file read, an edit's diff, a search's matches, a page fetched, an MCP tool's input and output as JSON, the thinking |
 | `view.fetch` | ✓ a live table, chart, stats or code view in a conversation fetching its next page, sorted or searched, or refreshing it (docs/views.md) |
 | `git.fetch` | ✓ Fetch on a project's home (“fetched 3 min ago”, or why it couldn't: sign-in needed, offline) |
 | `git.fetchIfStale` | ✓ opening a project's home fetches quietly when the last fetch is a few minutes old (the daemon also fetches every project every ~15 min) |
-| `git.updateMain` | ✓ Update main on a project's home: fetch and fast-forward the default branch; what can't fast-forward asks (changes in the way, or Let Claude Handle It) |
+| `git.updateMain` | ✓ Update main on a project's home: fetch and fast-forward the default branch; what can't fast-forward asks (changes in the way, or Let Your Agent Handle It) |
 | `git.stashAndUpdate` | ✓ the “changes in the way” alert › Stash and Update (and put them back) |
 | `git.moveAndUpdate` | ✓ the “changes in the way” alert › Move to Worktree |
 | `git.switchToDefault` | ✓ “The main folder is on feat/…” › Switch to main (clean; or Move to Worktree / Bring Them Along) |
-| `git.askClaude` | ✓ Let Claude Handle It: a conversation in the project's Questions whose run may only sync git (banner “Claude is updating main”) |
+| `git.askClaude` | ✓ Let Your Agent Handle It (also on “Couldn’t fetch”): a worktree of its own for a failing fetch or diverged history; for what’s stuck in the main folder’s files, a conversation in its Questions whose run may only sync git (banner “Your agent is updating main”) |
 | `git.github` | ✓ the GitHub row on a project's home: GitHub ↗, Private/Public, people, open PRs, stars (through gh, cached an hour; Connect GitHub when gh isn't set up) |
 | `git.githubRepo` | ✓ Open on GitHub in a project's right-click and ⋯ menus |
 | `git.log` | ✓ History: a project home's latest commits, the History page (Show All) and the panel's History tab (⌥⌘5), as a graph |
@@ -417,37 +601,88 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `git.mergePreview` | ✓ the toolbar's Merge into main: where it goes, the commits and files, and checks (conflicts, uncommitted work, the main folder's branch) before you confirm |
 | `git.filters` | ✓ History's Branch and Author pop-ups |
 | `git.worktreeAt` | ✓ a commit in History › Start a Worktree Here |
-## Sending while Claude works, and images
+## Sending while the agent works, and images
 
 | What | Core | Mac |
 |---|---|---|
-| Queue a message (the default while your Claude works) | `session.submit` | Return · the split button's **Queue** |
-| Steer: Claude reads it at its next step without stopping (a run that can't take it: stop it, run this next) | `session.submit` with `urgent` | Option+Return · the split button's **Steer** |
+| Queue a message (the default while your agent works) | `session.submit` | Return · the split button's **Queue** |
+| Steer: the agent reads it at its next step without stopping (a run that can't take it: stop it, run this next) | `session.submit` with `urgent` | Option+Return · the split button's **Steer** |
 | What waits, in run order (text, who asked) | `queueIn` (`src/ui/compose.ts`), the prompt comes with the `queued` event | the queue above the box |
 | Run a waiting message now (steering, as above) | `host.promote` | queue › Steer |
-| A steered message Claude hasn't read yet: sent, not read (its card is a note till Claude reads it: `READS_AFTER_STEP`, `STOPPING_FOR`, then `STEERED_IN` or its own turn) | `steerWaiting` (`src/shared/claude-notices.ts`), the message's `request` | your message dimmed, a clock and “Sent · waiting for Claude to read it” |
-| Send it now: Claude's step stops (its interrupt, as Stop does) and the conversation goes on from your message | `host.steerNow` | **Send now** on that message · ⇧⌥↩ |
+| A steered message the agent hasn't read yet: sent, not read (its card is a note till the agent reads it: `READS_AFTER_STEP`, `STOPPING_FOR`, then `STEERED_IN` or its own turn) | `steerWaiting` (`src/shared/claude-notices.ts`), the message's `request` | your message dimmed, a clock and “Sent · waiting for the agent to read it” |
+| Send it now: the agent's step stops (its interrupt, as Stop does) and the conversation goes on from your message | `host.steerNow` | **Send now** on that message · ⇧⌥↩ |
 | Drop a waiting message | `host.cancelQueued` | queue › ✕ |
 | Edit a waiting message (back into the box) | `host.cancelQueued`, then the box | queue › ✎ |
 | Change the order | `host.reorderQueued` (yours only; friends' keep their places) | queue › ↑ ↓ |
 | Paste or drop an image | `attachments.add` | ⌘V / drop: a chip plus its picture above the text |
 | An image in a message | `attachments.read` (yours from disk, a friend's through their share) | the picture (several in a grid); click for full size, ⌘C copies, Open shows it in Preview |
 
+## Agent runs, per runtime
+
+What an agent run does on each runtime (BLG-461). A cell is **pass** (it works as on Claude), **fallback** (it works another way, or is greyed, and the UI says why: the reason is `src/shared/runtime-fallbacks.ts`, named here as `fallback:<id>`), or **n/a** (nothing of it applies on that runtime, so nothing is shown for it). `tests/parity.test.ts` fails on a blank cell, on a fallback the table and the code disagree about, on a fallback no screen shows, and on a capability Codex lacks (`src/agent/runtime/codex/index.ts`) that no row accounts for. The local model runtime has Claude's capabilities (it is Claude Code on another endpoint) except `hasModelList`, so its column would be Claude's.
+
+| What | Ways in | Claude | Codex |
+|---|---|---|---|
+| Start a run in a worktree or chat, answers streamed | `session.submit`, `workspaces.startWorktree`, `workspaces.startChat` | pass | pass (`codex app-server`, a thread per place) |
+| Pick the agent and model, hand a live conversation off | `/model`, `workbench.setAgent`, `workbench.setModel`, `/handoff` | pass | pass (models from `model/list`, efforts per model; a handoff starts a new thread with the conversation carried) |
+| Continue a conversation later | `canResume` | pass | pass (`thread/resume`; one that can't be opened starts afresh and says so) |
+| Queue and steer while it works | `host.promote`, `canSteer` | pass | pass (`turn/steer`) |
+| Stop, Send now | `host.stopRun`, `host.steerNow`, `/stop`, `canInterrupt` | pass | pass (`turn/interrupt`, then the process) |
+| Approve or deny a command or an edit | `host.answerApproval`, `canGateEveryTool` | pass (every tool through the PreToolUse hook) | pass (what leaves its sandbox asks you through the same gate; inside it, the sandbox confines it) |
+| .env files and secrets stay out | `env.claudeDotenv`, `hasSandbox` | pass (policy.ts per call) | pass (its permissions profile denies them: `runtime/codex/sandbox.ts`) |
+| A friend's task on your Mac | `gateway.decide` | pass | pass (sandboxed: network off, your MCP servers off) |
+| A guest in your room prompting your agent | `invites.create` | pass | fallback (`fallback:guests`): turned away with the reason; the Invite People sheet says it beside Prompt and Edit |
+| A main folder stays read-only | `continue_in_worktree` | pass | pass (a read-only sandbox, Continue in New Worktree) |
+| Plan first, then approve | `/plan`, `session.setPlanMode`, `plans.here`, `hasPlanMode` | pass | pass (a read-only first turn answering with a plan, then the same approval card) |
+| Images in a message | `attachments.add`, `promptImages` | pass | pass |
+| Beluga's tools (room, board, plans, views, Mac, phone, sentinels) | `toolMounts` | pass (in process) | pass (stdio, scoped by a token) |
+| Steps on the agent card | `agent.steps`, `agent.step` | pass | pass (commands, edits, MCP calls mapped to the same steps) |
+| Usage and plan limits | `/usage`, `hasUsage` | pass | pass (its plan windows, filed under Codex) |
+| Compact the conversation | `/compact`, `session.compact`, `workspaces.compact`, `hasCompaction` | pass | fallback (`fallback:compact`): Compact greyed in the toolbar with the reason; /compact and Compact now say it; auto-compact leaves Codex to compact itself |
+| Fork a worktree | `/fork`, `workspaces.fork`, `canFork` | pass | fallback (`fallback:fork`): the toolbar's Fork says it in its hint, and the fork's first run says it as it starts |
+| Edit a sent message (Rewind Here, New Fork) | `workspaces.editPrompt` | pass | fallback (`fallback:rewind`): the files go back; the line under the edit says the conversation starts afresh |
+| Skills and custom commands | `claudeCode.skills`, `skills` | pass (native) | fallback (`fallback:skills`): translated; each one in the / list says what isn't on Codex |
+| MCP servers of your own | `claudeCode.mcpServers`, `claudeCode.mcpSignIn`, `claudeCode.mcpSetEnabled` | pass | pass (its own from `~/.codex/config.toml` through `mcpServerStatus/list`, signed in with `mcpServer/oauth/login`, turned on and off with `config/value/write`; a friend's task gets them switched off) |
+| Questions the agent asks you mid-run | `questions.answer`, `canAskUser` | pass | n/a: Codex asks in its answer, and you reply in the box |
+| Sub-agents and background agents | `claudeCode.findAgent`, `hasSubagents`, `hasBackgroundAgents` | pass | pass (its multi_agent on for your own runs, off for friends' and side calls: each sub-agent a row on the card with its name, prompt, steps and report, on the phone's sub-agent sheet too; the run stays open while ones it didn't wait for still work, up to the same 3 hours; Stop interrupts each one's turn. No Watch page or sidebar row: Codex keeps no Claude Code transcript for them) |
+| Claude Code sessions outside Beluga | `claudeCode.steps` | pass | n/a: Claude Code's own transcripts |
+| The process watched and killed for sure | `hasProcess` | pass | pass |
+| Side calls (naming a worktree, drafting a task, chat answers) | `complete` | pass | pass (`codexComplete`) |
+
+## Runtime conformance (BLG-462)
+
+The same scenarios run on every runtime (`tests/runtime-conformance.ts`, `npx vitest run tests/runtime-conformance.test.ts`): the in-memory reference, Claude's real runner over a scripted Agent SDK `query` (`tests/fake-claude.ts`), and Codex's real runner over a scripted `codex app-server` speaking the payloads codex-cli sends (`src/agent/runtime/codex/scripted.ts`). Where runtimes may differ, a capability flag says so and the scenario checks it both ways; mutants of the reference runtime prove a difference no flag covers fails the suite. **Live** runs against a signed-in Claude Code or Codex are waived (BLG-475: no Codex sign-in on the build Mac).
+
+| Scenario | Claude | Codex | Live Claude | Live Codex |
+|---|---|---|---|---|
+| Start and answer, the step streamed | pass | pass | waived | waived |
+| A command that asks, approved | pass | pass | waived | waived |
+| A command you deny | pass | pass | waived | waived |
+| Session id: one per place, kept on resume | pass | pass | waived | waived |
+| Usage event under its session (`hasUsage`) | pass | pass | waived | waived |
+| Steer while it works (`canSteer`) | pass | pass | waived | waived |
+| Interrupt, the message answered next (`canInterrupt`) | pass | pass | waived | waived |
+| Stop on abort, the open step ended | pass | pass | waived | waived |
+| Friends' tasks and guests (`canGateEveryTool`, `hasSandbox`) | pass | pass | waived | waived |
+| Model list (`hasModelList`) | pass | pass | waived | waived |
+| A worktree on Codex: a task, an approval, Stop, hand off to Claude (`tests/codex-flow.test.ts`, through the daemon's Session; the Mac's `packages/mac/e2e/codex-flow.spec.ts` runs with the plan's e2e) | pass | pass | waived | waived |
+
 ## Beyond the shared actions
 
 | What | Where |
 |---|---|
 | Window vibrancy, menu bar, menu-bar icon, `beluga://` links, Settings window, ⌘K palette, drag-and-drop images | Mac |
-| A workspace's screen: the conversation always in the center; a right panel (⌥⌘0, resizable, its tab remembered per workspace; in two panes split where you drag it: what Claude made on top (Changes, Files, Scratch, Info) and what runs below (Terminal, Background; it folds to its tabs); drag a tab to the other pane or right-click › Move to Bottom / Top, Reset Panel Layout; tabs always named; History is Changes' second view; a dot on Scratch when Claude saves something new) with Changes (files with +/−, the diff inline or the file as itself — Markdown formatted, pictures and PDFs always as themselves — Show in Files, Commit / PR / Review), Files (a tree you filter by name, a preview with PDFs drawn page by page, Show Changes on a changed file), Terminal (the workspace's shells, setup and run) and Info (the inspector); a calm toolbar (what the workspace needs next, Run, ⋯ in sections: git steps, the conversation, the folder, putting it away; then Search, the bell, the panel); ⌘J types in the terminal, and puts it away when you're already typing there; Claude's steps fold away once it answers (Show Steps on the answer, Settings › Chat to keep them); ⌘J's terminal in that panel or a drawer under the chat; a diff, file or the terminal in full for a while (⌘↩, Esc back) | Mac (`layout/RightPanel.tsx`, `layout/panel/*`, `lib/panel.ts`) |
+| A workspace's screen: the conversation always in the center; a right panel (⌥⌘0, resizable, its tab remembered per workspace; in two panes split where you drag it: what the agent made on top (Changes, Files, Scratch, Info) and what runs below (Terminal, Background; it folds to its tabs); drag a tab to the other pane or right-click › Move to Bottom / Top, Reset Panel Layout; tabs always named; History is Changes' second view; a dot on Scratch when the agent saves something new) with Changes (files with +/−, the diff inline or the file as itself — Markdown formatted, pictures and PDFs always as themselves — Show in Files, Commit / PR / Review), Files (a tree you filter by name, a preview with PDFs drawn page by page, Show Changes on a changed file), Terminal (the workspace's shells, setup and run) and Info (the inspector); a calm toolbar (what the workspace needs next, Run, ⋯ in sections: git steps, the conversation, the folder, putting it away; then Search, the bell, the panel); ⌘J types in the terminal, and puts it away when you're already typing there; the agent's steps fold away once it answers (Show Steps on the answer, Settings › Chat to keep them); ⌘J's terminal in that panel or a drawer under the chat; a diff, file or the terminal in full for a while (⌘↩, Esc back) | Mac (`layout/RightPanel.tsx`, `layout/panel/*`, `lib/panel.ts`) |
 | Dock badge, clicking a desktop notification to go where it's about | Mac |
 | Marking one notification unread again | Mac (hover a notification) |
-| First-run welcome: a five-part animated tour (parallel worktrees, live agents, friends, earnings, archive), then the look and a few shared settings; once per Mac, never after an update; Help › Welcome to Beluga shows it again | Mac (`onboarding/*`) |
+| First-run welcome: an eight-part animated tour (parallel worktrees, live agents, the table weave: the agent picks Postgres, connects and answers with a real, sortable table view, friends, Sentinel: a sentence becomes a sentinel (its trigger, steps and access, turned on, run step by step, its report) for five real ones you can pick, then Sentinel at work: its page's films with the sentence that sets each up, earnings, archive), then the look, the message box’s fire (Arcade, Ghost or None, tried in a live box) and a few shared settings; the macOS permissions one a step, each optional (Not Now, Skip Permissions) with why in a sentence, whether Beluga has it, and a button to its System Settings pane: Screen Recording, Accessibility, Full Disk Access, Automation (`privacy_access`, `privacy_request` in `src-tauri/src/privacy.rs`); notifications (allowed or not); the Android phone app with Pair a Phone… (`companion.pair.start`) and where to get it; once per Mac, never after an update; Help › Welcome to Beluga shows it again | Mac (`onboarding/*`, `lib/privacy.ts`) |
 | Local UI preferences (appearance, accent, text size, density, widths) | Mac (`lib/prefs.ts`) |
 | Terminal look (font, size, line height, cursor style and blink, scrollback) | Mac (`lib/prefs.ts`, Settings › Terminal) |
-| Environment variable editor (masked values, paste KEY=value lines, per-project scope, load the project's .env) | Mac (Settings › Environment) |
+| Environment variable editor (masked values, paste KEY=value lines, per-project scope; a project's main folder .env loads by default and shows beside its own variables, each marked where it comes from, an edit to a .env one overriding it and Use .env undoing that, Keep a Copy in Beluga) | Mac (Settings › Environment; a project's ••• › Environment… and its page's Environment pill: `dialogs/EnvironmentSheet.tsx`) |
+| A worktree changed a .env the main folder doesn't have: an env bar (its keys as +added ~changed −removed tags) with Copy to Main Folder and Keep Here, on the project page and in the worktree; untouched copies follow the main folder's .env on their own | Mac (`views/project/EnvAsks.tsx`) |
 | Confirmations as alerts (archive/delete with “Commit & Archive” and an env-changes table, clear, agent worktrees, hide project, leave a shared workspace), each with Cancel | Mac (`dialogs/native/*Alert.tsx`, `components/Alert.tsx`) |
-| Inviting, people and sharing as sheets and cards: the Invite People sheet (Invite to popup, Watch / Prompt / Edit, Copy Invite Link with “Copied”, people waiting, active links with Copy and Revoke), a person's card beside their row (trust as a segmented control, Message / Ask Claude / Run / Follow / Files, usage meters, Remove with an alert), your account card (rename in place, who may use your Claude), a right-click Trust ▸ submenu, the Share sheet for a workspace (an access popup per person), Share a Folder (Open panel, your projects, only some people, Claude may edit, Stop Sharing), the room's card from the sidebar's status | Mac (`dialogs/native/InviteSheet.tsx`, `PersonPopover.tsx`, `PersonCards.tsx`, `PersonMenu.tsx`, `WorkspaceShare.tsx`, `ShareFolderSheet.tsx`, `SharedSheet.tsx`, `RoomPopover.tsx`) |
-| Addressing a message with a chip (“To bob”, “To bob's Claude”, “To your Claude”) | Mac (`MacUi.to`, the composer) |
+| Inviting, people and sharing as sheets and cards: the Invite People sheet (Invite to popup, Watch / Prompt / Edit, Copy Invite Link with “Copied”, people waiting, active links with Copy and Revoke), a person's card beside their row (trust as a segmented control, Message / Ask Your Agent / Run / Follow / Files, usage meters, Remove with an alert), your account card (rename in place, who may use your agent), a right-click Trust ▸ submenu, the Share sheet for a workspace (an access popup per person), Share a Folder (Open panel, your projects, only some people, the agent may edit, Stop Sharing), the room's card from the sidebar's status | Mac (`dialogs/native/InviteSheet.tsx`, `PersonPopover.tsx`, `PersonCards.tsx`, `PersonMenu.tsx`, `WorkspaceShare.tsx`, `ShareFolderSheet.tsx`, `SharedSheet.tsx`, `RoomPopover.tsx`) |
+| Addressing a message with a chip (“To bob”, “To bob's agent”, “To your agent”) | Mac (`MacUi.to`, the composer) |
 | Run a command on a friend's computer from a sheet with a command field | Mac (`dialogs/native/PeerSheets.tsx`) |
 | Search over a workspace shared with you (names and contents) above its Files, instead of a read-only shell tab | Mac (`views/SharedSearch.tsx`) |
 | A shared workspace's earlier conversation drawn as people's messages | Mac (`lib/said.ts`, from each line's `said`) |
@@ -457,33 +692,44 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | Arranging the sidebar Finder-style: drag projects to reorder them (an insertion line, the list scrolls near its edges, Esc puts it back), drop one on a group (the folder lights up; a folded one springs open) or between a group's projects, pull it out to the top level, drag groups among the projects; Move Up / Move Down (⌃⌘↑/↓) in a row's menu; empty groups you make stay until you delete them (`workspaces.arrange`, `workspaces.newGroup`; the order lives in projects.json's `order` and each group's list, see `src/workspaces/arrange.ts`). Project rows don't fold (their worktrees and chats always show, never the main checkout; clicking one opens the project); groups fold, with a count | Mac (`layout/ProjectTree.tsx`, `layout/arrange-drag.ts`, `layout/project-layout.ts`) |
 | Hiding a project with Undo (“Hidden api — Undo”, ⌘Z) instead of an alert; Hidden Projects folded at the bottom of the sidebar, in Settings › Workspaces and in the Add Projects sheet, each with Show (`workspaces.showProject`; it comes back in its place and group) | Mac (`layout/ProjectTree.tsx`, `lib/undo-toast.tsx`) |
 | “Connect GitHub” with copyable commands and Check Again (`workbench.refreshPrs(id, true)` looks for gh again) | Mac (PR sheet) |
-| Stop your Claude in one conversation (`host.stopRun`): your queued messages there come back into the box, other people's requests keep their places and run next, other conversations carry on | Mac (■ Stop beside the send control, ⌘., Conversation › Stop Claude, Stop on a running answer) |
-| Workspace and Conversation menus in the menu bar (Commit… ⇧⌘C, Pull Request… ⇧⌘P, Merge… ⇧⌘M, Run ⌘R, Ask Claude to Review… ⇧⌘R, Archive… ⌃⌘A, Stop ⌘., Plan First ⌥⌘P, Find ⌘F / ⌘G / ⇧⌘G, Clear ⇧⌘K, Previous/Next Workspace ⌥⌘↑/↓), greyed out when they can't run (`lib/commands.ts`, `set_menu_state`); what starts Claude or changes git (Review, Commit, Merge, Solve Conflict, Compact, Fix Checks) says what it will do and waits for Start, from every way in (a popover under its toolbar button, else an alert; `lib/work-confirm.ts`) | Mac |
-| A calm sidebar: Overview, Tasks and Group chat at the top, always; Activity and Requests only while there's something in them; Shared files under Shared with me; Search in the toolbar (⇧⌘F); Usage as an icon above the sidebar (amber when most of the week is used); the terminal in the right panel (⌘J). The places in order (Overview, Tasks, Chat, Search, Usage, Terminal, Shared files) for ⌥1…7, ⌃Tab, the Go menu and the palette (`lib/go.ts`) | Mac |
+| Stop your agent in one conversation (`host.stopRun`): your queued messages there come back into the box, other people's requests keep their places and run next, other conversations carry on | Mac (■ Stop beside the send control, ⌘., Conversation › Stop the Agent, Stop on a running answer) |
+| Workspace and Conversation menus in the menu bar (Commit… ⇧⌘C, Pull Request… ⇧⌘P, Merge… ⇧⌘M, Run ⌘R, Ask Your Agent to Review… ⇧⌘R, Archive… ⌃⌘A, Stop ⌘., Plan First ⌥⌘P, Find ⌘F / ⌘G / ⇧⌘G, Clear ⇧⌘K, Previous/Next Workspace ⌥⌘↑/↓), greyed out when they can't run (`lib/commands.ts`, `set_menu_state`); what starts the agent or changes git (Review, Commit, Merge, Solve Conflict, Compact, Fix Checks) says what it will do and waits for Start, from every way in (a popover under its toolbar button, else an alert; `lib/work-confirm.ts`) | Mac |
+| A calm sidebar: Overview, Work (Tasks, Issues and Plans in one row, a Tasks · Issues · Plans switch over each list, running plans under it) and Group chat at the top, always; Activity only while it's live and Requests only while one is unanswered (answered ones are tucked behind Show answered on the Requests page); Files (folders friends and the room share, grouped by person) as a row of its own, and projects friends share in Projects (there is no Shared with me any more); Search in the toolbar (⇧⌘F); Usage as an icon above the sidebar (amber when most of the week is used); the terminal in the right panel (⌘J). The places in order (Overview, Tasks, Chat, Search, Usage, Terminal, Files) for ⌘1…7, ⌃Tab, the Go menu and the palette (`lib/go.ts`) | Mac |
 | The toolbar's main button chosen from the workspace's state (Commit / Merge / PR #n / Fix Checks / Solve Conflict / Restore / Run), the rest as icons and a ⋯ menu with shortcuts (`layout/toolbar-actions.ts`) | Mac |
 | Find in a conversation (⌘F) | Mac (`chat/FindBar.tsx`) |
-| Right-click menus: messages (Copy, Copy as Markdown, Quote in Reply, Ask Claude About This, Open Image), code blocks, files (Open, Show in Finder, Copy Path, Mention in Chat, Save a Copy…), changed files and commits in Diff, search results, Usage rows, notifications | Mac |
+| Your own keyboard shortcuts (BLG-289): Settings › Keyboard (Help › Keys and Commands, ⌘/, ⌘K › Keyboard Shortcuts…) lists every shortcut by section; click a key and press the new one, + for another key, × to take one away, ↺ back to its own, Reset All with Undo; a key something else has offers Swap / Use Here / Cancel (↩ / esc), what macOS keeps (⌘Q, ⌘C…) and keys that would type are refused with why; find a shortcut by name or by pressing its keys (and see a key is free). The window, the pages' own keys, the message box, requests, the sidebar, the talk shortcut, the menu bar's accelerators (`set_menu_keys`, off while recording), tooltips and the palette all follow; kept on this Mac (`prefs.shortcuts`) | Mac (`lib/shortcuts-model.ts`, `lib/shortcuts.ts`, `dialogs/KeyboardSettings.tsx`) |
+| Right-click menus: messages (Copy, Copy as Markdown, Quote in Reply, Ask Your Agent About This, Open Image), code blocks, files (Open, Show in Finder, Copy Path, Mention in Chat, Save a Copy…), changed files and commits in Diff, search results, Usage rows, notifications | Mac |
 | Save a shared file where you choose (`files.download` with `to`, the Save panel) | Mac |
 | A new worktree's form: Based on (`workspaces.branches`), Name, Create Worktree (`workspaces.startWorktree` with `base` / `name`) | Mac |
-| Never change main: every Claude run in a project's main folder (the main checkout, or a chat there) is questions only. Edits, writes and shell commands that aren't clearly read-only are denied (`agent/policy.ts` `askOnly`, `agent/read-only.ts`), Claude is told so, and a change request makes it call `continue_in_worktree`: a new worktree from the latest origin, named after the task, with the conversation carried over (history copied, Claude's session forked), and the work goes on there (your own requests move right away; someone else's ask you first) | both (core) |
-| A project's home (`project` view): icon, name, main's branch and how it compares with origin, counts (active / ready to merge / archived, earnings), “What do you want to do in …?” with New Worktree (Based on, Name) or Just Ask, then its worktrees, questions and recently archived (Show All in Overview). Clicking a project opens it | Mac (`views/ProjectHome.tsx`, `lib/project-home.ts`) |
-| Keeping main current and seeing history: the project home is about the default branch (main or master, “3 behind origin/main”, and “The main folder is on feat/…” with Switch to main), Update main and Fetch with when it last fetched, a quiet fetch of every project every ~15 min (never a password prompt: GIT_TERMINAL_PROMPT=0), uncommitted changes in the way (stash and put back, or move to a worktree), anything else to Claude in a run whose only permission beyond reading is syncing git (`agent/sync-main.ts`; never push, never discard), the GitHub row, and History (a commit graph with lanes and merges, authors as initials, refs as pills, filters, a commit's diffs; `views/history/*`) | Mac (`views/project/MainSyncBar.tsx`, `views/project/GitHubRow.tsx`, `views/history/*`, `layout/panel/HistoryTab.tsx`; core: `core/main-sync.ts`, `workspaces/sync.ts`, `workspaces/history.ts`, `workspaces/github.ts`) |
-| A questions-only chat: “Questions only — Claude won’t change anything in main.” above the box, Continue in New Worktree… as the toolbar's main button, “Ask about <project>…” in the box | Mac (`chat/AskBanner.tsx`, `dialogs/native/ContinueSheet.tsx`) |
-| Sub-agents: under the conversation that started them in the sidebar (a robot, running first, “N more”), their own worktrees as the agent (never as your worktrees; old ones no conversation here started aren’t listed, Clean Up Worktrees… has them), the sub-agent page (who started it, type, model, effort, time, steps, context; its live transcript with thinking and tools; its worktree's Changes, Files and Scratch beside it; Send to Main Claude to steer it through its lead), Watch on a sub-agent in the chat | Mac (`src/layout/SubAgents.tsx`, `src/claude-code/AgentMonitor.tsx`) |
-| Chats with friends: tabs above the conversation (All Friends first; open, close, + for a new channel), files shared Mac to Mac (cards, pictures, progress, Open / Show in Finder / Save As), Claudes called in with the Ask Claude menu (answers marked “bob’s Claude”, “… is answering”), Settings › People & access › Who can ask your Claude in chats | Mac (`src/network/ChatTabs.tsx`, `ChatFiles.tsx`, `NetComposer.tsx`) |
+| No standing main conversation per project (BLG-70): a project's conversations are the chats and worktrees you start; the main checkout is the project's home (Update main, Fetch, Merge into main, its terminal), not a conversation. Nothing lists or opens it as one (sidebar, Overview, ⌘K, @mentions, the project menu, notifications, the phone's Work and Open on your Mac go to its home or the chat it became), and the agent never runs in it on its own. Once, at startup, a main conversation from before becomes an ordinary chat in its project with its history, agent session, model and usage, named after its first message (`workspaces/main-migration.ts`; an empty one goes) | both (core: `workspaces/main-migration.ts`, `client/screen.ts` `viewFor`, `core/workspace-controller.ts`; Mac: `lib/project-home.ts` `newChatProject`) |
+| Never change main: every agent run in a project's main folder (the main checkout, or a chat there) is questions only. Edits, writes and shell commands that aren't clearly read-only are denied (`agent/policy.ts` `askOnly`, `agent/read-only.ts`), the agent is told so, and a change request makes it call `continue_in_worktree`: a new worktree from the latest origin, named after the task, and the chat itself becomes that worktree (same conversation and agent session, now in the worktree's folder), and the work goes on there (your own requests move right away; someone else's ask you first) | both (core) |
+| A project's home (`project` view): icon, name, main's branch and how it compares with origin, counts (active / ready to merge / archived, earnings), “What do you want to do in …?” with New Worktree (Based on, Name) or Just Ask, then its worktrees, questions and recently archived (Show All in Overview), and last (with Stripe connected) its Earnings as one folded row: earned in the last 7 / 30 / 90 days, payments and paying customers, each against the span before, and the last payment; unfolded (both kept), the range, a bar per day and the latest payments (All / Refunds / Failed, New for what arrived while shown, Show All, Open Stripe; Stripe Earnings… for the sheet). Clicking a project opens it | Mac (`views/ProjectHome.tsx`, `lib/project-home.ts`) |
+| Keeping main current and seeing history: the project home is about the default branch (main or master, “3 behind origin/main”, and “The main folder is on feat/…” with Switch to main), Update main and Fetch with when it last fetched, a quiet fetch of every project every ~15 min (never a password prompt: GIT_TERMINAL_PROMPT=0), uncommitted changes in the way (stash and put back, or move to a worktree), anything else to the agent in a run whose only permission beyond reading is syncing git (`agent/sync-main.ts`; never push, never discard), the GitHub row, and History (a commit graph with lanes and merges, authors as initials, refs as pills, filters, a commit's diffs; `views/history/*`) | Mac (`views/project/MainSyncBar.tsx`, `views/project/GitHubRow.tsx`, `views/history/*`, `layout/panel/HistoryTab.tsx`; core: `core/main-sync.ts`, `workspaces/sync.ts`, `workspaces/history.ts`, `workspaces/github.ts`) |
+| A questions-only chat: “Questions only — your agent won’t change anything in main.” above the box, Continue in New Worktree… as the toolbar's main button, “Ask about <project>…” in the box | Mac (`chat/AskBanner.tsx`, `dialogs/native/ContinueSheet.tsx`) |
+| Sub-agents: under the conversation that started them in the sidebar (a robot, running first, “N more”), their own worktrees as the agent (never as your worktrees; old ones no conversation here started aren’t listed, Clean Up Worktrees… has them), the sub-agent page (who started it, type, model, effort, time, steps, context; its live transcript with thinking and tools; its worktree's Changes, Files and Scratch beside it; Send to Main Agent to steer it through its lead), Watch on a sub-agent in the chat | Mac (`src/layout/SubAgents.tsx`, `src/claude-code/AgentMonitor.tsx`) |
+| Chats with friends: tabs above the conversation (All Friends first; open, close, + for a new channel), files shared Mac to Mac (cards, pictures, progress, Open / Show in Finder / Save As), agents called in with the Ask Your Agent menu (answers marked “bob’s agent”, “… is answering”), Settings › People & access › Who can ask your agent in chats; a task between two people's agents as a live card in their DM or channel (BLG-208), your own agent acting there with its tools, its "Ask Alice's agent?" cards, approvals and questions above the message box, and friends' requests approved on their card (BLG-207) | Mac (`src/network/ChatTabs.tsx`, `ChatFiles.tsx`, `NetComposer.tsx`, `ConversationView.tsx`) |
 | Friends, direct messages, groups and your status (the Beluga network): sidebar Friends and Groups with presence and unread, the Add a Friend sheet (code, link, QR; `beluga://add` / `beluga://join` links), conversations (`conversation` view), New Group / Add People sheets, group info (members, admins, invite link, join requests, rename, leave), the status menu in the sidebar and the menu bar, Away when idle, Settings › People & access switch | Mac (`src/network/*`) |
-| Empty states with one-click starters (New Worktree, New Chat, Add Projects…, first tasks for Claude) | Mac |
+| Empty states with one-click starters (New Worktree, New Chat, Add Projects…, first tasks for the agent) | Mac |
 | The palette's commands as named actions (“Create Pull Request…”, “Fork This Workspace…”), never `/cmd <arg>` | Mac (`dialogs/palette-commands.ts`) |
 | The Beluga network: friends added once by a one-time link or a short code, direct messages that wait for offline friends, groups that live on their members' Macs (no host, end-to-end encrypted, admins add and remove people, join by link), and your status (online, away, do not disturb, appear offline) — the `network.*` API and the shared state's `network` | Mac (the daemon runs it when `network: true` is in settings or `BELUGA_NETWORK=1`; `src/net/mesh/`, `src/core/network.ts`) |
-| Earnings from Stripe per project: a key per project (kept in ~/.beluga/stripe.json, 0600; screens only get `earnings`: connected, the account's name, all-time totals per currency, when they were counted, what went wrong), counted in the background once a day (incrementally, with a full recount weekly), shown as a pill beside each project in the sidebar, in the Inspector, and as a card in the Overview and the Usage view, every total in one currency (`prefs.earningsCurrency`, "Show earnings in" in Settings › General and the Stripe sheet; unset: the one most was earned in), other currencies converted at the ECB's daily rates (`src/core/fx-rates.ts`, `fx` in the shared state, fetched alongside the daily Stripe count) — the `stripe.*` API and the shared state's `earnings` | Mac (`src/core/stripe-earnings.ts`, the daemon runs it; `components/EarningsPill.tsx`, `dialogs/StripeSheet.tsx`, `lib/earnings.ts`) |
-| Supporting Beluga: worktrees Beluga made that end up merged (Merge into main, a pull request merged on GitHub, or git finding the branch's own commits in the default branch: archived worktrees too, and a deleted one just before its branch goes) count once per branch, kept in ~/.beluga/support.json; the first merge brings a Star sheet with pastel confetti (none with reduced motion) asking for a star on GitHub, the fifth a Buy Kayra a Coffee sheet (5 / 10 / 20 / 50 USD or another amount, each a Stripe Payment Link; Not Now asks once more five merges later, Don't Ask Again never), both once; Settings › About › Support Beluga has them any time — the `support.*` API and the shared state's `support`. The phone never asks | Mac (`src/core/merge-counter.ts`, `src/core/support-store.ts`, the daemon runs it; `dialogs/SupportSheets.tsx`, `components/Confetti.tsx`, `lib/support.ts`) |
+| Earnings from Stripe per project: a key per project (kept in ~/.beluga/stripe.json, 0600; screens only get `earnings`: connected, the account's name, all-time totals per currency, what it did lately (`activity`: the last 180 days' earnings per day, distinct paying customers per 7 / 30 / 90 days and the span before, the latest 25 payments with a first name and initial or a masked email, never more), when they were counted, what went wrong), counted in the background (a quick look for new payments every 10 minutes, the last months read again when something came in or once a day, a full recount weekly), shown as a pill beside each project in the sidebar (a new payment: it hops, and pixel-art confetti bursts from it; none with reduced motion), as the Earnings section of the project's home, and as a card in the Overview and the Usage view, every total in one currency (`prefs.earningsCurrency`, "Show earnings in" in Settings › General and the Stripe sheet; unset: the one most was earned in), other currencies converted at the ECB's daily rates (`src/core/fx-rates.ts`, `fx` in the shared state, fetched alongside the daily Stripe count) — the `stripe.*` API and the shared state's `earnings` | Mac (`src/core/stripe-earnings.ts` and `stripe-activity.ts`, the daemon runs them; `components/EarningsPill.tsx`, `components/PixelBurst.tsx` and `pixel-burst-model.ts`, `views/project/EarningsSection.tsx`, `dialogs/StripeSheet.tsx`, `lib/earnings.ts`) |
+| Supporting Beluga: worktrees Beluga made that end up merged (Merge into main, a pull request merged on GitHub, or git finding the branch's own commits in the default branch: archived worktrees too, and a deleted one just before its branch goes) count once per branch, kept in ~/.beluga/support.json; the first merge brings a Star sheet with pastel confetti (none with reduced motion) asking for a star on GitHub, the fifth a coffee sheet with the maker as a GitHub chip (5 / 10 / 20 / 50 USD or another amount, each a Stripe Payment Link; Not Now asks once more five merges later, Don't Ask Again never), both once; Settings › About › Support Beluga has them any time — the `support.*` API and the shared state's `support`. The phone never asks | Mac (`src/core/merge-counter.ts`, `src/core/support-store.ts`, the daemon runs it; `dialogs/SupportSheets.tsx`, `components/Confetti.tsx`, `lib/support.ts`) |
 | Claude Code running outside Beluga, live and read-only: sessions you run through Conductor or a terminal, and their sub-agents (description, type, running / finished / failed / stopped / idle, the current step, steps, context), found by watching the transcripts Claude Code writes in ~/.claude/projects (never written to; tailed from the end, at most the last 200 steps per agent kept), in Activity (every live session by project, “6 agents running”), a strip above a workspace's chat and the Inspector's Claude Code panel (the session's folder is the workspace's, Conductor worktrees included), and a read-only transcript per session or agent; a background agent finishing notifies (`background`) — the `claudeCode.steps` API and the shared state's `claudeCode` (screens on this computer only, never sent to the room) | Mac (`src/core/claude-code/`, the daemon runs it; `src/claude-code/*` in the app) |
 | The Worktrees page: every worktree in your projects (Beluga's, sub-agents', made outside Beluga) with who made it (a sub-agent's conversation, or that it's gone), whether its work is done, its size and what can be cleared; tick some, then Free Up Space (they stay) or Archive (everything of yours kept); the sidebar's Worktrees row, a project's Manage Worktrees… | Mac (`src/views/worktrees/`) |
-| Tasks between Claudes (the gateway): your Claude finds who can help (`who_can`), asks their Claude (`ask_person`) or runs one command on their Mac (`run_on`), waits (`wait_for`) or ends its turn and continues when the answer comes back; you're asked first for people you don't trust (a card in the conversation), their side approves with today's approval cards unless they trust you; results go only to the requester, as data. Task cards in conversations, the Requests view (Sent / Received) — the `gateway.*` API and the shared state's `gateway` | Mac (`src/core/gateway/`, the daemon runs it; `src/gateway/*` in the app) |
-| Tasks (the board): a Tasks place in the sidebar with My Tasks, Active, Backlog and All, by project; a list grouped by status, a board you drag cards across, and a graph of what waits on what (the graph engine); a task's page (its title, properties, a brief in sections that Claude and you keep true with every version kept, sub-tasks, blockers, its worktree and pull request, proof, activity and comments); a task opens with every new worktree and follows its pull request (In Review when it opens, Done when it merges); Start on a task (or Start Worktree Only), Open Worktree when one already does or carries it; your Claude's runs in a task's worktree get its brief and the task tools (`mcp__beluga_board__*`) — the `board.*` API and the shared state's `board` | Mac (`src/core/board/`, the daemon runs it; `src/tasks/*` in the app) |
-| Plans: milestones with pass criteria and parallel tasks, drafted by Claude in a conversation and kept off the board until approved; a live plan graph and outline; Step by Step · Check-ins · Autopilot run by a scheduler that starts worktrees and asks Claude to check each milestone; the composer's Plan with Tasks — the `plans.*` API, Claude's `mcp__beluga_plan__*` tools and the shared state's `plans` | Mac (`src/core/plans/`, the daemon runs it; `src/plans/*` in the app) |
-| Graphs Claude draws (`beluga-graph` blocks: interactive diagrams laid out by ELK and drawn with React Flow, in answers, reports and Markdown files; hover, details, walkthrough, full window) | Mac (`components/graph/*`; the format is `src/shared/graph-spec.ts`, Claude learns it from `agent/graph-prompt.ts`) |
-| Views Claude shows (`beluga-view` blocks and the `show` tool: tables, charts, stats, code, colors; live from a file, folder, SQLite, Postgres, a web address or a command, paged, sorted and searched without Claude) | Mac (`components/views/*`; the format is `src/shared/view-spec.ts`, sources run in `core/views/sources.ts`, Claude learns it from `agent/view-prompt.ts`) |
+| Tasks between agents (the gateway): your agent finds who can help (`who_can`), asks their agent (`ask_person`) or runs one command on their Mac (`run_on`), waits (`wait_for`) or ends its turn and continues when the answer comes back; you're asked first for people you don't trust (a card in the conversation), their side approves with today's approval cards unless they trust you; results go only to the requester, as data. Task cards in conversations, the Requests view (Sent / Received) — the `gateway.*` API and the shared state's `gateway` | Mac (`src/core/gateway/`, the daemon runs it; `src/gateway/*` in the app) |
+| Tasks (the board): a Tasks place in the sidebar with My Tasks, Active, Backlog and All, by project; a list grouped by status, a board you drag cards across, and a graph of what waits on what (the graph engine); filtered by who or by the worktree doing or carrying them (a worktree's Info tab lists its tasks and opens the board filtered to it); a task's page (its title, properties, a brief in sections that the agent and you keep true with every version kept, sub-tasks, blockers, its worktree and pull request, proof, activity and comments); a task opens with every new worktree and follows its pull request (In Review when it opens, Done when it merges); Start on a task (or Start Worktree Only), Open Worktree when one already does or carries it; your agent's runs in a task's worktree get its brief and the task tools (`mcp__beluga_board__*`) — the `board.*` API and the shared state's `board` | Mac (`src/core/board/`, the daemon runs it; `src/tasks/*` in the app) |
+| GitHub issues: a project's issues in Beluga (the Issues place in the sidebar, an issue's page, the latest four on a project's home), read through gh with your own sign-in. One click hands one to the agent, always through a task, so it shows on the board and its pull request moves it along: Investigate (a worktree where the agent finds out why and reproduces it, its findings in the task's brief and on the issue's page, stopping before any fix), Fix It (there, or in a new worktree, with a pull request that says "Fixes #n"), Make a Task (written by the agent from the issue, or after a quick read-only look at the code). A task made from an issue links back to it (its page, its row, the strip above its conversation) and the agent's runs on it know the issue — the `issues.*` API and `Issue.github` | Mac (`src/core/issues/`, the daemon runs it; `src/issues/*` in the app); the phone sees the tasks, not the issues yet (BLG-170) |
+| Team boards (BLG-220): friends with the same GitHub repository as a project on their own Macs find each other by a fingerprint keyed for the two of them (a friend who lacks the repository learns nothing), team up when both say yes, and keep one board for it; the team badge (teammates' avatars) on the project's row, Leave Team in its ••• — the `team.*` API and the shared state's `team` | Mac (`src/core/team/`, the daemon runs it with the board; `src/team/*` in the app); phone: the offer as a card |
+| Sentinel (docs/sentinel.md, BLG-236): watchers that run on a schedule, by hand or after another sentinel, do a few steps in order (Ask Your Agent in the project, a worktree or Your Mac; Run a script with your environment; Notify me; Call a service with presets; Open a pull request; Merge if acceptable — checks, a review, your Merge; Message a chat; Ask a friend's agent; Run another sentinel) and leave a report; your agent sets one up or changes it (`sentinel.ask`); one run per sentinel at a time, at most Run at Once agent steps together, a time limit, runs per day, pausing after failures in a row; missed slots caught up once or skipped; ~/.beluga/sentinel.json and each run's folder in ~/.beluga/sentinel/runs — the `sentinel.*` API, the agent's `mcp__beluga_sentinel__*` tools (`sentinel_stop` inside a run, `sentinel_list`, `sentinel_get`, `sentinel_create`, `sentinel_update`, `sentinel_run`, `sentinel_test`, `sentinel_try_source`, `sentinel_pause`, `sentinel_remove`, `sentinel_runs`, `sentinel_delete_runs`) and the shared state's `sentinel` | Mac (`src/core/sentinel/`, the daemon runs it; the window's Sentinel section: the sidebar's Sentinel row, the list, a sentinel's page, a run's page, New Sentinel with its eleven recipes, ⌘K › Go to Sentinel and New Sentinel…, Go › Sentinel); the phone runs, pauses and reads runs (`sentinel.run`, `pause`, `runs`, `runGet`, `decide`) |
+| The Sentinel chat (docs/sentinel.md §12, BLG-246): one conversation with your own agent for the whole of Sentinel (several kept, one open), its system prompt telling how Sentinel works with the sentinels, dashboards and numbers as material, the `beluga_sentinel` and `beluga_dashboard` tools; creating, changing and running without asking, deleting a sentinel or a dashboard always asking your approval; quiet (not in the sidebar's chats, Unread or notifications); ~/.beluga/sentinel/chat — the `sentinel.chat*` API, the `sentinel-chat:<id>` channels, the shared state's `sentinel.chats` | Mac (Sentinel › Chat: the app's own chat with its bar, New Chat, ⋯ › Clear and Delete Chat…; ⌘K › Go to Sentinel Chat); the phone's Sentinel screen › Chat opens it as a conversation it writes and answers in (`SentinelsView.chat`, `companion.ask`) |
+| Numbers and dashboards (docs/sentinel.md §10, BLG-244, reworked in BLG-246): a Keep the numbers step (`measure`: from the step before, a view source, or the agent's `sentinel_measure`) keeps named numbers, series (a whole array), rows or a step's output per run in ~/.beluga/sentinel/metrics/<sentinel>/<name>.jsonl (two years or 20 000 points); the state carries each metric's last 90 points and last rows; dashboards in ~/.beluga/dashboards.json — the `dashboard.*` API and `sentinel.metricRead`, the agent's `mcp__beluga_dashboard__*` tools (`sentinel_measure` inside a run, `dashboard_list`, `dashboard_create`, `dashboard_update`, `dashboard_remove` (asks you), `dashboard_add_tile`, `dashboard_update_tile`, `dashboard_move_tile`, `dashboard_remove_tile`, `metric_list`, `metric_read`), six number recipes | Mac (a sentinel's page › Numbers above History; Sentinel's Dashboard tab (Sentinels · Dashboard · Chat at the top of the Sentinel page; ⌘K › Go to Dashboard and Go › Dashboard land there): tile kinds number, series, table, output, text and divider, sized and retitled from a tile's ⋯, its tabs, compare, Refresh, Add a Tile by description (a draft sentinel when nothing fetches it yet) or picked, drag; New Sentinel › Recipe › Keep the numbers); the phone's `dashboard:<id>` screen with compare chips and pull to refresh, Home's row of the first dashboard's first three numbers (`dashboard.refresh`, `sentinel.metricRead`) |
+| Plans: milestones with pass criteria and parallel tasks, drafted by the agent in a conversation and kept off the board until approved; a live plan graph and outline; Step by Step · Check-ins · Autopilot run by a scheduler that starts worktrees and asks the agent to check each milestone; the composer's Plan with Tasks — the `plans.*` API, the agent's `mcp__beluga_plan__*` tools and the shared state's `plans` | Mac (`src/core/plans/`, the daemon runs it; `src/plans/*` in the app) |
+| Your Mac (BLG-47): one conversation with your own agent for the whole Mac, not one project, the same on the phone and the Mac (the `assistant` view, channel `mac:assistant`). It runs in ~/.beluga/assistant/work (its scratch folder's files are its outputs on the phone; its session and history beside it stay secret), with your usual approvals, and its tools (`mcp__beluga_mac__*`: `screenshot`, `device_info`, `list_work`, `start_worktree`, `start_task`, `start_plan`, `archive_worktree`) plus the board's. Since BLG-565 it archives a worktree you ask it to, through `workspaces.archive` (lossless and restorable; a worktree with Claude still working waits for your yes). What it starts it names as `worktree:<id>`, `task:<KEY>`, `plan:<id>`, drawn as links on both screens. Since BLG-102 it holds several chats, tabs above its conversation on the Mac (the `assistant` view's `chat`; channels `mac:assistant` for the first, `mac:assistant:<id>` for the others; the shared state's `assistant`): + starts one, × deletes one for good after asking (no archive), and the open tab is kept across restarts (~/.beluga/assistant/chats.json; each chat's session and history in `chats/<id>/`, the old single chat moved into `chats/main/`) | Mac (the sidebar's top row, `layout/AssistantNav.tsx`; the tabs, `chat/AssistantTabs.tsx`; core: `src/core/assistant/`, `src/agent/mac-tools.ts`); phone (the Ask sheet's first target and Home's Ask your Mac: the chat open on the Mac; its other chats by name where conversations are listed) |
+| Graphs the agent draws (`beluga-graph` blocks: interactive diagrams laid out by ELK and drawn with React Flow, in answers, reports and Markdown files; hover, details, walkthrough, full window) | Mac (`components/graph/*`; the format is `src/shared/graph-spec.ts`, the agent learns it from `agent/graph-prompt.ts`) |
+| Views the agent shows (`beluga-view` blocks and the `show` tool: tables, charts, stats, code, colors; live from a file, folder, SQLite, Postgres, a web address or a command, paged, sorted and searched without the agent) | Mac (`components/views/*`; the format is `src/shared/view-spec.ts`, sources run in `core/views/sources.ts`, the agent learns it from `agent/view-prompt.ts`) |
+| Mention grammar (BLG-443): `@bob` asks bob's default agent, `@bob:codex` one of theirs, `@agents` everyone's default; `@claude`, `@claude:bob` and `@claudes` stay aliases (a person named claude is `@claude:claude`, with a hint); a mistyped name gets "Did you mean @bob?" and a person with no published default gets their Claude, each said in a toast; the request carries the agent (`agent_request.agent`) | both (core: `core/mentions.ts` `parseInput`, `core/session.ts` `submit`; the phone sends what you type through the same `submit`) |
+| Agent tags in the room (BLG-520): "@" lists your own agents that run here (`@codex`) and each person's that their card lists (`@bob:codex`, `@bob:claude`), each with its mark; a named agent rides the room ask (`agent_request.agent`, only for `@codex` / `@bob:codex`, not `@bob` or the `@claude…` aliases) and their Mac runs it when its card lists it and it runs there (yours: any that runs here), else their default with `agent_event.fallback`; the asker's room gets a line when another agent answers (not set up there, or an older Mac); the answer is labelled with the agent that ran | both (core: `shared/agent-tags.ts` `roomAgentTags`, `core/agent-host.ts` `pickNamed`, `core/session.ts` `sayWhoAnswers`; Mac: the room's composer list, `chat/Suggestions.tsx` marks; phone: `ConvView.tags` as chips over the room's message box, `components/Composer.tsx`) |
+| Your default agent (BLG-444): who answers `@you`, in Settings › Agent ("Answers when friends write @you") and per project in its Settings sheet (`session.setPrefs` `defaultAgent` / `projectAgents`; a project's wins, `core/settings.ts` `chosenAgent`); published on your peer card (`defaultAgent`, `agents`) at once, without reconnecting | Mac (`dialogs/Settings.tsx`, `dialogs/native/ProjectSettingsSheet.tsx`, choices from `ui/agent-choice.ts`); the phone shows friends' defaults it gets on their cards |
 
 ## Adding a feature
 

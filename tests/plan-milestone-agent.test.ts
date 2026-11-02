@@ -130,7 +130,7 @@ describe('one Claude per milestone (BLG-7)', () => {
     expect(t.toAgent('safe')).toHaveLength(1);
     const p = first!.prompt;
     const keys = ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once'].map((x) => t.issue(x).key);
-    expect(p).toContain('You are the one Claude doing milestone 1 “Safe payments” of the plan “Payments”');
+    expect(p).toContain('You are the one agent doing milestone 1 “Safe payments” of the plan “Payments”');
     expect(p).toContain('Plan goal: Take card payments safely.');
     expect(p).toContain('Milestone goal: Nobody pays twice.');
     expect(p).toContain('- A replayed webhook charges once');
@@ -162,7 +162,7 @@ describe('one Claude per milestone (BLG-7)', () => {
     const run = t.tools('safe');
     // The run's own instructions are the milestone's; the task tools point at the task it's on.
     expect(run.brief).toContain('<beluga_milestone>');
-    expect(run.brief).toContain('you are its one Claude');
+    expect(run.brief).toContain('you are its one agent');
     expect(run.tools!.current).toBe(t.issue('Auth on payment routes').key);
     t.run(w, 'started', 'm-1');
     expect(t.view().milestones[0]!.tasks.find((x) => x.task.id === 'auth')!.state).toBe('running');
@@ -200,7 +200,7 @@ describe('one Claude per milestone (BLG-7)', () => {
     t.run(w, 'done', 'm-2');
     await tick(10);
     expect(t.toAgent('safe')).toHaveLength(2);
-    expect(t.plans.need(t.plan.id).activity.filter((a) => a.kind === 'problem').map((a) => a.text)).toEqual([expect.stringContaining('the Claude doing “Safe payments” stopped again')]);
+    expect(t.plans.need(t.plan.id).activity.filter((a) => a.kind === 'problem').map((a) => a.text)).toEqual([expect.stringContaining('the agent doing “Safe payments” stopped again')]);
   });
 
   it('tasks for you are never its: they wait for you, the hook hears of them once, and its brief says to skip them', async () => {
@@ -221,7 +221,7 @@ describe('one Claude per milestone (BLG-7)', () => {
     const p = t.toAgent('refunds')[0]!.prompt;
     expect(p).toContain(`For the user, not you (skip them`);
     expect(p).toContain(`${t.issue('Live keys').key} “Live keys”`);
-    expect(t.plans.need(t.plan.id).activity.map((a) => a.text)).toContain(`${t.issue('Live keys').key} “Live keys” waits for you: only you can do it, so its milestone’s Claude leaves it to you`);
+    expect(t.plans.need(t.plan.id).activity.map((a) => a.text)).toContain(`${t.issue('Live keys').key} “Live keys” waits for you: only you can do it, so its milestone’s agent leaves it to you`);
     await tick(10);
     expect(told).toHaveLength(1);
   });
@@ -247,12 +247,12 @@ describe('one Claude per milestone (BLG-7)', () => {
   it('step by step: nothing starts by itself; Start gives that one task to the milestone’s Claude (started for it the first time)', async () => {
     const t = await running({ autonomy: 'step' });
     expect(t.made).toHaveLength(0);
-    expect(await t.work.startTask(t.plan.id, 'auth')).toMatch(/^Started one Claude for “Safe payments” \([A-Z]+-\d+\)/);
+    expect(await t.work.startTask(t.plan.id, 'auth')).toMatch(/^Started one agent for “Safe payments” \([A-Z]+-\d+\)/);
     expect(t.agent('safe')!.tasks).toEqual(['auth']);
     expect(t.toAgent('safe')[0]!.prompt).toContain('do only the task(s) you were given');
     expect(t.issue('Idempotent webhooks').worktrees).toEqual([]);
     await tick(10);
-    expect(await t.work.startTask(t.plan.id, 'retries')).toContain('to the Claude doing “Safe payments”');
+    expect(await t.work.startTask(t.plan.id, 'retries')).toContain('to the agent doing “Safe payments”');
     expect(t.made).toHaveLength(1);
     expect(t.issue('Idempotent webhooks').worktrees).toEqual([t.agent('safe')!.worktree]);
     expect(t.toAgent('safe').at(-1)!.prompt).toContain(`The user started ${t.issue('Idempotent webhooks').key}`);
@@ -289,6 +289,8 @@ describe('Pass Anyway is instant (BLG-16)', () => {
       openPr: async () => {
         throw new Error('no');
       },
+      push: async () => undefined,
+      mainRef: async () => 'origin/main',
       mergePr: async () => undefined,
       mergeLocal: async () => ({ ok: true }),
     };
@@ -306,6 +308,8 @@ describe('Pass Anyway is instant (BLG-16)', () => {
     for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(t.issue(title).id, { status: 'in_review' }, t.claude);
     await tick(10);
     t.work.pilot.tick();
+    // (Asking a check is a moment's work: its own conversation first; this fake makes none, so the head checks.)
+    await tick(5);
     const check = t.asked.find((a) => a.channel === 'ws:main' && a.prompt.includes('Check its pass criteria'))!;
     expect(check).toBeDefined();
     t.run('ws:main', 'started', check.id);

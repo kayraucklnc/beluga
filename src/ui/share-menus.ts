@@ -1,10 +1,11 @@
 import type { AppState } from '../core/store.js';
 import type { MenuOption, MenuSpec } from './menus.js';
+import { isUnder } from '../shared/path-inside.js';
 
 // Plain string paths (this runs in the Mac app's web view too).
 const norm = (p: string): string => (p.length > 1 ? p.replace(/\/+$/, '') : p);
-const baseName = (p: string): string => norm(p).split('/').pop() ?? p;
-const tildeIn = (home: string) => (p: string): string => (home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p);
+const baseName = (p: string): string => norm(p).split(/[\\/]/).pop() ?? p;
+const tildeIn = (home: string) => (p: string): string => (home && isUnder(home, p) ? `~${p.slice(home.length)}` : p);
 
 /** "Share a folder": this folder, one of your projects, or any path, then who sees it. */
 export function shareFolderMenu(state: AppState, launchDir: string, mine: ReadonlyArray<{ name: string; root?: string; private?: boolean; allowed?: readonly string[] }>): MenuSpec {
@@ -39,7 +40,7 @@ export function shareWhoMenu(state: AppState, dir: string): MenuSpec {
     options: [
       { id: 'sw-all', label: 'Everyone in the room', hint: 'read-only' },
       ...people.map((p) => ({ id: `sw-peer:${p.peerId}`, label: `Only ${p.name}`, hint: 'read-only, nobody else sees it' })),
-      { id: 'sw-all-rw', label: 'Everyone, and my Claude may edit files there', hint: 'for folders you work on together' },
+      { id: 'sw-all-rw', label: 'Everyone, and my agent may edit files there', hint: 'for folders you work on together' },
       { id: 'close', label: 'Cancel', hint: 'Esc' },
     ],
   };

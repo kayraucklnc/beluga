@@ -1,10 +1,14 @@
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { type AgentRef, CLAUDE_AGENT } from '../../protocol.js';
+import { agentLabel } from '../../shared/agent-label.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
 import { asks } from '../../net/mesh/extras.js';
 import type { ChatFile, MessageView } from '../../net/mesh/views.js';
 import type { TrustLevel } from '../trust.js';
-import { type ChatAnswerRequest, type ChatImage, IMAGE_BYTES, MAX_IMAGES, type PromptFile, TEXT_FILE_BYTES, fitTexts, historyLines, isImageFile, isTextFile, sizeLabel, speaker, splitAnswer, systemPrompt, userPrompt } from './claude-prompt.js';
+import { ACT_HISTORY, type ChatAnswerRequest, type ChatImage, type EarlierAsk, IMAGE_BYTES, MAX_IMAGES, type PromptFile, TEXT_FILE_BYTES, earlierPage, fitTexts, historyLines, isImageFile, isTextFile, olderThanWindow, parseRequest, sinceLines, sizeLabel, splitAnswer, systemPrompt, userPrompt } from './claude-prompt.js';
 import type { ChatFiles } from './files.js';
 
 /**
@@ -38,17 +42,32 @@ const HEARTBEAT_MS = 60_000;
 export interface ChatClaudeOptions {
   readonly mesh: Mesh;
   readonly files?: ChatFiles;
-  /** Your Claude's answer (undefined: this Beluga has no Claude to answer with). */
-  readonly answer: ((req: ChatAnswerRequest) => Promise<string>) | undefined;
+  /**
+   * Your agent's answer (undefined: this Beluga has no agent to answer with); with `agent`, the one
+   * that really answered (Claude, when your default couldn't), named on the answer instead.
+   */
+  readonly answer: ((req: ChatAnswerRequest) => Promise<string | { readonly text: string; readonly agent?: AgentRef }>) | undefined;
+  /**
+   * Your own asks of your own Claude (BLG-207): a real turn with its tools in this conversation
+   * (agent-host runChat), its final answer back for the chat. Missing: they're answered like
+   * anyone's, without tools.
+   */
+  readonly act?: (conversation: string, prompt: string) => Promise<string>;
+  /** Whether `act` can run now (default: yes). */
+  readonly canAct?: () => boolean;
   readonly policy: () => ChatClaudePolicy;
   readonly trustOf: (peerId: string) => TrustLevel;
   /** Is this person your friend? (default: the mesh says) */
   readonly isFriend?: (peerId: string) => boolean;
   readonly model?: () => string | undefined;
+  /** Which agent answers (named on each answer; default: Claude). */
+  readonly agent?: () => AgentRef;
   /** Your Claude started or stopped answering (the others hear it over the network). */
-  readonly onLive?: (conversation: string, id: string, state: 'thinking' | 'idle') => void;
+  readonly onLive?: (conversation: string, id: string, state: 'thinking' | 'idle', agent: AgentRef) => void;
   /** Something you should know (your Claude couldn't answer). */
   readonly onProblem?: (conversation: string, text: string) => void;
+  /** Words as this Mac reads them (a team task by its own key: core/team/mentions.ts). */
+  readonly localize?: (text: string) => string;
   /** Where answered asks are remembered. */
   readonly handledFile?: string;
   readonly now?: () => number;
@@ -61,9 +80,9 @@ interface Job {
 
 /** Why an attached file isn't in what Claude reads. */
 function whyNot(file: ChatFile, wanted: boolean, here: boolean): string {
-  if (wanted && here) return `more pictures than Claude looks at in one answer (${MAX_IMAGES})`;
+  if (wanted && here) return `more pictures than an agent looks at in one answer (${MAX_IMAGES})`;
   if (wanted) return 'didn’t arrive in time';
-  return isTextFile(file) || isImageFile(file) ? `too big (${sizeLabel(file.size)})` : 'a kind Claude can’t read in a chat';
+  return isTextFile(file) || isImageFile(file) ? `too big (${sizeLabel(file.size)})` : 'a kind an agent can’t read in a chat';
 }
 
 export class ChatClaude {
@@ -75,6 +94,13 @@ export class ChatClaude {
   private readonly off: () => void;
   private stopped = false;
 
+  private agentRef(): AgentRef {
+    const ref = this.opts.agent?.() ?? CLAUDE_AGENT;
+    // Settings' model is Claude's: another agent without its own model answers on its default.
+    const model = ref.model ?? (ref.runtime === CLAUDE_AGENT.runtime ? this.opts.model?.() : undefined);
+    return model ? { ...ref, model } : ref;
+  }
+
   constructor(private readonly opts: ChatClaudeOptions) {
     const saved = opts.handledFile ? readJson(opts.handledFile) : undefined;
     this.handled = Array.isArray(saved) ? saved.filter((x): x is string => typeof x === 'string').slice(-KEEP_HANDLED) : [];
@@ -82,6 +108,11 @@ export class ChatClaude {
     const onMessage = (m: MessageView): void => this.consider(m);
     opts.mesh.on('message', onMessage);
     this.off = () => opts.mesh.off('message', onMessage);
+  }
+
+  /** Your own asks can be real turns with tools here and now. */
+  acts(): boolean {
+    return Boolean(this.opts.act && (this.opts.canAct?.() ?? true));
   }
 
   private get now(): number {
@@ -94,7 +125,7 @@ export class ChatClaude {
     if (m.claude || !asks(m, me) || m.status === 'locked') return 'not asked';
     if (this.handledSet.has(m.id)) return 'answered';
     if (this.now - m.ts > FRESH_MS) return 'stale';
-    if (!this.opts.answer) return 'no claude';
+    if (!this.opts.answer && !(m.from === me && this.acts())) return 'no claude';
     if (m.from !== me) {
       const level = this.opts.trustOf(m.from);
       const policy = this.opts.policy();
@@ -145,8 +176,9 @@ export class ChatClaude {
   }
 
   private live(conversation: string, id: string, state: 'thinking' | 'idle'): void {
-    this.opts.mesh.sendLive(conversation, id, state);
-    this.opts.onLive?.(conversation, id, state);
+    const agent = this.agentRef();
+    this.opts.mesh.sendLive(conversation, id, state, agent);
+    this.opts.onLive?.(conversation, id, state, agent);
   }
 
   private async run(job: Job): Promise<void> {
@@ -157,44 +189,111 @@ export class ChatClaude {
     const beat = setInterval(() => this.live(conversation, m.id, 'thinking'), HEARTBEAT_MS);
     beat.unref?.();
     try {
-      const request = await this.request(m, job.abort.signal);
-      const answer = await this.opts.answer!(request);
+      // You asked your own Claude: a real turn, with its tools (BLG-207). Anyone else: one answer, no tools.
+      const acting = m.from === mesh.peerId && this.acts();
+      const request = await this.request(m, job.abort.signal, acting);
+      const said = acting ? await this.opts.act!(conversation, `${request.system}\n\n${request.prompt}`) : await this.opts.answer!(request);
+      const answer = typeof said === 'string' ? said : said.text;
+      const by = (typeof said === 'string' ? undefined : said.agent) ?? this.agentRef();
       if (this.stopped || job.abort.signal.aborted) return;
       // Still in the conversation? (you may have left the group, or they unfriended you, meanwhile)
       if (!mesh.conversations().includes(conversation)) return;
-      for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: m.id } });
+      // What needs this Mac comes back as a request the asker's Mac offers to send (gateway), on the last part.
+      const { text, request: offer } = acting ? { text: answer } : parseRequest(answer);
+      const parts = splitAnswer(text);
+      parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, agent: by, ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
     } catch (err) {
-      if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
+      if (!this.stopped) this.opts.onProblem?.(conversation, `${agentLabel(this.agentRef(), undefined, true, { capital: true })} couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       clearInterval(beat);
       if (!this.stopped) this.live(conversation, m.id, 'idle');
     }
   }
 
-  /** The history, the files and the question, as your Claude will read them. */
-  private async request(m: MessageView, signal: AbortSignal): Promise<ChatAnswerRequest> {
+  /**
+   * A turn of your Claude that Beluga starts in a chat itself (BLG-207): a friend's result or their
+   * Claude's question came back for a request it made from here. It takes it with its tools, and its
+   * answer goes into the chat, as one to your latest message there.
+   */
+  continueWith(conversation: string, prompt: string): void {
     const { mesh } = this.opts;
-    const all = mesh.conversation(m.conversation);
+    if (this.stopped || !this.opts.act || !this.acts() || !mesh.conversations().includes(conversation)) return;
+    const all = mesh.conversation(conversation);
+    const about = [...all].reverse().find((m) => m.mine && !m.claude)?.id ?? all.at(-1)?.id ?? 'beluga';
+    this.live(conversation, about, 'thinking');
+    void this.opts
+      .act(conversation, prompt)
+      .then((answer) => {
+        if (this.stopped || !mesh.conversations().includes(conversation)) return;
+        for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: about, agent: this.agentRef() } });
+      })
+      .catch((err: unknown) => {
+        if (!this.stopped) this.opts.onProblem?.(conversation, `${agentLabel(this.agentRef(), undefined, true, { capital: true })} couldn’t carry on: ${err instanceof Error ? err.message : String(err)}`);
+      })
+      .finally(() => {
+        if (!this.stopped) this.live(conversation, about, 'idle');
+      });
+  }
+
+  /** The history, the files and the question, as your Claude will read them. */
+  private async request(asked: MessageView, signal: AbortSignal, tools = false): Promise<ChatAnswerRequest> {
+    const { mesh } = this.opts;
+    const local = this.opts.localize;
+    const words = <V extends MessageView>(x: V): V => (local ? { ...x, text: local(x.text) } : x);
+    const m = words(asked);
+    const all = mesh.conversation(m.conversation).map(words);
     const at = all.findIndex((x) => x.id === m.id);
     const owner = mesh.summary().self?.name ?? 'me';
     const group = m.conversation.startsWith('group:') ? mesh.summary().groups.find((g) => `group:${g.id}` === m.conversation) : undefined;
     const friend = m.conversation.startsWith('dm:') ? mesh.nameFor(m.conversation.slice(3)) : undefined;
     const people = group ? group.members.map((p) => (p.self ? owner : p.name)) : [owner, friend ?? 'a friend'];
     const asker = m.mine ? owner : m.name;
-    const { files, images } = await this.readFiles(m.files ?? []);
+    const read = await this.readFiles(m.files ?? []);
+    // With tools, pictures are files it opens itself (Read) rather than images in the prompt: a copy
+    // outside Beluga's home (which stays private to every Claude), as anything else you show it.
+    const pictures: PromptFile[] = [];
+    if (tools) {
+      for (const i of read.images) {
+        const file = (m.files ?? []).find((f) => f.name === i.name);
+        if (!file) continue;
+        const copy = path.join(os.tmpdir(), 'beluga-chat-pictures', `${file.sha.slice(0, 16)}-${file.name}`);
+        await fs.mkdir(path.dirname(copy), { recursive: true });
+        await fs.writeFile(copy, Buffer.from(i.b64, 'base64'));
+        pictures.push({ file, missing: `a picture: open it with Read at ${copy}` });
+      }
+    }
+    const files = [...read.files, ...pictures];
+    const images = tools ? [] : read.images;
+    const before = at >= 0 ? all.slice(0, at) : all;
+    // A short recent window (BLG-428); a toolless answer reads further back itself when it must
+    // (read_earlier), a turn with its tools has none and gets the longer window instead.
+    const earlier = !tools && olderThanWindow(before, owner) > 0;
     return {
-      system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all' }),
+      system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all', agent: this.agentRef(), ...(tools ? { tools: true } : {}) }),
       prompt: userPrompt({
-        history: historyLines(at >= 0 ? all.slice(0, at) : all, owner),
+        history: historyLines(before, owner, tools ? ACT_HISTORY : undefined),
         ask: m,
         asker,
         files,
-        since: at >= 0 ? all.slice(at + 1).map((x) => `${speaker(x, owner)}: ${x.text.trim()}`) : [],
+        since: at >= 0 ? sinceLines(all.slice(at + 1), owner) : [],
+        ...(earlier ? { earlier: true } : {}),
       }),
       images,
-      ...(this.opts.model?.() ? { model: this.opts.model() } : {}),
+      ...(earlier ? { earlier: (ask: EarlierAsk) => earlierPage(this.before(m.conversation, m.id), owner, ask) } : {}),
+      ...(this.agentRef().model ? { model: this.agentRef().model } : {}),
       signal,
     };
+  }
+
+  /**
+   * The messages before an ask, as this Mac holds its conversation now (read_earlier): only that
+   * conversation's, read again on every page so what was deleted or can't be read stays out.
+   */
+  private before(conversation: string, askId: string): MessageView[] {
+    const local = this.opts.localize;
+    const all = this.opts.mesh.conversation(conversation);
+    const at = all.findIndex((x) => x.id === askId);
+    return (at >= 0 ? all.slice(0, at) : []).map((x) => (local ? { ...x, text: local(x.text) } : x));
   }
 
   /** The ask's files that Claude can read: text inline, pictures as images (waiting a little for them to arrive). */

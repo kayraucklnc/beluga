@@ -1,21 +1,90 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { ATTACHMENT_SCHEME } from '@beluga/core/attachment-share.js';
 import type { LinkedImage } from '@beluga/shared/attachment-links.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 
 /**
- * Images linked in chat messages, fetched once through the core (yours from disk, a friend's
- * through their share) and kept as object URLs for this window. Plus the one open lightbox.
+ * Images linked in chat messages, fetched through the core (yours from disk, a friend's through
+ * their share) and kept as object URLs for this window. Plus the one open lightbox.
+ *
+ * Kept small (BLG-367): a message shows a copy no bigger than THUMB_PX (a full-size Retina screenshot
+ * decodes to ~24 MB, its thumbnail to ~2), the full picture is read only for the lightbox, and
+ * both caches let the oldest go, but never one that's on screen.
  */
 
 type Api = SocketClient['api'];
+export type ImageSize = 'thumb' | 'full';
 
-const cache = new Map<string, Promise<string>>();
+/** A thumbnail's longest side, in pixels: 360 CSS px on a Retina screen, with room to spare. */
+export const THUMB_PX = 1024;
+/** How many of each the window keeps (beyond those on screen). */
+const KEEP = { thumb: 120, full: 4 } as const;
 
-function toBlobUrl(data: string, mime: string): string {
+interface Entry {
+  readonly url: Promise<string>;
+  /** Shown now (by useImage): not let go. */
+  users: number;
+  /** Not ours to let go (a pasted image's preview, kept by `pending`). */
+  readonly borrowed?: boolean;
+}
+
+const caches = { thumb: new Map<string, Entry>(), full: new Map<string, Entry>() };
+
+/** Let the oldest go, past what the window keeps: least recently used first, never one shown or borrowed. */
+function trim(size: ImageSize): void {
+  const cache = caches[size];
+  const kept = (e: Entry): boolean => e.users > 0 || Boolean(e.borrowed);
+  let over = cache.size - KEEP[size] - [...cache.values()].filter(kept).length;
+  for (const [key, e] of cache) {
+    if (over <= 0) break;
+    if (kept(e)) continue;
+    cache.delete(key);
+    void e.url.then(URL.revokeObjectURL, () => undefined);
+    over--;
+  }
+}
+
+function toBlob(data: string, mime: string): Blob {
   const bin = atob(data);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  return new Blob([bytes], { type: mime });
+}
+
+/** The picture no bigger than THUMB_PX on its longest side (as it is, when it's already that small or can't be read). */
+export async function shrink(blob: Blob, px = THUMB_PX): Promise<Blob> {
+  if (blob.type === 'image/svg+xml' || blob.type === 'image/gif') return blob;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    return blob;
+  }
+  try {
+    const scale = px / Math.max(bitmap.width, bitmap.height);
+    if (scale >= 1) return blob;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const g = canvas.getContext('2d');
+    if (!g) return blob;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    // A photo stays a photo (small as JPEG); a screenshot or anything see-through stays PNG.
+    const type = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    return (await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.9))) ?? blob;
+  } finally {
+    bitmap.close();
+  }
+}
+
+function entry(size: ImageSize, key: string): Entry | undefined {
+  const e = caches[size].get(key);
+  if (!e) return undefined;
+  // Used again: newest (Maps keep the order things went in).
+  caches[size].delete(key);
+  caches[size].set(key, e);
+  return e;
 }
 
 /**
@@ -27,37 +96,65 @@ export type ChatImage = LinkedImage & {
   readonly local?: string;
 };
 
-/** The image as a URL this window can show (fetched on first use, then cached). */
-export function loadImage(api: Api, image: Pick<ChatImage, 'href' | 'owner' | 'file' | 'local'>): Promise<string> {
-  const hit = cache.get(image.href);
+type Loadable = Pick<ChatImage, 'href' | 'owner' | 'file' | 'local'>;
+
+function load(api: Api, image: Loadable, size: ImageSize): Entry {
+  const hit = entry(size, image.href);
   if (hit) return hit;
-  const load = image.local
+  const read: Promise<Blob> = image.local
     ? api.session
         .localLocation(image.local, false)
         .then((at) => api.files.readImageFile(at))
-        .then((r) => toBlobUrl(r.data, r.mediaType))
-    : api.attachments.read(image.owner, image.file).then((r) => toBlobUrl(r.data, r.mime));
-  cache.set(image.href, load);
+        .then((r) => toBlob(r.data, r.mediaType))
+    : api.attachments.read(image.owner, image.file).then((r) => toBlob(r.data, r.mime));
+  const url = (size === 'thumb' ? read.then((b) => shrink(b)) : read).then((b) => URL.createObjectURL(b));
+  const e: Entry = { url, users: 0 };
+  caches[size].set(image.href, e);
   // A failure isn't kept: the next time it shows, it tries again (the friend may be back).
-  load.catch(() => cache.delete(image.href));
-  return load;
+  url.catch(() => caches[size].get(image.href) === e && caches[size].delete(image.href));
+  trim(size);
+  return e;
+}
+
+/** The image as a URL this window can show (fetched on first use, then kept a while): `thumb` for a message, `full` for the lightbox. */
+export function loadImage(api: Api, image: Loadable, size: ImageSize = 'full'): Promise<string> {
+  return load(api, image, size).url;
+}
+
+/** The image, kept until `release` (while it's on screen). */
+export function holdImage(api: Api, image: Loadable, size: ImageSize): { url: Promise<string>; release: () => void } {
+  const e = load(api, image, size);
+  e.users++;
+  let held = true;
+  return {
+    url: e.url,
+    release: () => {
+      if (!held) return;
+      held = false;
+      e.users--;
+      trim(size);
+    },
+  };
 }
 
 export type ImageState = { readonly status: 'loading' } | { readonly status: 'ready'; readonly url: string } | { readonly status: 'error'; readonly error: string };
 
-export function useImage(api: Api, image: ChatImage): ImageState {
+/** The image while it's on screen (kept that long): `thumb` in a message, `full` in the lightbox. */
+export function useImage(api: Api, image: ChatImage, size: ImageSize = 'thumb'): ImageState {
   const [state, setState] = useState<ImageState>({ status: 'loading' });
   useEffect(() => {
     let alive = true;
     setState({ status: 'loading' });
-    loadImage(api, image).then(
+    const held = holdImage(api, image, size);
+    held.url.then(
       (url) => alive && setState({ status: 'ready', url }),
       (err: unknown) => alive && setState({ status: 'error', error: err instanceof Error ? err.message : String(err) }),
     );
     return () => {
       alive = false;
+      held.release();
     };
-  }, [api, image.href]);
+  }, [api, image.href, size]);
   return state;
 }
 
@@ -71,6 +168,18 @@ export function keepPreview(n: number, file: Blob): void {
 }
 
 export const previewOf = (n: number): string | undefined => pending.get(n);
+
+/**
+ * A pasted image as the lightbox shows it, before it's sent (`file`: the name Beluga saved it
+ * under, so Open finds it): its picture is the one kept here, nothing to fetch.
+ */
+export function pendingImage(n: number, owner: string, file: string, label: string): ChatImage | undefined {
+  const url = pending.get(n);
+  if (!url) return undefined;
+  const href = `${ATTACHMENT_SCHEME}${owner}/${file}`;
+  for (const cache of Object.values(caches)) if (!cache.has(href)) cache.set(href, { url: Promise.resolve(url), users: 0, borrowed: true });
+  return { href, owner, file, label };
+}
 
 // ---- the lightbox: one per window, opened from any message
 

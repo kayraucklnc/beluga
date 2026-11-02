@@ -1,0 +1,34 @@
+.alert {
+  color: var(--error);
+}
+.sideIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.runLine {
+  color: var(--text-2);
+}
+.runMark {
+  color: var(--text-3);
+}
+.runMark[data-state='done'] {
+  color: var(--ok);
+}
+.runMark[data-state='failed'] {
+  color: var(--error);
+}
+.when {
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.more {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.rowEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

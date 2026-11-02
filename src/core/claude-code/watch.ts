@@ -12,6 +12,7 @@ import { agentScratchDir, outputsOnDisk, readOutput } from './output-files.js';
 import { type PageOptions, TranscriptTracker } from './sessions.js';
 import type { StepRecord } from '../../shared/steps.js';
 import type { Facts } from './transcript.js';
+import { isUnder } from '../../shared/path-inside.js';
 
 /**
  * Watches the transcripts Claude Code writes (~/.claude/projects/<folder>/<session>.jsonl, and
@@ -75,8 +76,11 @@ interface SessionEntry {
   readonly agents: Map<string, AgentEntry>;
   /** When a screen last asked for its steps (kept watched a while after it goes quiet). */
   viewedAt: number;
-  /** One of Beluga's own conversations: watched for its sub-agents, kept out of Activity. */
-  readonly own: boolean;
+  /**
+   * One of Beluga's own conversations: watched for its sub-agents, kept out of Activity. Checked
+   * every scan: its transcript can appear before the workspace has its session id.
+   */
+  own: boolean;
 }
 
 const ACTIVE_MS = 30 * 60_000;
@@ -168,7 +172,7 @@ function ownPlace(projects: readonly Project[], sessionId: string, cwd: string):
 
 /** The Beluga project and workspace a folder belongs to (the deepest workspace folder containing it). */
 export function placeOf(projects: readonly Project[], cwd: string): { projectId?: string; workspaceId?: string } {
-  const within = (root: string): boolean => Boolean(root) && (cwd === root || cwd.startsWith(`${root}/`));
+  const within = (root: string): boolean => isUnder(root, cwd);
   let best: { projectId: string; workspaceId: string; len: number } | undefined;
   for (const p of projects) {
     for (const w of p.workspaces) {
@@ -387,7 +391,8 @@ export class ClaudeCodeWatcher {
         const recent = now - mtime <= activeMs || (await this.agentsWrittenSince(agentsDir, now - activeMs));
         if (!recent && !viewed) return;
         found.add(id);
-        if (!this.sessions.has(id)) this.sessions.set(id, { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: 0, own: own.has(id) });
+        if (!known) this.sessions.set(id, { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: 0, own: own.has(id) });
+        else if (!known.own && own.has(id)) known.own = true;
       });
     }
     if (this.stopped) return;

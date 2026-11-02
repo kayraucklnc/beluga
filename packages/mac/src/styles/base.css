@@ -113,6 +113,11 @@ html[data-app='tauri'],
 html[data-app='tauri'] body {
   background: transparent;
 }
+/* Reduce transparency (Settings › Appearance, BLG-409): a solid window, the blur behind it off. */
+html[data-app='tauri'][data-transparency='reduce'],
+html[data-app='tauri'][data-transparency='reduce'] body {
+  background: var(--bg-sidebar-solid);
+}
 
 /* Find in this conversation (⌘F): every match, and the one you're on. */
 ::highlight(beluga-find) {

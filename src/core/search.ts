@@ -1,4 +1,5 @@
 import type { LogItem } from './store.js';
+import { agentLabel } from '../shared/agent-label.js';
 import type { SearchHit } from './work-store.js';
 
 export interface SearchSource {
@@ -13,7 +14,7 @@ const MAX_HITS = 200;
 
 const textOf = (item: LogItem): { who: string; text: string } | undefined => {
   if (item.type === 'chat') return { who: item.name, text: item.text };
-  if (item.type === 'agent') return item.text ? { who: `${item.ownerName}'s Claude`, text: item.text } : undefined;
+  if (item.type === 'agent') return item.text ? { who: agentLabel(item.agent, item.ownerName, false), text: item.text } : undefined;
   return item.type === 'system' ? { who: '', text: item.text } : undefined;
 };
 

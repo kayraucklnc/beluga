@@ -63,7 +63,8 @@ describe('run_on_peer gating', () => {
 
 describe('runShell', () => {
   const dir = realpathSync(os.tmpdir());
-  it('returns output and the exit code, with no input', async () => {
+  // Not on Windows: sh syntax: Windows runs these in cmd.
+  it.skipIf(process.platform === 'win32')('returns output and the exit code, with no input', async () => {
     const res = await runShell('echo hi; echo err >&2; cat; exit 3', dir, 5000);
     expect(res.exitCode).toBe(3);
     expect(res.output).toContain('hi');
@@ -77,7 +78,8 @@ describe('runShell', () => {
     expect(res.ms).toBeLessThan(3000);
   });
 
-  it('caps output, keeping the end', async () => {
+  // Not on Windows: sh syntax: Windows runs these in cmd.
+  it.skipIf(process.platform === 'win32')('caps output, keeping the end', async () => {
     const res = await runShell("yes x | head -c 200000; echo END", dir, 5000);
     expect(res.truncated).toBe(true);
     expect(res.output.length).toBeLessThanOrEqual(64 * 1024 + 10);
@@ -177,7 +179,8 @@ describe('running a command on a friend', () => {
     expect(bob.state().inbox[0]?.title).toContain('kay ran');
   });
 
-  it('shows "running" once they approve, before the output arrives', async () => {
+  // Not on Windows: sh syntax (sleep): Windows runs these in cmd.
+  it.skipIf(process.platform === 'win32')('shows "running" once they approve, before the output arrives', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
     const bob = peer('bob');
@@ -246,7 +249,7 @@ describe('running a command on a friend', () => {
     bob.session.people.setTrust(kay.session.selfId, 'full', true);
     expect(await kay.session.runOnPeer('bob', 'echo fast', { viaAgent: true })).toContain('fast');
     expect(bob.ran[0]).toBe(`echo fast @ ${realpathSync(os.homedir())}`);
-    expect(bob.state().log.some((l) => l.type === 'system' && l.text.includes("kay's Claude ran `echo fast`"))).toBe(true);
+    expect(bob.state().log.some((l) => l.type === 'system' && l.text.includes("kay's agent ran `echo fast`"))).toBe(true);
   });
 
   it('declines blocked people and commands that touch secrets, without asking', async () => {
@@ -272,7 +275,7 @@ describe('running a command on a friend', () => {
     await waitFor(() => kay.state().granted[bob.session.selfId]?.level === 'full');
     const bobIndex = kay.state().peers.findIndex((p) => p.name === 'bob');
     const menu = personMenu(appOf(kay.state()), bobIndex)!;
-    expect(menu.intro).toContain('bob lets your Claude: anything, without asking');
+    expect(menu.intro).toContain('bob lets your agent: anything, without asking');
     expect(menu.options.some((o) => o.id === 'person-run' && o.label === "Run a command on bob's computer…")).toBe(true);
     const bobSeen = describePeers(kay.session).find((p) => p.name === 'bob');
     expect(bobSeen).toMatchObject({ shares: ['proj'], lets_you: { trust: 'full' } });

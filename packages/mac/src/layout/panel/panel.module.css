@@ -6,20 +6,23 @@
 
 /* ---- the panel */
 
+/*
+ * Its width changes in one step, never animated: an animated width laid the whole conversation,
+ * the toolbar and every terminal out again on each frame of the slide, which froze it. What
+ * slides is the inside, moved (a transform, off the main thread).
+ */
 .panel {
   position: relative;
   flex: none;
   height: 100%;
   overflow: hidden;
-  border-left: 0.5px solid var(--hairline);
-  background: var(--bg-sunken);
-  transition: width var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+  /* The room it takes, as the page beside it, so opening shows no gray gap before the panel arrives. */
+  background: var(--bg);
 }
-.closed {
-  border-left-color: transparent;
-}
-.dragging {
-  transition: none;
+/* Closing: its room is already given back, so it slides away over the conversation. */
+.leaving {
+  overflow: visible;
+  z-index: 50;
 }
 /* Fixed to the panel's width and pinned right, so it slides instead of re-wrapping as the panel opens and closes. */
 .inner {
@@ -29,6 +32,26 @@
   bottom: 0;
   display: flex;
   flex-direction: column;
+  border-left: 0.5px solid var(--hairline);
+  background: var(--bg-sunken);
+  transform: translateX(0);
+  transition: transform var(--dur) var(--ease-out);
+}
+.innerOut {
+  transform: translateX(100%);
+}
+/* While it slides, its own compositing layer; not after (a layer of its own blurs text in WebKit). */
+.sliding {
+  will-change: transform;
+}
+/* The tab's content, drawn once the slide is over, fades in instead of popping. */
+.settled .body {
+  animation: settle var(--dur) var(--ease-out);
+}
+@keyframes settle {
+  from {
+    opacity: 0;
+  }
 }
 .head {
   flex: none;
@@ -77,6 +100,10 @@
   z-index: 1;
   background: var(--bg-sidebar-solid);
   box-shadow: 0 -1px 0 var(--hairline), 0 -6px 14px -10px rgba(0, 0, 0, 0.35);
+}
+/* On light the dark theme's shadow read as a grey smear: a firm line and a whisper of shade. */
+:global(:root[data-theme='light']) .dock {
+  box-shadow: 0 -1px 0 var(--hairline), 0 -4px 10px -8px rgba(0, 0, 0, 0.12);
 }
 .dockHead {
   gap: 4px;

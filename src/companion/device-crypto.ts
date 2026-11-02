@@ -28,10 +28,11 @@ export const PAIR_TTL_MS = 10 * 60 * 1000;
 const PWHASH = { ops: 2, mem: 64 * 1024 * 1024 } as const;
 
 /** What the phone was given: the QR's secret, or the code typed in. */
-export type DeviceTicket = { readonly via: 'link'; readonly secret: string } | { readonly via: 'code'; readonly code: string };
+/** A link may carry the Mac's relay (`?r=`), so pairing works where the DHT can't be reached. */
+export type DeviceTicket = { readonly via: 'link'; readonly secret: string; readonly relay?: string } | { readonly via: 'code'; readonly code: string };
 
 export const formatCode = (code: string): string => (code.match(/.{1,4}/g) ?? []).join('-');
-export const deviceLink = (secret: string): string => `beluga://device#${secret}`;
+export const deviceLink = (secret: string, relay?: string): string => `beluga://device#${secret}${relay ? `?r=${encodeURIComponent(relay)}` : ''}`;
 
 /** A typed code read loosely: any case, dashes or spaces, O for 0, I or L for 1. */
 export function readCode(typed: string): string | undefined {
@@ -41,8 +42,16 @@ export function readCode(typed: string): string | undefined {
 
 /** A pairing out of what was scanned, pasted or typed (`beluga://device#…`, `beluga://device?code=…`, `K7QM-4XPA-R2TD`). */
 export function parseDeviceTicket(text: string): DeviceTicket | undefined {
-  const link = /(?:beluga|klaud):\/\/device\/?#([\w-]{22})(?![\w-])/.exec(text);
-  if (link) return { via: 'link', secret: link[1]! };
+  const link = /(?:beluga|klaud):\/\/device\/?#([\w-]{22})(?![\w-])(?:\?r=([\w%.-]+))?/.exec(text);
+  if (link) {
+    let relay: string | undefined;
+    try {
+      relay = link[2] ? decodeURIComponent(link[2]) : undefined;
+    } catch {
+      relay = undefined;
+    }
+    return { via: 'link', secret: link[1]!, ...(relay && /^wss?:\/\//.test(relay) ? { relay } : {}) };
+  }
   const codeLink = /(?:beluga|klaud):\/\/device\/?\?code=([0-9A-Za-z%+-]{12,40})/.exec(text);
   const code = readCode(codeLink ? codeLink[1]!.replace(/%2D/gi, '-').replace(/\+/g, ' ') : text);
   return code ? { via: 'code', code } : undefined;

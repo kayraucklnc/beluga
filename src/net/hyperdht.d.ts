@@ -40,6 +40,9 @@ declare module 'hyperdht' {
     ready(): Promise<void>;
     fullyBootstrapped(): Promise<void>;
     destroy(opts?: { force?: boolean }): Promise<void>;
+    /** A signed, versioned value under a key pair's public key (the companion's relay record). */
+    mutablePut(keyPair: KeyPair, value: Buffer, opts?: { seq?: number }): Promise<{ publicKey: Buffer; seq: number; signature: Buffer }>;
+    mutableGet(publicKey: Buffer, opts?: { seq?: number; latest?: boolean }): Promise<{ value: Buffer; seq: number; signature: Buffer } | null>;
     readonly destroyed: boolean;
   }
 }

@@ -1,3 +1,4 @@
+import { systemOpen } from '../core/os-open.js';
 import { needPlans } from '../core/plans/registry.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
@@ -17,14 +18,23 @@ export const PLANS_HANDLERS = {
   'plans.setPaused': (s, id, paused) => needPlans(s).setPaused(id, paused),
   'plans.setParallel': (s, id, n) => needPlans(s).setParallel(id, n),
   'plans.setTestsAt': (s, id, when) => needPlans(s).setTestsAt(id, when),
+  'plans.setWorkAgent': (s, id, agent) => needPlans(s).setWorkAgent(id, agent ?? null),
   'plans.tidyUp': (s, id, yes) => needPlans(s).tidyUp(id, yes),
   'plans.pass': (s, id, milestone) => needPlans(s).pass(id, milestone),
   'plans.recheck': (s, id, milestone) => needPlans(s).recheck(id, milestone),
   'plans.sendBack': (s, id, milestone, note) => needPlans(s).sendBack(id, milestone, note),
   'plans.openPr': (s, id) => needPlans(s).openPr(id),
-  'plans.mergePr': (s, id) => needPlans(s).mergePr(id),
+  'plans.mergePr': (s, id, opts) => needPlans(s).mergePr(id, opts ?? {}),
   'plans.mergeLocal': (s, id) => needPlans(s).mergeLocal(id),
-  'plans.startTask': (s, id, task) => needPlans(s).startTask(id, task),
+  'plans.bringInMain': (s, id) => needPlans(s).bringInMain(id),
+  'plans.retryConflicts': (s, id) => needPlans(s).retryConflicts(id),
+  'plans.showConflict': (s, id) => {
+    const dir = needPlans(s).conflictDir(id);
+    if (!dir) throw new Error('This plan has no conflict waiting');
+    systemOpen(dir);
+    return null;
+  },
+  'plans.startTask': (s, id, task, agent) => needPlans(s).startTask(id, task, agent),
   'plans.resumeTask': (s, id, task) => needPlans(s).resumeTask(id, task),
   'plans.remove': (s, id) => needPlans(s).remove(id),
   'plans.setStyle': (s, text) => needPlans(s).setStyle(text),

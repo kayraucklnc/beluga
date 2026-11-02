@@ -47,7 +47,8 @@ describe('picking the shell', () => {
     ]);
   });
 
-  it('runs setup and run commands in an sh-like shell even when yours is fish', () => {
+  // Not on Windows: Windows runs them in Git Bash (tests/platform-shells.test.ts).
+  it.skipIf(process.platform === 'win32')('runs setup and run commands in an sh-like shell even when yours is fish', () => {
     expect(scriptShell('/bin/bash')).toBe('/bin/bash');
     expect(isPosixShell(scriptShell('/opt/homebrew/bin/fish', { SHELL: '/opt/homebrew/bin/fish' }))).toBe(true);
     expect(isPosixShell(scriptShell(undefined, {}))).toBe(true);

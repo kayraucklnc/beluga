@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
-import { pick } from './helpers.js';
+import { personRow, pick } from './helpers.js';
 
 /** The Mac app's web view against a real Beluga (the demo): what you click does what it says. */
 
@@ -12,12 +12,12 @@ async function openWorkspace(page: Page, name = 'add-auth'): Promise<void> {
   await sidebar(page).getByRole('button', { name, exact: true }).click();
 }
 
-/** The full-page terminal (no sidebar row of its own: ⌥6, the Go menu, ⌘K). */
+/** The full-page terminal (no sidebar row of its own: ⌘6, the Go menu, ⌘K). */
 async function openTerminalPage(page: Page): Promise<void> {
   await expect(sidebar(page)).toBeVisible();
   // (Right after a reload the window may not be listening yet: try again.)
   await expect(async () => {
-    await page.keyboard.press('Alt+Digit6');
+    await page.keyboard.press('Meta+Digit6');
     await expect(page.locator('header').first()).toContainText('Terminal', { timeout: 1000 });
   }).toPass({ timeout: 10_000 });
 }
@@ -28,8 +28,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('shows the room, its people and projects', async ({ page }) => {
-  await expect(sidebar(page).getByRole('button', { name: 'bob', exact: true })).toBeVisible();
-  await expect(sidebar(page).getByText('bob-api')).toBeVisible();
+  await expect(personRow(page, 'bob')).toBeVisible();
+  await expect(sidebar(page).getByText('bob-api', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('hey! just pushed my API notes')).toBeVisible();
 });
 
@@ -86,19 +86,50 @@ test('⌘J shows the terminal in the right panel and runs a command in it', asyn
   await expect(term).toBeHidden();
 });
 
+test("the dock terminal takes the shell's keys: Tab completes after a click in its padding, ⌘← goes to the line's start", async ({ page }) => {
+  await openWorkspace(page);
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
+  await page.keyboard.press('Meta+J');
+  const term = page.getByRole('complementary', { name: 'Panel' }).getByRole('region', { name: 'Terminal' });
+  await expect(term).toBeVisible();
+  await expect(term.locator('.xterm-rows')).toContainText(/\S/, { timeout: 15_000 });
+  await composer(page).click();
+  // The padding around the text, not the text: the keyboard goes to the shell all the same.
+  const box = term.locator('.xterm').locator('..');
+  const width = (await box.boundingBox())!.width;
+  await box.click({ position: { x: width / 2, y: 3 } });
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await page.keyboard.type('echo $((6*7))tab-done > tab-probe-7731.txt\n');
+  await page.keyboard.type('cat tab-probe-77');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await expect(term.getByText('42tab-done').last()).toBeVisible({ timeout: 15_000 });
+  // Emacs keys, whatever the test's environment says (an EDITOR=vi there puts zsh in vi mode).
+  await page.keyboard.type('bindkey -e 2>/dev/null; clear\n');
+  await page.keyboard.type('cho line-$((6*7))');
+  await page.keyboard.press('Meta+ArrowLeft');
+  await page.keyboard.type('e');
+  await page.keyboard.press('Enter');
+  await expect(term.getByText('line-42').last()).toBeVisible({ timeout: 15_000 });
+  await page.keyboard.type('rm tab-probe-7731.txt\n');
+});
+
 test('picks a model and how hard Claude thinks', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByRole('button', { name: 'Model and effort' }).click();
+  await page.getByRole('button', { name: 'Agent, model and effort' }).click();
   await page.getByRole('radio', { name: /Opus/ }).click();
   await page.getByRole('radio', { name: 'High', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Model and effort' })).toHaveText(/Opus · High/);
+  await expect(page.getByRole('button', { name: 'Agent, model and effort' })).toHaveText(/Opus · High/);
   await page.getByRole('radio', { name: 'Auto' }).click();
 });
 
 test("opens a person's card beside their row", async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'bob', exact: true }).click();
+  // On the name, not its Add button.
+  await personRow(page, 'bob').getByText('bob', { exact: true }).click();
   const card = page.getByRole('dialog', { name: 'bob' });
-  await expect(card.getByRole('radiogroup', { name: 'Trust bob' })).toBeVisible();
+  // Not a friend yet: the card says how much you trust them, and offers to add them.
+  await expect(card.getByText('Ask me each time.')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Add bob as a friend' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(card).toBeHidden();
 });
@@ -228,8 +259,38 @@ test('adds a project from the Add Projects sheet, with its own icon', async ({ p
   await expect(row.locator('img')).toHaveAttribute('src', /^data:image\/svg\+xml/);
   // Nothing in it yet: no fold arrow (a project with worktrees keeps its own).
   await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) pixel-app/ })).toHaveCount(0);
-  await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) bob-api/ })).toHaveCount(1);
+  // Your own bob-api (it has worktrees) keeps its fold arrow; bob's shared copy below has its own, not counted here.
+  await expect(sidebar(page).getByRole('button', { name: 'bob-api', exact: true }).getByRole('button', { name: /^(Fold|Show what's in) bob-api/ })).toHaveCount(1);
   if (process.env.SHOTS) await sidebar(page).screenshot({ path: `${process.env.SHOTS}/sidebar-empty-project.png` });
+});
+
+test('starts a new project from the Add Projects sheet, with git and a first commit', async ({ page }) => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync } = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const parent = mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-new-'));
+  await sidebar(page).getByRole('button', { name: /Add a project/ }).first().click();
+  await page.getByRole('menuitem', { name: 'New Project…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'New project' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Create Project' })).toBeDisabled();
+  await sheet.getByRole('textbox', { name: 'Project name' }).fill('fresh-idea');
+  await sheet.getByRole('textbox', { name: 'Where the new project goes' }).fill(parent);
+  await expect(sheet.getByText(/with git and a first commit/)).toBeVisible();
+  if (process.env.SHOTS) await sheet.screenshot({ path: `${process.env.SHOTS}/new-project-sheet.png` });
+  await sheet.getByRole('button', { name: 'Create Project' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(sidebar(page).getByRole('button', { name: /^fresh-idea/ }).first()).toBeVisible();
+  const dir = path.join(parent, 'fresh-idea');
+  expect(execFileSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' }).trim()).toBe('Start fresh-idea');
+  // A name that's taken by a folder with files in it is refused, in the sheet.
+  await sidebar(page).getByRole('button', { name: /Add a project/ }).first().click();
+  await page.getByRole('menuitem', { name: 'New Project…' }).click();
+  await sheet.getByRole('textbox', { name: 'Project name' }).fill('fresh-idea');
+  await sheet.getByRole('textbox', { name: 'Where the new project goes' }).fill(parent);
+  await sheet.getByRole('button', { name: 'Create Project' }).click();
+  await expect(sheet.getByRole('alert')).toContainText('already there');
 });
 
 // ---- images in the chat, and the queue
@@ -264,7 +325,7 @@ test('shows pasted images before sending, and in the message after', async ({ pa
   const pending = page.getByLabel('Images to send');
   await expect(pending.getByRole('img')).toHaveCount(1);
   // The image waits above the box as a thumbnail, with an "[image N]" in the words where the cursor was.
-  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
+  await expect(composer(page)).toHaveValue(/^\[(?:image \d+|\d+\u2007[^\]\n]+)\] $/);
   // Removing it takes its "[image N]" out of the words too.
   await pending.getByRole('button', { name: /^Remove image/ }).click();
   await expect(pending).toBeHidden();
@@ -272,7 +333,7 @@ test('shows pasted images before sending, and in the message after', async ({ pa
   await composer(page).fill('');
   await pasteImage(page);
   await expect(pending.getByRole('img')).toHaveCount(1);
-  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
+  await expect(composer(page)).toHaveValue(/^\[(?:image \d+|\d+\u2007[^\]\n]+)\] $/);
   const words = `pixel check ${Date.now()}`;
   // The box puts the cursor after "[image N]" on the next frame: type once that frame has run (KLD-84).
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
@@ -322,13 +383,16 @@ test('queues messages while Claude works, reorders them, and sends one now', asy
 
 const bell = (page: Page) => page.getByRole('button', { name: /^Notifications/ }).first();
 const centre = (page: Page) => page.getByRole('dialog', { name: 'Notifications' });
+/** What happened, under Today and Earlier (not what waits for you). */
+const history = (page: Page) => centre(page).getByRole('region', { name: /^(Today|Earlier)$/ }).getByRole('listitem');
 
 /** Open the centre and empty it, so each test starts from nothing. */
 async function emptyCentre(page: Page): Promise<void> {
   await bell(page).click();
   const clear = centre(page).getByRole('button', { name: 'Clear all' });
   if (await clear.isEnabled()) await clear.click();
-  await expect(centre(page).getByText('You’re all caught up')).toBeVisible();
+  // What waits for you (the demo's knock, its merge) stays: answered, not cleared.
+  await expect(history(page)).toHaveCount(0);
   await page.keyboard.press('Escape');
 }
 
@@ -358,22 +422,39 @@ test('marks everything read, one unread again, and clears', async ({ page }) => 
   await sendTestNotification(page);
   await sendTestNotification(page);
   await bell(page).click();
-  await expect(centre(page).getByRole('listitem')).toHaveCount(2);
+  await expect(history(page)).toHaveCount(2);
   await centre(page).getByRole('button', { name: 'Mark all read' }).click();
   await expect(bell(page)).not.toHaveAccessibleName(/new/);
   await centre(page).getByRole('tab', { name: /Unread/ }).click();
-  await expect(centre(page).getByText('Nothing unread')).toBeVisible();
+  await expect(history(page)).toHaveCount(0);
   await centre(page).getByRole('tab', { name: 'All' }).click();
   // Hover a notification for read/unread and ×.
-  const first = centre(page).getByRole('listitem').first();
+  const first = history(page).first();
   await first.hover();
   await first.getByRole('button', { name: 'Mark as unread' }).click();
   await expect(bell(page)).toHaveAccessibleName(/1 new/);
   await first.hover();
   await first.getByRole('button', { name: 'Clear' }).click();
-  await expect(centre(page).getByRole('listitem')).toHaveCount(1);
+  await expect(history(page)).toHaveCount(1);
   await centre(page).getByRole('button', { name: 'Clear all' }).click();
-  await expect(centre(page).getByText('You’re all caught up')).toBeVisible();
+  await expect(history(page)).toHaveCount(0);
+});
+
+test('what waits for you is answered in the bell, and opens where it lives', async ({ page }) => {
+  await bell(page).click();
+  const waiting = centre(page).getByRole('region', { name: 'Waiting for you' });
+  await expect(bell(page)).toHaveAccessibleName(/2 waiting for you/);
+  // Someone at the door: let in right here.
+  const knock = waiting.getByRole('listitem').filter({ hasText: 'zoe wants to come in' });
+  await expect(knock).toContainText('Room');
+  if (process.env.SHOTS) await centre(page).screenshot({ path: `${process.env.SHOTS}/bell-waiting.png` });
+  await knock.getByRole('button', { name: 'Let in' }).click();
+  await expect(knock).toHaveCount(0);
+  await expect(bell(page)).toHaveAccessibleName(/1 waiting for you/);
+  // A merge held for you: clicking it opens the run, where it waits.
+  await waiting.getByRole('button', { name: /Merge the fix for #48\?/ }).click();
+  await expect(centre(page)).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Merge', exact: true }).first()).toBeVisible();
 });
 
 test('clicking a notification goes where it happened', async ({ page }) => {
@@ -397,17 +478,17 @@ test('clicking a notification goes where it happened', async ({ page }) => {
 
 test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByRole('button', { name: 'Model and effort' }).click();
+  await page.getByRole('button', { name: 'Agent, model and effort' }).click();
   await page.getByRole('radio', { name: 'Max', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Model and effort' })).toHaveText(/Max/);
+  await expect(page.getByRole('button', { name: 'Agent, model and effort' })).toHaveText(/Max/);
   await page.getByRole('radio', { name: 'Auto' }).click();
   await expect(page.getByRole('radio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByRole('button', { name: 'Model and effort' })).not.toHaveText(/Max/);
+  await expect(page.getByRole('button', { name: 'Agent, model and effort' })).not.toHaveText(/Max/);
   await page.keyboard.press('Escape');
   await composer(page).click();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('status').filter({ hasText: 'Plan mode' }).filter({ hasText: 'to act' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Planning' }).filter({ hasText: 'to act' })).toBeVisible();
   await expect(composer(page)).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('status').filter({ hasText: 'Plan mode' }).filter({ hasText: 'to act' })).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'Planning' }).filter({ hasText: 'to act' })).toHaveCount(0);
 });

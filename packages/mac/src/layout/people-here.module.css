@@ -1,0 +1,71 @@
+/* Avatars in a shared worktree's header, each with a small presence dot (pastel, no glow). */
+.people {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
+.person {
+  position: relative;
+  display: inline-flex;
+}
+.dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+.online {
+  background: #8fd3a5;
+}
+.away {
+  background: #f2cf8a;
+}
+.offline {
+  background: #c9c9cf;
+}
+.update {
+  background: #b9c6f0;
+}
+.person[data-presence='offline'] {
+  opacity: 0.6;
+}
+.unknown {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px #c9c9cf, 0 0 0 1.5px var(--bg);
+}
+
+/* Above your own shared worktree's chat: who sees it, quietly (BLG-259). */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 14px;
+  border-bottom: 0.5px solid var(--hairline);
+  background: color-mix(in srgb, var(--bg-sunken) 70%, var(--bg));
+  font-size: 0.88rem;
+  overflow: hidden;
+}
+.stripPeople {
+  display: inline-flex;
+  gap: 3px;
+  flex: none;
+}
+.stripPeople .dot {
+  width: 6px;
+  height: 6px;
+}
+.stripText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+.stripDetail {
+  color: var(--text-3);
+}

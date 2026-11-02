@@ -71,3 +71,34 @@ export function useClock(running: boolean, every = 1000): number {
   }, [running, looking, every]);
   return now;
 }
+
+/** The page can be seen: not hidden (minimized, or in another Space), or you're plainly at it (KLD-64: WebKit's "hidden" can be stale). */
+export const pageShown = (): boolean => !document.hidden || active;
+
+/**
+ * `tick` every `every` ms while the page can be seen (pageShown), behind another app too. While
+ * it can't, nothing wakes; once it can again, `tick` runs at once and then on its beat. Returns a stop.
+ */
+export function everyWhileShown(tick: () => void, every: number): () => void {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const update = (): void => {
+    if (!pageShown()) {
+      clearInterval(timer);
+      timer = undefined;
+    } else if (timer === undefined) {
+      timer = setInterval(tick, every);
+      if (started) tick();
+    }
+  };
+  // The first beat is the caller's (it looks or reads the time itself as it starts).
+  let started = false;
+  update();
+  started = true;
+  document.addEventListener('visibilitychange', update);
+  const stop = onWindowActive(update);
+  return () => {
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange', update);
+    stop();
+  };
+}

@@ -1,6 +1,13 @@
 import type { ChatFile, GroupView, LiveClaude, MessageView, NetworkState } from '../../../../src/net/mesh/views.js';
 import { type Suggestion, friendMention, typedMention } from '../../../../src/ui/suggest.js';
 import { MENTION, type MentionWorld } from '../chat/mentions.js';
+import { agentName } from '../../../../src/shared/agent-label.js';
+import { continues } from './net-model.js';
+import { type TaskMention, matchTasks } from '../../../../src/shared/task-refs.js';
+import type { Issue } from '../../../../src/core/board/model.js';
+import { isOpen } from '../../../../src/core/board/model.js';
+import type { TeamState } from '../../../../src/core/team/model.js';
+import { sharedTasks } from '../../../../src/core/team/mentions.js';
 
 /**
  * What the chats say and decide, as plain functions (no React, no daemon): whose Claude a
@@ -12,9 +19,9 @@ export type Ask = { readonly kind: 'me' } | { readonly kind: 'all' } | { readonl
 
 /** "Asking your Claude" (or, short for the button: "Your Claude"). */
 export function askLabel(ask: Ask, short = false): string {
-  if (ask.kind === 'me') return short ? 'Your Claude' : 'Asking your Claude';
-  if (ask.kind === 'all') return short ? 'Everyone’s Claude' : 'Asking everyone’s Claude';
-  return short ? `${ask.name}’s Claude` : `Asking ${ask.name}’s Claude`;
+  if (ask.kind === 'me') return short ? 'Your agent' : 'Asking your agent';
+  if (ask.kind === 'all') return short ? 'Everyone’s agent' : 'Asking everyone’s agent';
+  return short ? `${ask.name}’s agent` : `Asking ${ask.name}’s agent`;
 }
 
 /** What the message tells the network: everyone, or these people's Claudes. */
@@ -29,7 +36,7 @@ export interface Member {
 }
 
 /** How a person is written after @: "Mia Chen" → "MiaChen". */
-const handle = (name: string): string => friendMention(name).slice(1);
+export const handle = (name: string): string => friendMention(name).slice(1);
 
 /** What / at the start of a channel's message box offers. */
 type ChannelCommand = 'claude' | 'claudes' | 'files' | 'add-people';
@@ -40,34 +47,59 @@ export interface ChannelSuggestion extends Suggestion {
 }
 
 const COMMANDS: ReadonlyArray<{ name: ChannelCommand; hint: string; when?: 'others' | 'admin' }> = [
-  { name: 'claude', hint: 'Your Claude answers this message' },
-  { name: 'claudes', hint: 'Everyone’s Claude answers, each from their own Mac', when: 'others' },
+  { name: 'claude', hint: 'Your agent answers this message' },
+  { name: 'claudes', hint: 'Everyone’s agent answers, each from their own Mac', when: 'others' },
   { name: 'files', hint: 'Send files from your Mac…' },
   { name: 'add-people', hint: 'Add people to this channel…', when: 'admin' },
 ];
 
 /**
  * What to list for the words in a channel's box: "/" at the start → the channel's commands;
- * "@…" → your Claude, each member's Claude, everyone's, then the people themselves.
+ * "@…" → your Claude, each member's Claude, everyone's, the people themselves, then the tasks of
+ * repositories you're teamed up on with them (`tasks`, BLG-263: you ask their Claude about one here).
  */
-export function channelSuggestions(text: string, ctx: { people: readonly Member[]; admin?: boolean }): ChannelSuggestion[] {
+export function channelSuggestions(text: string, ctx: { people: readonly Member[]; admin?: boolean; friends?: readonly Member[]; tasks?: readonly TaskMention[] }): ChannelSuggestion[] {
   if (/^\/[\w-]*$/.test(text)) {
     const typed = text.slice(1).toLowerCase();
-    return COMMANDS.filter((c) => c.name.startsWith(typed) && (c.when !== 'others' || ctx.people.length > 0) && (c.when !== 'admin' || ctx.admin)).map((c) => ({ label: `/${c.name}`, hint: c.hint, value: '', enter: 'complete', command: c.name }));
+    const commands: ChannelSuggestion[] = COMMANDS.filter((c) => c.name.startsWith(typed) && (c.when !== 'others' || ctx.people.length > 0) && (c.when !== 'admin' || ctx.admin)).map((c) => ({ label: `/${c.name}`, hint: c.hint, value: '', enter: 'complete', command: c.name }));
+    // /invite: a friend link on its own, or "/invite @ata" adds ata here (BLG-203). It's written out, then sent.
+    return 'invite'.startsWith(typed) ? [...commands, { label: '/invite', hint: 'Add a friend, or @name to add them here', value: '/invite @', enter: 'complete' }] : commands;
+  }
+  const inviting = /^\/invite\s+@?([\p{L}\p{N}_.-]*)$/iu.exec(text);
+  if (inviting) {
+    const t = (inviting[1] ?? '').toLowerCase();
+    return (ctx.friends ?? [])
+      .filter((f) => handle(f.name) && handle(f.name).toLowerCase().startsWith(t) && !ctx.people.some((p) => p.peerId === f.peerId))
+      .map((f) => ({ label: f.name, hint: `/invite @${handle(f.name)} · add ${f.name} here`, value: `/invite @${handle(f.name)}`, enter: 'complete' }));
   }
   const typed = typedMention(text);
   if (typed === undefined) return [];
   const before = text.slice(0, text.length - typed.length - 1);
   const options = [
-    { label: 'Claude (yours)', insert: '@claude', hint: 'answers here, from your Mac' },
-    ...ctx.people.map((p) => ({ label: `${p.name}’s Claude`, insert: `@claude:${handle(p.name)}`, hint: `answers from ${p.name}’s Mac` })),
-    ...(ctx.people.length ? [{ label: 'Everyone’s Claude', insert: '@claudes', hint: 'each answers from their own Mac' }] : []),
-    ...ctx.people.filter((p) => handle(p.name)).map((p) => ({ label: p.name, insert: `@${handle(p.name)}`, hint: 'the person, not their Claude' })),
+    { label: 'Your agent', insert: '@claude', hint: 'answers here, from your Mac' },
+    ...ctx.people.map((p) => ({ label: `${p.name}’s agent`, insert: `@claude:${handle(p.name)}`, hint: `answers from ${p.name}’s Mac` })),
+    ...(ctx.people.length ? [{ label: 'Everyone’s agent', insert: '@claudes', hint: 'each answers from their own Mac' }] : []),
+    ...ctx.people.filter((p) => handle(p.name)).map((p) => ({ label: p.name, insert: `@${handle(p.name)}`, hint: 'the person, not their agent' })),
   ];
   const t = typed.toLowerCase();
-  return options
+  const named: ChannelSuggestion[] = options
     .filter((o) => o.insert.slice(1).toLowerCase().startsWith(t) || o.label.toLowerCase().startsWith(t))
     .map((o) => ({ label: o.label, hint: `${o.insert} · ${o.hint}`, value: `${before}${o.insert} `, enter: 'complete' }));
+  const tasks: ChannelSuggestion[] = matchTasks(typed, ctx.tasks ?? []).map((task) => ({ label: `@${task.key}`, hint: task.title, value: `${before}@${task.key} `, enter: 'complete' }));
+  return [...named, ...tasks];
+}
+
+/**
+ * A team task, from its menu, to a teammate (BLG-263): your chat with them, the words ready to
+ * send. Their Claude ("@claude:ata @BLG-12 ") or them ("@BLG-12 "): never a task given to it.
+ */
+export function askAboutTask(key: string, name: string, claude: boolean): string {
+  return claude ? `@claude:${handle(name)} @${key} ` : `@${key} `;
+}
+
+/** The tasks a chat with these people can name (BLG-263): the live ones of repositories you're teamed up on with them. */
+export function channelTasks(issues: readonly Issue[], team: Pick<TeamState, 'teams'>, people: readonly Member[]): TaskMention[] {
+  return sharedTasks(issues, team, people.map((p) => p.peerId)).map((i) => ({ key: i.key, title: i.title, status: i.status, open: isOpen(i.status) }));
 }
 
 /** Code (fenced or `inline`) isn't asking anyone. */
@@ -94,28 +126,29 @@ export function mergeAsk(a: 'all' | readonly string[] | undefined, b: 'all' | re
   return [...new Set([...(a ?? []), ...(b ?? [])])];
 }
 
-/** What "@…" in a channel's messages names, for the pills: its members (you too, for "@claude:you"). */
-export const channelWorld = (me: Member | undefined, people: readonly Member[]): MentionWorld => ({
+/** What "@…" in a channel's messages names, for the pills: its members (you too, for "@claude:you"), and the tasks you share with them. */
+export const channelWorld = (me: Member | undefined, people: readonly Member[], tasks?: readonly TaskMention[]): MentionWorld => ({
   friends: people,
   peers: me ? [me, ...people] : people,
   projects: [],
   workspaces: [],
+  ...(tasks?.length ? { tasks } : {}),
 });
 
 /** Under a message that asked: "Asked everyone’s Claude", "Asked bob’s Claude", "Asked your Claude". */
 export function askedLine(m: Pick<MessageView, 'ask' | 'mine' | 'from'>, nameOf: (peerId: string) => string, me: string | undefined): string | undefined {
   const to = m.ask?.to;
   if (!to) return undefined;
-  if (to === 'all') return 'Asked everyone’s Claude';
+  if (to === 'all') return 'Asked everyone’s agent';
   const names = to.map((p) => (p === me ? (m.mine ? 'their own' : 'your') : `${nameOf(p)}’s`));
-  if (m.mine) return `Asked ${to.length === 1 && to[0] === me ? 'your' : names.join(' and ')} Claude`;
-  if (to.length === 1 && to[0] === m.from) return 'Asked their Claude';
-  return `Asked ${names.join(' and ')} Claude`;
+  if (m.mine) return `Asked ${to.length === 1 && to[0] === me ? 'your' : names.join(' and ')} agent`;
+  if (to.length === 1 && to[0] === m.from) return 'Asked their agent';
+  return `Asked ${names.join(' and ')} agent`;
 }
 
 /** Who wrote it, as the chat shows it: "You", "bob", "Your Claude", "bob’s Claude". */
 export function authorLabel(m: Pick<MessageView, 'mine' | 'name' | 'claude'>): string {
-  if (m.claude) return m.mine ? 'Your Claude' : `${m.name}’s Claude`;
+  if (m.claude) return m.mine ? `Your ${agentName(m.claude.agent)}` : `${m.name}’s ${agentName(m.claude.agent)}`;
   return m.mine ? 'You' : m.name;
 }
 
@@ -139,10 +172,27 @@ export function liveIn(state: Pick<NetworkState, 'live'>, conversation: string, 
 
 /** "bob’s Claude is answering…", "Your Claude and mia’s Claude are answering…". */
 export function liveLine(live: readonly LiveClaude[], me: string | undefined): string {
-  const names = [...new Set(live.map((l) => (l.peerId === me ? 'Your Claude' : `${l.name}’s Claude`)))];
+  const names = [...new Set(live.map((l) => (l.peerId === me ? 'Your agent' : `${l.name}’s agent`)))];
   if (!names.length) return '';
   const list = names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
   return `${list} ${names.length === 1 ? 'is' : 'are'} answering…`;
+}
+
+// ---- runs of messages (BLG-210)
+
+/** Where a message sits in its run: the first (its name above), the last (the avatar, the tail, the time). */
+export interface RunPlace {
+  readonly first: boolean;
+  readonly last: boolean;
+}
+
+/**
+ * Consecutive messages by the same person (or the same person's Claude) within a few minutes on the
+ * same day make a run, as in a messaging app. A task's card stands on its own.
+ */
+export function runPlaces(messages: readonly MessageView[]): RunPlace[] {
+  const joins = (a: MessageView | undefined, b: MessageView | undefined): boolean => Boolean(a && b && !a.task && !b.task && continues(a, b));
+  return messages.map((m, i) => ({ first: !joins(messages[i - 1], m), last: !joins(m, messages[i + 1]) }));
 }
 
 // ---- chat tabs

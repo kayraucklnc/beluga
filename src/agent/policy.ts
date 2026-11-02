@@ -1,7 +1,8 @@
 import path from 'node:path';
-import { isDotenvPath, isSecretPath } from '../core/shares.js';
+import { isDotenvPath, isReceivedTaskFile, isSecretPath, realOf } from '../core/shares.js';
 import { isReadOnlyCommand } from './read-only.js';
 import { SourceSchema } from '../shared/view-spec.js';
+import { type ScriptPlan, planScript } from '../core/views/scripts.js';
 import { SYNC_MAIN_REASON, type SyncScope, isSyncMainCommand } from './sync-main.js';
 
 /** Read-only tools and the input field that names their target path. */
@@ -25,17 +26,46 @@ const WRITE_TOOLS: Readonly<Record<string, string>> = {
 const ALWAYS_OK = new Set([
   'TodoWrite',
   'ToolSearch',
+  // A skill only loads its instructions; every tool it then uses is gated as usual.
+  'Skill',
   // continue_in_worktree is only offered in main folders, and decides who must confirm itself.
   ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report', 'continue_in_worktree'].map((n) => `mcp__beluga__${n}`),
+  // set_project_setup: only your own worktree runs have it, and what it sets asks you before it first runs by itself.
+  'mcp__beluga__set_project_setup',
+  // end_dialogue: only a chaired dialogue's turn has it (core/dialogues); it only ends that dialogue.
+  'mcp__beluga__end_dialogue',
   // The gateway's look-and-wait tools (core/gateway); ask_person and run_on ask, and the gateway checks trust itself.
   ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__beluga__${n}`),
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).
-  ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
+  ...['task_define', 'task_get', 'task_list', 'task_create', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
+  // Sentinels (core/sentinel): only your own runs have them; a new one starts paused until you turn it on,
+  // and a change to what one can do pauses it. sentinel_remove and sentinel_delete_runs aren't here: deleting asks you.
+  // sentinel_test and sentinel_try_source only read: a database read-only, a file, an address without your
+  // variables; a command (or an address carrying a $VAR) waits for your yes.
+  ...['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_update', 'sentinel_run', 'sentinel_test', 'sentinel_try_source', 'sentinel_pause', 'sentinel_runs'].map((n) => `mcp__beluga_sentinel__${n}`),
+  // Dashboards and numbers (core/sentinel, §10): only your own runs have them; they arrange your
+  // dashboards' tiles and read the numbers (a tile removed takes nothing kept with it).
+  // dashboard_remove isn't here: deleting a dashboard asks you.
+  ...['sentinel_measure', 'dashboard_list', 'dashboard_create', 'dashboard_update', 'dashboard_add_tile', 'dashboard_update_tile', 'dashboard_move_tile', 'dashboard_remove_tile', 'metric_list', 'metric_read'].map((n) => `mcp__beluga_dashboard__${n}`),
   // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
   ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
   ...['screenshot', 'device_info'].map((n) => `mcp__beluga_task__${n}`),
+  // "Your Mac": only its own conversation has these, in your own runs (core/assistant). They look at
+  // this Mac or start work you asked for (a worktree, a task, a plan), the way the board's tools do,
+  // or archive a worktree you asked to (lossless; one with Claude still working waits for your yes).
+  ...['screenshot', 'device_info', 'list_work', 'start_worktree', 'start_task', 'start_plan', 'archive_worktree'].map((n) => `mcp__beluga_mac__${n}`),
+  // Your phone (BLG-150): looking at it never asks (like the Mac's screenshot). Acting on it falls
+  // to 'ask', then the owner-approval gate honours the phone's own setting (Off · Ask · Use · Full).
+  ...['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info', 'phone_pull', 'phone_notifications', 'phone_macro_list'].map((n) => `mcp__beluga_phone__${n}`),
 ]);
+
+/**
+ * Tools that delete something of yours for good (a sentinel, a dashboard, docs/sentinel.md §12):
+ * your own Claude asks you first even when it otherwise never asks (Approvals › Never), once, with
+ * no Always. The card reaches the phone as any approval does.
+ */
+export const ALWAYS_ASK_YOU: ReadonlySet<string> = new Set(['mcp__beluga_sentinel__sentinel_remove', 'mcp__beluga_sentinel__sentinel_delete_runs', 'mcp__beluga_dashboard__dashboard_remove']);
 
 /**
  * Shell commands that mention credential stores are refused outright. A name counts when it isn't
@@ -78,6 +108,8 @@ export interface PolicyContext {
    * branches a task starts from. Files there may be edited (nothing else changes).
    */
   readonly fixup?: string;
+  /** With autoEdit: other worktrees this run works in too (an epic across repos), edited like `cwd`. */
+  readonly alsoEdit?: readonly string[];
   /** A guest invited into one project asked: they never reach the room through your Claude. */
   readonly guest?: boolean;
   /** Your own Claude, on your own computer: a .env file asks you (Decision 'secret') instead of being refused. */
@@ -85,7 +117,33 @@ export interface PolicyContext {
 }
 
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
+/** Inside a folder where it really is (links followed), so a link in a shared folder can't reach past it (BLG-414). */
+const within = (root: string, target: string): boolean => inside(realOf(path.resolve(root)), realOf(target));
+/** A secret by its name or by where it really is (a harmless-looking link to a key is still the key). */
+const secretAt = (target: string): boolean => isSecretPath(target) || isSecretPath(realOf(target));
 const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, typeof raw === 'string' && raw ? raw : '.');
+
+/**
+ * Files that make something run later, as you: git hooks and config, Claude Code's settings and MCP
+ * servers, editor tasks, direnv, npm scripts, make, shell start-up files, login items, CI (BLG-413).
+ * Changing one from someone else's request asks you every time, so "may edit files" never quietly
+ * becomes "may run commands".
+ */
+const CODE_DIRS = new Set(['.git', '.githooks', '.husky', '.claude', '.vscode', '.idea', '.devcontainer']);
+const CODE_FILES = /^(\.mcp\.json|\.envrc|package\.json|makefile|gnumakefile|justfile|\.pre-commit-config\.ya?ml|\.zshrc|\.zshenv|\.zprofile|\.zlogin|\.bashrc|\.bash_profile|\.profile|.+\.command)$/;
+const CODE_PATHS = /(^|\/)(library\/launch(agents|daemons)|\.github\/workflows)(\/|$)/;
+const runsCodeAt = (p: string): boolean => {
+  const segments = p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
+  return segments.some((s) => CODE_DIRS.has(s)) || CODE_FILES.test(segments.at(-1) ?? '') || CODE_PATHS.test(segments.join('/'));
+};
+export const runsCode = (p: string): boolean => runsCodeAt(p) || runsCodeAt(realOf(path.resolve(p)));
+
+/** This edit changes a file that runs code (see runsCode): its approval is once, never Always. */
+export function writesCode(toolName: string, input: Record<string, unknown>, cwd: string): boolean {
+  const field = WRITE_TOOLS[toolName];
+  const raw = field === undefined ? undefined : input[field];
+  return typeof raw === 'string' && raw !== '' && (runsCodeAt(raw) || runsCode(path.resolve(cwd, raw)));
+}
 
 /**
  * Decide whether a tool call can run without asking the machine owner.
@@ -134,8 +192,8 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
     // Only full paths: the same file is checked here and read when it's sent.
     if (!path.isAbsolute(raw)) return 'deny';
     const target = path.resolve(raw);
-    if (isSecretPath(target)) return 'deny';
-    if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+    if (secretAt(target)) return 'deny';
+    if (ctx.roots.some((r) => within(r, target))) return 'allow';
     return ctx.scope === 'full' ? 'allow' : 'ask';
   }
   // Commands on a friend's computer: their Beluga decides; secrets are refused on both ends.
@@ -145,19 +203,25 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
   const readField = READ_TOOLS[toolName];
   if (readField) {
     const target = resolveTarget(ctx.cwd, input[readField]);
-    if (!dotenv && (isSecretPath(target) || namesOf(input).some(isSecretPath))) return 'deny';
-    if ([target, ...namesOf(input)].some((n) => isSecretPath(n) && !isDotenvPath(n))) return 'deny';
-    if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+    // A secret a friend approved sending you (BLG-209) is your user's file now: your own Claude may read it, once you say so.
+    if (ctx.dotenv && isReceivedTaskFile(target) && !namesOf(input).some(isSecretPath)) return 'ask';
+    const real = realOf(target);
+    if (!dotenv && (isSecretPath(target) || isSecretPath(real) || namesOf(input).some(isSecretPath))) return 'deny';
+    if ([target, real, ...namesOf(input)].some((n) => isSecretPath(n) && !isDotenvPath(n))) return 'deny';
+    if (ctx.roots.some((r) => within(r, target))) return 'allow';
     // Outside the shared folders the owner decides (or it just runs, with full trust).
     return ctx.scope === 'full' ? 'allow' : 'ask';
   }
   const writeField = WRITE_TOOLS[toolName];
   if (writeField) {
     const target = resolveTarget(ctx.cwd, input[writeField]);
-    if (isSecretPath(target) && !dotenv) return 'deny';
-    if (ctx.autoEdit && inside(path.resolve(ctx.cwd), target)) return 'allow';
-    if (ctx.fixup && inside(path.resolve(ctx.fixup), target)) return 'allow';
-    if (ctx.scope !== 'full' && !ctx.roots.some((r) => inside(path.resolve(r), target))) return 'deny';
+    if (secretAt(target) && !dotenv) return 'deny';
+    const others = ctx.scope !== 'full';
+    if (others && !ctx.roots.some((r) => within(r, target))) return 'deny';
+    // Someone else's request: a file that makes code run later (a git hook, npm scripts…) asks you.
+    if (others && runsCode(target)) return 'ask';
+    if (ctx.autoEdit && [ctx.cwd, ...(ctx.alsoEdit ?? [])].some((d) => within(d, target))) return 'allow';
+    if (ctx.fixup && within(ctx.fixup, target)) return 'allow';
     return 'ask';
   }
   return 'ask';
@@ -170,6 +234,9 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
 function decideShow(input: Record<string, unknown>, ctx: PolicyContext): Decision {
   const view = input.view && typeof input.view === 'object' ? (input.view as Record<string, unknown>) : {};
   if (view.source === undefined) return 'allow';
+  // A script Claude wrote for the view runs like a command it wrote.
+  const script = scriptIn(view.source, ctx.cwd);
+  if (script) return mentionsSecret(script.code) ? 'deny' : ctx.askOnly ? 'deny' : 'ask';
   const parsed = SourceSchema.safeParse(view.source);
   if (!parsed.success) return 'allow'; // the tool says what's wrong; nothing runs
   const source = parsed.data;
@@ -177,10 +244,18 @@ function decideShow(input: Record<string, unknown>, ctx: PolicyContext): Decisio
   if (source.kind === 'http') return Object.values(source.headers ?? {}).some((v) => /\$\{?[A-Za-z_]/.test(v)) ? 'ask' : 'allow';
   if (source.kind === 'postgres') return 'allow';
   const target = resolveTarget(ctx.cwd, source.path.replace(/^~(?=$|\/)/, process.env.HOME ?? '~'));
-  if (isSecretPath(target)) return 'deny';
-  if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+  if (secretAt(target)) return 'deny';
+  if (ctx.roots.some((r) => within(r, target))) return 'allow';
   return ctx.scope === 'full' ? 'allow' : 'ask';
 }
+
+const scriptIn = (source: unknown, cwd: string): ScriptPlan | undefined => {
+  try {
+    return planScript(source, cwd);
+  } catch {
+    return undefined; // the tool says what's wrong; nothing runs
+  }
+};
 
 /** In a main folder (ask-only): would this tool change something there? */
 function changesMain(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): boolean {
@@ -193,6 +268,7 @@ function changesMain(toolName: string, input: Record<string, unknown>, ctx: Poli
   // A view whose command could change something (so the refusal says why, not "credential files").
   if (toolName === 'mcp__beluga_view__show') {
     const view = input.view && typeof input.view === 'object' ? (input.view as Record<string, unknown>) : {};
+    if (scriptIn(view.source, ctx.cwd)) return true;
     const source = SourceSchema.safeParse(view.source);
     return source.success && source.data.kind === 'command' && !mentionsSecret(source.data.command) && !isReadOnlyCommand(source.data.command);
   }
@@ -213,8 +289,18 @@ export const ASK_ONLY_REASON =
   "Beluga blocked this: you're in the project's main folder, which is read-only (questions only; work happens in worktrees). " +
   "Don't try another way to change it here. If a change is wanted, call mcp__beluga__continue_in_worktree with the task.";
 
+/** A write outside the folders this request may change (not a credential file): say so, and what to do (BLG-348). */
+export const OUTSIDE_REASON =
+  'Beluga blocked this: that file is outside the shared folders this request may write to. ' +
+  "Don't try another way to write it. Write inside the working folder (or the scratch folder), or ask the machine owner in chat to save it where they want it.";
+
 /** The reason to give Claude for a denied tool call. */
 export function denyReason(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): string {
-  if (!ctx.askOnly || !changesMain(toolName, input, ctx)) return DENY_REASON;
-  return ctx.syncMain ? SYNC_MAIN_REASON : ASK_ONLY_REASON;
+  if (ctx.askOnly && changesMain(toolName, input, ctx)) return ctx.syncMain ? SYNC_MAIN_REASON : ASK_ONLY_REASON;
+  const writeField = WRITE_TOOLS[toolName];
+  if (writeField) {
+    const target = resolveTarget(ctx.cwd, input[writeField]);
+    if (!secretAt(target) && ctx.scope !== 'full' && !ctx.roots.some((r) => within(r, target))) return OUTSIDE_REASON;
+  }
+  return DENY_REASON;
 }

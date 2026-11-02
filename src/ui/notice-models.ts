@@ -1,4 +1,6 @@
 import type { DomainState } from '../core/store.js';
+import { assistantChatOf } from '../shared/assistant.js';
+import { sentinelChatOf } from '../core/sentinel/model.js';
 import type { Notice } from '../core/work-store.js';
 import { findWorkspace } from './workspace-models.js';
 
@@ -124,16 +126,23 @@ export function noticeLook(n: Pick<Notice, 'kind' | 'tag'>): { readonly look: No
   }
 }
 
-/** Where opening a notice goes: the room, one of your workspaces, or one shared with you. */
-export type NoticeTarget = { readonly kind: 'room' } | { readonly kind: 'workspace'; readonly id: string } | { readonly kind: 'shared'; readonly owner: string; readonly id: string };
+/** Where opening a notice goes: the room, Your Mac, the Sentinel chat, one of your workspaces, or one shared with you. */
+export type NoticeTarget = { readonly kind: 'room' } | { readonly kind: 'assistant'; readonly chat?: string } | { readonly kind: 'sentinel_chat'; readonly chat: string } | { readonly kind: 'workspace'; readonly id: string } | { readonly kind: 'shared'; readonly owner: string; readonly id: string };
 
 export function noticeTarget(state: Pick<DomainState, 'projects' | 'shared'>, channel: string | undefined): NoticeTarget | undefined {
   if (channel === 'room') return { kind: 'room' };
+  const chat = assistantChatOf(channel);
+  if (chat) return { kind: 'assistant', chat };
+  const sentinelChat = sentinelChatOf(channel);
+  if (sentinelChat) return { kind: 'sentinel_chat', chat: sentinelChat };
   if (!channel?.startsWith('ws:')) return undefined;
   const id = channel.slice(3);
   const shared = state.shared.find((w) => w.id === id);
   if (shared) return { kind: 'shared', owner: shared.owner, id };
-  return findWorkspace(state.projects, id) ? { kind: 'workspace', id } : undefined;
+  const ws = findWorkspace(state.projects, id);
+  // A project's main checkout is no conversation (BLG-70): the chat its old one became, if any.
+  if (ws?.kind === 'main') return ws.movedTo && findWorkspace(state.projects, ws.movedTo) ? { kind: 'workspace', id: ws.movedTo } : undefined;
+  return ws ? { kind: 'workspace', id } : undefined;
 }
 
 /**

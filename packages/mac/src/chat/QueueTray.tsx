@@ -2,11 +2,13 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { QueuedMessage } from '@beluga/ui/compose.js';
 import { channelOf } from '@beluga/core/store.js';
 import { imageLinksAsWords } from '@beluga/shared/attachment-links.js';
+import { slotWaitNote } from '@beluga/shared/run-slots.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Tip, cx } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useFlightLanding } from './flight.js';
 import s from './queue.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -31,7 +33,7 @@ const STEERING_MS = 8_000;
 function SteerButton({ steering, blocked, onSteer }: { steering: boolean; blocked?: string; onSteer: () => void }) {
   const { client } = useBeluga();
   return (
-    <Tip label={blocked ?? (steering ? 'Steering: sending it to Claude now' : 'Steer: Claude reads this now (a long command is interrupted for it)')} keys={blocked ? undefined : '⌥↩'}>
+    <Tip label={blocked ?? (steering ? 'Steering: sending it to your agent now' : 'Steer: your agent reads this now (a long command is interrupted for it)')} keys={blocked ? undefined : shortcutKeys('composer-steer')}>
       <button
         type="button"
         className={cx(s.now, (blocked || steering) && s.nowOff, steering && s.steering)}
@@ -98,12 +100,12 @@ export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: 
         <Icon name="clock" size={12} />
         <span className={s.title}>Queued</span>
         <span className={s.count}>{queue.length}</span>
-        <span className={s.note}>runs after the current task, in this order</span>
+        <span className={s.note}>{queue[0]?.slotWait ? slotWaitNote(queue[0].slotWait) : 'runs after the current task, in this order'}</span>
       </header>
       <ol className={s.list}>
         {queue.map((q, i) => {
           const at = yours.indexOf(q);
-          const who = q.by === selfName ? (q.claude === selfName ? '' : `for ${q.claude}'s Claude`) : `${q.by}`;
+          const who = q.by === selfName ? (q.claude === selfName ? '' : `for ${q.claude}'s agent`) : `${q.by}`;
           return (
             <Row key={q.requestId} channel={channel} prompt={q.prompt} mine={q.yours} className={cx(s.row, !q.yours && s.theirs)}>
               <span className={s.n}>{i + 1}</span>
@@ -135,7 +137,7 @@ export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: 
                 </span>
               ) : (
                 <span className={s.acts}>
-                  <SteerButton steering={false} blocked={q.by === selfName ? `It waits for ${q.claude}'s Claude: only ${q.claude} can steer it` : `${q.by}'s message: only ${q.by} can steer it`} onSteer={() => undefined} />
+                  <SteerButton steering={false} blocked={q.by === selfName ? `It waits for ${q.claude}'s agent: only ${q.claude} can steer it` : `${q.by}'s message: only ${q.by} can steer it`} onSteer={() => undefined} />
                 </span>
               )}
             </Row>

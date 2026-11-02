@@ -6,7 +6,7 @@ import type { Session } from '../core/session.js';
 import type { ScreenState } from '../core/store.js';
 import { type PtyLink, localLink } from '../terminal/emulator.js';
 import { type Args, type Method, isMethod, parseArgs } from './api.js';
-import { type ApiProxy, type ClientKind, type BelugaClient, apiProxy } from './client.js';
+import { type ApiProxy, type ClientKind, type BelugaClient, type PhoneMirror, apiProxy } from './client.js';
 import { HANDLERS, type Handlers, type Result } from './handlers.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -81,6 +81,11 @@ export class InProcessClient implements BelugaClient {
   attachTerminal(key: string): PtyLink {
     const pty = this.session.workbench?.terminals?.get(key);
     return pty ? localLink(pty) : deadLink();
+  }
+
+  watchPhone(): PhoneMirror {
+    // The in-process client (terminal UI, tests) has no phone mirror.
+    return { onFrame: () => () => {}, onVideo: () => () => {}, onTouch: () => () => {}, onStatus: () => () => {}, close: () => {} };
   }
 
   close(): void {

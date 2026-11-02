@@ -3,14 +3,14 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Background, BackgroundVariant, BaseEdge, type Edge, EdgeLabelRenderer, type EdgeProps, Handle, type Node, type NodeProps, Panel, Position, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { AUTONOMY_INFO } from '@beluga/core/plans/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@beluga/core/plans/progress.js';
-import { IconButton, cx } from '../components/ui.js';
+import { IconButton, Working, cx } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
 import { useDocTheme } from '../components/markdown/use-doc-theme.js';
-import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
+import { type ElkInput, type ElkOutput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
 import { useSharpZoom } from '../components/graph/sharp-zoom.js';
 import { breath, turn, useLive } from '../lib/live-motion.js';
-import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId, taskWords } from './plans-model.js';
+import { MILESTONE_STATE, type MilestoneJoin, type PlanGraphShape, TASK_STATE, changeMarks, gateId, graphShape, groupId, lockWords, milestoneJoin, milestoneLink, startingMilestones, taskNodeId, taskWords } from './plans-model.js';
 import { COMPACT_STATES, FOLDS_KEY, type Folds, MILESTONE, type MilestoneFrame, PLAN_GAPS, arrowHead, isFolded, labelAt, milestoneAnchors, milestoneFrame, milestoneRoute, placeMilestones, readFolds, taskSize, withFold } from './plan-layout.js';
 import { useClock } from './use-plans.js';
 import { LockMark, TaskChatMark, TaskStateIcon } from './marks.js';
@@ -51,6 +51,10 @@ interface MilestoneData extends Record<string, unknown> {
   readonly waitsOn: readonly string[];
   /** It waits on other milestones (and they've all passed, unless it's locked). */
   readonly gated: boolean;
+  /** The plan's branch: what it starts from once what it waits on is merged in. */
+  readonly branch?: string;
+  /** Beluga is starting its Claude right now (see startingMilestones). */
+  readonly starting?: boolean;
   readonly onFold: (milestoneId: string, folded: boolean) => void;
 }
 interface GateData extends Record<string, unknown> {
@@ -71,7 +75,14 @@ interface LineData extends Record<string, unknown> {
   readonly label?: string;
   /** Lit (it touches the card you point at or picked), dimmed (another one is lit), or gone (folded away). */
   readonly look?: 'hot' | 'dim' | 'gone';
+  /** It ends at a join (its milestone waits on several): no arrowhead of its own. */
+  readonly joined?: boolean;
+  /** The join it meets the others at, and the stem from there into the lock (drawn by the first line in). */
+  readonly join?: MilestoneJoin & { readonly stem: readonly Point[] };
 }
+
+/** How far above a milestone's lock the lines from several meet. */
+const JOIN_STEM = 30;
 type PlanEdge = Edge<LineData, 'line'>;
 
 export interface PlanCanvasProps {
@@ -91,8 +102,12 @@ export default function PlanCanvas(props: PlanCanvasProps) {
   );
 }
 
+/** ELK's layout of each milestone's tasks, and the shape it was made for. */
+interface Inner {
+  readonly shape: PlanGraphShape;
+  readonly outs: ReadonlyMap<string, ElkOutput>;
+}
 interface Laid {
-  readonly key: string;
   readonly places: ReadonlyMap<string, Placed>;
   readonly frames: ReadonlyMap<string, MilestoneFrame>;
   readonly routes: ReadonlyMap<string, Route>;
@@ -130,7 +145,6 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
   const flow = useReactFlow<PlanNode, PlanEdge>();
   useSharpZoom();
   const shape = useMemo(() => graphShape(view.plan), [view.plan]);
-  const [laid, setLaid] = useState<Laid>();
   const [failed, setFailed] = useState(false);
   const [folds, setFolds] = useState<Folds>(loadFolds);
   const [hot, setHot] = useState<string>();
@@ -155,22 +169,18 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     [planId],
   );
 
-  // What sizes the cards (a finished task is a slim row, a folded milestone one row): the layout's other half.
-  const sizing = useMemo(() => {
-    const slim = shape.milestones.flatMap((m) => m.tasks.filter((t) => COMPACT_STATES.has(byTask.get(t)?.state ?? '')));
-    // A folded milestone is as wide as its title needs.
-    const titles = Object.fromEntries([...folded].sort().map((id) => [id, byMs.get(id)?.milestone.title ?? '']));
-    return JSON.stringify({ slim, titles });
-  }, [shape, byTask, byMs, folded]);
-  const layoutKey = `${shape.key}\n${sizing}`;
+  // What sizes the task cards (a finished task is a slim row): all ELK needs.
+  const slimKey = useMemo(() => JSON.stringify(shape.milestones.flatMap((m) => m.tasks.filter((t) => COMPACT_STATES.has(byTask.get(t)?.state ?? '')))), [shape, byTask]);
+  // What folds (a folded milestone is as wide as its title needs): plain math, no ELK.
+  const foldKey = useMemo(() => JSON.stringify(Object.fromEntries([...folded].sort().map((id) => [id, byMs.get(id)?.milestone.title ?? '']))), [byMs, folded]);
+  const [inner, setInner] = useState<Inner>();
 
-  // Lay out when the shape or a card's size changes (only then). Each milestone's tasks with ELK, then
-  // each box around them with its gate at its foot, the boxes in their rows, and their lines between.
+  // Lay out each milestone's tasks with ELK when the shape or a task card's size changes (only then).
+  // Folding doesn't: it re-places the boxes in the same render (below), so the box, its header, its
+  // cards and its lines all change together, never an open header in a folded box while ELK runs.
   useEffect(() => {
     let live = true;
-    const sized = JSON.parse(sizing) as { slim: string[]; titles: Record<string, string> };
-    const slim = new Set(sized.slim);
-    const folded = new Map(Object.entries(sized.titles));
+    const slim = new Set(JSON.parse(slimKey) as string[]);
     void Promise.all(
       shape.milestones.map((m) => {
         const inside = new Set(m.tasks.map(taskNodeId));
@@ -185,67 +195,70 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     )
       .then((outs) => {
         if (!live) return;
-        const inner = new Map(shape.milestones.map((m, i) => [m.id, outs[i]!] as const));
-        const criteria = new Map(shape.milestones.map((m) => [m.id, m.criteria] as const));
-        const frameOf = (id: string, height?: number): MilestoneFrame => {
-          const o = inner.get(id);
-          return milestoneFrame({ width: o?.width ?? 0, height: o?.height ?? 0 }, criteria.get(id) ?? [], folded.has(id), height, folded.get(id));
-        };
-        // The open milestones of a row all as tall as its tallest (their gates line up across it); folded ones stay one row.
-        const frames = new Map<string, MilestoneFrame>();
-        for (const row of shape.rows) {
-          const tall = Math.max(0, ...row.filter((id) => !folded.has(id)).map((id) => frameOf(id).height));
-          for (const id of row) frames.set(id, frameOf(id, tall));
-        }
-        const next = shape.edges.filter((e) => e.kind === 'next').map((e) => ({ id: e.id, from: e.from.replace(/^gate:/, ''), to: e.to.replace(/^m:/, '') }));
-        const parents = new Map<string, string[]>();
-        for (const e of next) parents.set(e.to, [...(parents.get(e.to) ?? []), e.from]);
-        const boxes = placeMilestones(shape.rows, frames, parents);
-
-        const places = new Map<string, Placed>();
-        const routes = new Map<string, Route>();
-        for (const m of shape.milestones) {
-          const box = boxes.get(m.id);
-          const frame = frames.get(m.id);
-          const o = inner.get(m.id);
-          if (!box || !frame || !o) continue;
-          places.set(groupId(m.id), box);
-          places.set(gateId(m.id), frame.gate);
-          for (const [nid, at] of placesOf(o)) places.set(nid, { ...at, x: at.x + frame.shiftX });
-          for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + box.x + frame.shiftX, y: pt.y + box.y })) });
-        }
-        // A milestone's lines: from the middle of its gate's foot, down the gap below its row, into the top of the next.
-        const rowOf = new Map(shape.rows.flatMap((row, i) => row.map((id) => [id, i] as const)));
-        const rowTop = shape.rows.map((row) => Math.min(...row.map((id) => boxes.get(id)?.y ?? 0)));
-        const rowBottom = shape.rows.map((row) => Math.max(...row.map((id) => (boxes.get(id)?.y ?? 0) + (boxes.get(id)?.height ?? 0))));
-        // Lines into different milestones of a row run across at slightly different heights (so they never overlap).
-        const targets = [...new Set(next.map((e) => e.to))];
-        const nudge = new Map(
-          targets.map((id) => {
-            const same = targets.filter((t) => rowOf.get(t) === rowOf.get(id)).sort((a, b) => (boxes.get(a)?.x ?? 0) - (boxes.get(b)?.x ?? 0));
-            return [id, (same.indexOf(id) - (same.length - 1) / 2) * 10] as const;
-          }),
-        );
-        for (const e of next) {
-          const a = boxes.get(e.from);
-          const b = boxes.get(e.to);
-          const fa = frames.get(e.from);
-          const ra = rowOf.get(e.from);
-          const rb = rowOf.get(e.to);
-          if (!a || !b || !fa || ra === undefined || rb === undefined) continue;
-          const enterY = rowTop[rb]! - PLAN_GAPS.row / 2 + (nudge.get(e.to) ?? 0);
-          const exitY = rb === ra + 1 ? enterY : rowBottom[ra]! + PLAN_GAPS.row / 2;
-          const obstacles = [...boxes].filter(([id]) => id !== e.from && id !== e.to).map(([, box]) => box);
-          routes.set(e.id, { points: milestoneRoute(milestoneAnchors(a, fa.gate).out, milestoneAnchors(b).in, exitY, enterY, obstacles) });
-        }
-        setLaid({ key: layoutKey, places, frames, routes });
+        setInner({ shape, outs: new Map(shape.milestones.map((m, i) => [m.id, outs[i]!] as const)) });
         setFailed(false);
       })
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [layoutKey]);
+  }, [shape.key, slimKey]);
+
+  // Each box around its tasks with its gate at its foot, the boxes in their rows, and their lines between.
+  const laid = useMemo<Laid | undefined>(() => {
+    if (!inner) return undefined;
+    const { shape } = inner;
+    const folded = new Map(Object.entries(JSON.parse(foldKey) as Record<string, string>));
+    const criteria = new Map(shape.milestones.map((m) => [m.id, m.criteria] as const));
+    const frameOf = (id: string, height?: number): MilestoneFrame => {
+      const o = inner.outs.get(id);
+      return milestoneFrame({ width: o?.width ?? 0, height: o?.height ?? 0 }, criteria.get(id) ?? [], folded.has(id), height, folded.get(id));
+    };
+    // The open milestones of a row all as tall as its tallest (their gates line up across it); folded ones stay one row.
+    const frames = new Map<string, MilestoneFrame>();
+    for (const row of shape.rows) {
+      const tall = Math.max(0, ...row.filter((id) => !folded.has(id)).map((id) => frameOf(id).height));
+      for (const id of row) frames.set(id, frameOf(id, tall));
+    }
+    const next = shape.edges.filter((e) => e.kind === 'next').map((e) => ({ id: e.id, from: e.from.replace(/^gate:/, ''), to: e.to.replace(/^m:/, '') }));
+    const parents = new Map<string, string[]>();
+    for (const e of next) parents.set(e.to, [...(parents.get(e.to) ?? []), e.from]);
+    const boxes = placeMilestones(shape.rows, frames, parents);
+
+    const places = new Map<string, Placed>();
+    const routes = new Map<string, Route>();
+    for (const m of shape.milestones) {
+      const box = boxes.get(m.id);
+      const frame = frames.get(m.id);
+      const o = inner.outs.get(m.id);
+      if (!box || !frame || !o) continue;
+      places.set(groupId(m.id), box);
+      places.set(gateId(m.id), frame.gate);
+      for (const [nid, at] of placesOf(o)) places.set(nid, { ...at, x: at.x + frame.shiftX });
+      for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + box.x + frame.shiftX, y: pt.y + box.y })) });
+    }
+    // A milestone's lines: from the middle of its gate's foot, down the gap below it, into the top of the next.
+    // Lines into milestones at the same height run across at slightly different heights (so they never overlap).
+    const targets = [...new Set(next.map((e) => e.to))];
+    const nudge = new Map(
+      targets.map((id) => {
+        const same = targets.filter((t) => boxes.get(t)?.y === boxes.get(id)?.y).sort((a, b) => (boxes.get(a)?.x ?? 0) - (boxes.get(b)?.x ?? 0));
+        return [id, (same.indexOf(id) - (same.length - 1) / 2) * 10] as const;
+      }),
+    );
+    for (const e of next) {
+      const a = boxes.get(e.from);
+      const b = boxes.get(e.to);
+      const fa = frames.get(e.from);
+      if (!a || !b || !fa) continue;
+      const enterY = b.y - PLAN_GAPS.row / 2 + (nudge.get(e.to) ?? 0);
+      // Right under it: one run across; further down, across below it, then down a clear lane.
+      const exitY = b.y - (a.y + a.height) <= PLAN_GAPS.row ? enterY : a.y + a.height + PLAN_GAPS.row / 2;
+      const obstacles = [...boxes].filter(([id]) => id !== e.from && id !== e.to).map(([, box]) => box);
+      routes.set(e.id, { points: milestoneRoute(milestoneAnchors(a, fa.gate).out, milestoneAnchors(b).in, exitY, enterY, obstacles) });
+    }
+    return { places, frames, routes };
+  }, [inner, foldKey]);
 
   const lane = useMemo(() => new Map(shape.milestones.flatMap((m) => m.tasks.map((t) => [taskNodeId(t), m.id] as const))), [shape]);
   // What the picked task waits on, or is waited on by, in other milestones: ringed, not wired across the lanes.
@@ -254,6 +267,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     const me = taskNodeId(selected);
     return new Set(shape.edges.filter((e) => e.kind === 'blocks' && (e.from === me || e.to === me) && lane.get(e.from) !== lane.get(e.to)).map((e) => (e.from === me ? e.to : e.from)));
   }, [shape, lane, selected]);
+  const starting = useMemo(() => new Set(startingMilestones(view).map((m) => m.milestone.id)), [view]);
   const nodes = useMemo<PlanNode[]>(() => {
     if (!laid) return [];
     const out: PlanNode[] = [];
@@ -271,7 +285,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         style: { width: box.width, height: box.height },
         width: box.width,
         height: box.height,
-        data: { view: m, current, folded: away, waitsOn, gated: m.dependsOn.some((d) => byMs.has(d)), onFold },
+        data: { view: m, current, folded: away, waitsOn, gated: m.dependsOn.some((d) => byMs.has(d)), ...(view.plan.branch ? { branch: view.plan.branch } : {}), ...(starting.has(id) ? { starting: true } : {}), onFold },
         selectable: false,
         draggable: false,
         zIndex: -1,
@@ -301,7 +315,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       }
     }
     return out;
-  }, [laid, view, byMs, folded, keys, marks, selected, linked, startable, onStart, onFold]);
+  }, [laid, view, byMs, folded, keys, marks, selected, linked, startable, onStart, onFold, starting]);
 
   const edges = useMemo<PlanEdge[]>(() => {
     if (!laid) return [];
@@ -322,16 +336,34 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     // Only real lines: blockers inside a milestone (across milestones its gate says what comes first), and each gate into the milestones it unlocks.
     const shown = shape.edges.filter((e) => (e.kind === 'blocks' ? lane.get(e.from) === lane.get(e.to) && laid.routes.has(e.id) : e.kind === 'next'));
     const labelled = new Set<string>();
+    // A milestone waiting on several: their lines meet in one join above its lock, and one stem goes on into it.
+    const into = new Map<string, string[]>();
+    for (const e of shown) if (e.kind === 'next') into.set(e.to, [...(into.get(e.to) ?? []), e.id]);
     return shown.map((e) => {
       const from = byMs.get(e.from.replace(/^gate:/, ''));
       if (e.kind === 'next') {
-        const passed = !!from && passedOf(from);
-        const state: LineData['state'] = passed ? 'done' : from?.state === 'gate' || from?.state === 'checking' ? 'ready' : 'waiting';
+        const link = milestoneLink(from);
         // One label per gate (its lines leave it as one).
-        const label = labelled.has(e.from) ? undefined : passed ? 'Unlocked' : 'Unlocks';
+        const label = labelled.has(e.from) ? undefined : link.label;
         labelled.add(e.from);
-        const route = laid.routes.get(e.id);
-        return { id: e.id, source: e.from, target: e.to, ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}`, type: 'line', data: { kind: 'next', state, current: now(e), ...(route ? { route } : {}), ...(label ? { label } : {}) } };
+        let route = laid.routes.get(e.id);
+        const siblings = into.get(e.to) ?? [];
+        let join: LineData['join'];
+        if (siblings.length > 1 && route && route.points.length >= 2) {
+          // Where it turns down into the lock (the run across above the row), else straight above it.
+          const end = route.points[route.points.length - 1]!;
+          const turn = route.points[route.points.length - 2]!;
+          const knot = route.points.length > 2 && Math.abs(turn.x - end.x) < 0.5 && end.y - turn.y > JOIN_STEM / 2 ? turn : { x: end.x, y: end.y - JOIN_STEM };
+          const head = route.points.slice(0, -1);
+          route = { ...route, points: head[head.length - 1] === knot ? head : [...head, knot] };
+          // The first line in carries the join and its stem (so they're drawn once).
+          if (siblings[0] === e.id) {
+            const parents = shown.filter((x) => x.kind === 'next' && x.to === e.to).map((x) => byMs.get(x.from.replace(/^gate:/, '')));
+            const j = milestoneJoin(parents, view.plan.branch);
+            if (j) join = { ...j, stem: [knot, end] };
+          }
+        }
+        return { id: e.id, source: e.from, target: e.to, ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}`, type: 'line', data: { kind: 'next', state: link.state, current: now(e), ...(route ? { route } : {}), ...(label ? { label } : {}), ...(siblings.length > 1 ? { joined: true } : {}), ...(join ? { join } : {}) } };
       }
       const state: LineData['state'] = finished(e.from) ? 'done' : working(e.from) ? 'live' : 'waiting';
       const look: LineData['look'] = folded.has(lane.get(e.from) ?? '') ? 'gone' : focus ? (e.from === focus || e.to === focus ? 'hot' : 'dim') : undefined;
@@ -445,7 +477,7 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
       </div>
     );
   }
-  const sub = info.sub ?? (t.state === 'asking' ? 'Claude asked you something' : t.forYou && t.state === 'ready' ? 'For you' : undefined);
+  const sub = info.sub ?? (t.state === 'asking' ? 'Your agent asked you something' : t.forYou && t.state === 'ready' ? 'For you' : undefined);
   return (
     <div
       className={cx(p.task, p[`task_${t.state}`], c.taskCard, data.selected && p.taskSelected, data.linked && p.taskLinked, data.mark && p.taskMarked)}
@@ -492,7 +524,8 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
 /** What a milestone's gate says of itself. */
 function gateLabel(m: MilestoneView): string {
   const checked = m.run.check?.verdict === 'pass';
-  return m.state === 'passed' || m.state === 'merging' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? (checked ? 'Checked · pass it' : 'Pass it') : 'Not yet';
+  if (m.state === 'merging') return milestoneLink(m).label === 'Merging' ? 'Merging…' : milestoneLink(m).label;
+  return m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? (checked ? 'Checked · pass it' : 'Pass it') : 'Not yet';
 }
 
 const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<MilestoneData, 'milestone'>>) {
@@ -501,17 +534,16 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
   const share = m.state === 'passed' ? 1 : m.total ? m.finished / m.total : 0;
   const locked = data.waitsOn.length > 0;
   const passed = m.state === 'passed';
-  const waits = data.waitsOn.map((t) => `“${t}”`).join(' and ');
   // Where the line from what it waits on comes in: a lock, open once those gates pass.
   const badge = data.gated ? (
-    <span className={cx(c.inBadge, locked ? c.inBadgeLocked : c.inBadgeOpen)} title={locked ? `Unlocks when ${waits} passes` : 'Unlocked'} aria-hidden="true">
+    <span className={cx(c.inBadge, locked ? c.inBadgeLocked : c.inBadgeOpen)} title={lockWords(data.waitsOn, m.dependsOn.length, data.branch)} aria-hidden="true">
       <LockMark open={!locked} size={11} />
     </span>
   ) : null;
   if (data.folded) {
     const n = m.milestone.tasks.length;
     return (
-      <div className={cx(p.milestone, p.ms_passed, c.ms, c.msFolded)}>
+      <div className={cx(p.milestone, p.ms_passed, c.ms)}>
         <Handle id="in" type="target" position={Position.Top} className={p.handle} isConnectable={false} />
         <Handle id="out" type="source" position={Position.Bottom} className={p.handle} isConnectable={false} />
         {badge}
@@ -556,11 +588,23 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
               </span>
             ) : null}
             {m.milestone.autonomy ? <span className={p.msAuto}>{AUTONOMY_INFO[m.autonomy].label}</span> : null}
+            {data.starting ? (
+              <span className={c.starting} role="status">
+                <Working />
+                Starting its agent…
+              </span>
+            ) : null}
+            {/* Where its work starts: the plan's branch, with what it waited on merged in. */}
+            {data.gated && data.branch && !locked && !passed ? (
+              <span className={c.fromBranch} title={lockWords([], m.dependsOn.length, data.branch)}>
+                from {data.branch}
+              </span>
+            ) : null}
           </span>
         </span>
         <span className={p.grow} />
         {locked ? (
-          <span className={c.lockChip} title={`Unlocks when ${waits} passes`}>
+          <span className={c.lockChip} title={lockWords(data.waitsOn, m.dependsOn.length, data.branch)}>
             <LockMark size={10} />
             Locked
           </span>
@@ -593,9 +637,18 @@ const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate
   const criteria = m.milestone.criteria;
   const label = gateLabel(m);
   const each = criterionState(m);
-  // Waiting for you: a soft ring that breathes out (with the live clock, lib/live-motion.ts).
+  // Waiting for you: a soft ring that breathes out; being checked: each criterion's mark turns
+  // (both with the live clock, lib/live-motion.ts).
   const gate = useRef<HTMLDivElement>(null);
-  useLive(gate, (t) => gate.current?.style.setProperty('--beckon', (1 - breath(t, 2400)).toFixed(3)), m.state === 'gate' && !data.folded);
+  const checking = each === 'checking';
+  useLive(
+    gate,
+    (t) => {
+      if (checking) gate.current?.style.setProperty('--check-turn', `${turn(t, 1100)}deg`);
+      else gate.current?.style.setProperty('--beckon', (1 - breath(t, 2400)).toFixed(3));
+    },
+    (m.state === 'gate' || checking) && !data.folded,
+  );
   const state = m.state === 'merging' ? 'passed' : m.state;
   return (
     <div
@@ -652,12 +705,19 @@ const PlanLine = memo(function PlanLine({ id, source, target, sourceX, sourceY, 
   ];
   const state = data?.state ?? 'waiting';
   const look = data?.look;
-  const cls = cx(kind === 'next' ? c.flow : c.line, c[`${kind === 'next' ? 'flow' : 'line'}_${state}`], data?.current && c.lineCurrent, look && c[`look_${look}`]);
+  // Back from a folded milestone: it waits for the cards to slide in and show, then appears (never ahead of them).
+  const was = useRef(look);
+  const back = was.current === 'gone' && look !== 'gone';
+  useEffect(() => {
+    was.current = look;
+  });
+  const cls = cx(kind === 'next' ? c.flow : c.line, c[`${kind === 'next' ? 'flow' : 'line'}_${state}`], data?.current && c.lineCurrent, look && c[`look_${look}`], back && c.lineBack);
   const at = data?.label ? labelAt(points) : undefined;
   return (
     <g data-from={source} data-to={target} data-kind={kind} data-state={state} data-look={look}>
       <BaseEdge id={id} path={roundedPath(points, kind === 'next' ? 14 : 10)} className={cls} interactionWidth={0} />
-      <path d={arrowHead(points, kind === 'next' ? 5 : 3.5)} className={cx(cls, c.arrow)} />
+      {data?.joined ? null : <path d={arrowHead(points, kind === 'next' ? 5 : 3.5)} className={cx(cls, c.arrow)} />}
+      {data?.join ? <JoinMark join={data.join} current={data.current} /> : null}
       {data?.label && at ? (
         <EdgeLabelRenderer>
           <div className={cx(c.flowLabel, c[`flowLabel_${state}`])} style={{ transform: `translate(-50%, -50%) translate(${at.x}px, ${at.y}px)` }}>
@@ -669,5 +729,33 @@ const PlanLine = memo(function PlanLine({ id, source, target, sourceX, sourceY, 
     </g>
   );
 });
+
+/**
+ * Where the lines from several milestones meet: a small pill saying how many are in ("2/3"), and one
+ * stem from it into the lock, solid green once all are in. Its tooltip names what it still waits on,
+ * and the branch the milestone starts from.
+ */
+function JoinMark({ join, current }: { join: NonNullable<LineData['join']>; current: boolean }) {
+  const cls = cx(c.flow, c[`flow_${join.state}`], current && c.lineCurrent);
+  const at = join.stem[0]!;
+  return (
+    <>
+      <path d={roundedPath(join.stem, 14)} className={cls} />
+      <path d={arrowHead(join.stem, 5)} className={cx(cls, c.arrow)} />
+      <EdgeLabelRenderer>
+        <div
+          className={cx(c.flowLabel, c[`flowLabel_${join.state}`], c.joinKnot)}
+          style={{ transform: `translate(-50%, -50%) translate(${at.x}px, ${at.y}px)` }}
+          title={join.tip}
+          aria-label={join.tip}
+          data-join={`${join.passed}/${join.total}`}
+        >
+          <LockMark open={join.passed === join.total} size={9} />
+          {join.passed}/{join.total}
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
 
 const EDGE_TYPES = { line: PlanLine } as const;

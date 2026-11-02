@@ -1,17 +1,23 @@
-import { type PointerEvent as ReactPointerEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { animate, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from 'motion/react';
-import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from '@beluga/core/board/model.js';
+import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank, isEpic } from '@beluga/core/board/model.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
+import { Icon } from '../components/Icon.js';
 import { IconButton, cx } from '../components/ui.js';
+import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
-import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
+import { AssigneeMark, PriorityIcon, StatusIcon, assigneeWords } from './marks.js';
+import { AssigneePicker } from './pickers.js';
+import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, PrivateMark, useIssueMenu } from './parts.js';
+import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
-import { useBoard, useOthers, useSelfId, useTaskActions } from './use-tasks.js';
+import { useVisitingFrom } from './boards.js';
+import { taskDropProps } from './use-task-drop.js';
+import { revealing, tuckOrder, useBoard, useSelf, useSelfId, useTaskActions, useTucking } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -53,9 +59,19 @@ const GAP = 6;
 const SPRING = { type: 'spring', stiffness: 560, damping: 44, mass: 0.75 } as const;
 const SETTLE = { type: 'spring', stiffness: 420, damping: 36, mass: 0.8 } as const;
 
+/** The nearest element (the board or one around it) that scrolls sideways; the board itself if none does. */
+function sideScroller(el: HTMLElement): HTMLElement {
+  for (let at: HTMLElement | null = el; at; at = at.parentElement) {
+    const { overflowX } = getComputedStyle(at);
+    if ((overflowX === 'auto' || overflowX === 'scroll') && at.scrollWidth > at.clientWidth) return at;
+  }
+  return el;
+}
+
 const order = (a: Issue, b: Issue): number => byRank(a, b) || PRIORITY_INFO[a.priority].rank - PRIORITY_INFO[b.priority].rank;
 
-export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string }) {
+/** `projectId`: the board shown; `repo`: the one repo you're looking at on a board of several (new tasks run there). */
+export function TaskBoard({ issues, statuses, projectId, repo }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; repo?: string }) {
   const { api, act } = useTaskActions();
   const reduce = useReducedMotion() ?? false;
   const [lift, setLift] = useState<Lift>();
@@ -90,8 +106,8 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
   // What every card needs from the store, read here once: a card itself subscribes to nothing, so a change elsewhere doesn't render them all.
   const board = useBoard();
   const selfId = useSelfId();
-  const others = useOthers();
-  const soloIn = useMemo(() => [...new Set(issues.map((i) => i.projectId))].filter((p) => isSolo(board, p, selfId, others)).sort().join('\n'), [board, issues, selfId, others]);
+  const teams = useApp((s) => s.team.teams);
+  const soloIn = useMemo(() => [...new Set(issues.map((i) => i.projectId))].filter((p) => isSolo(board, p, selfId, teams[p]?.mates.length ?? 0)).sort().join('\n'), [board, issues, selfId, teams]);
   const issueMenu = useIssueMenu();
   const latest = useRef({ columns, statuses, api, act, issueMenu });
   latest.current = { columns, statuses, api, act, issueMenu };
@@ -124,7 +140,8 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
     let spot = over;
     let pointer = { x: lift.originX + lift.grabX, y: lift.originY + lift.grabY };
     let tick = 0;
-    const board = boardRef.current;
+    // What scrolls sideways is the board's container, not the board itself.
+    const board = boardRef.current && sideScroller(boardRef.current);
     const edges = board?.getBoundingClientRect();
     const spotAt = (px: number, py: number): Spot | undefined => {
       const at = spotIn(px, py, geometry.current);
@@ -205,14 +222,15 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
     window.addEventListener('pointerup', up, { once: true });
     window.addEventListener('pointercancel', up, { once: true });
     window.addEventListener('keydown', key, true);
-    board?.addEventListener('scroll', scrolled, { capture: true, passive: true });
+    // Any scroll (the board sideways, a column up or down): scroll events don't bubble, so catch them on the way down.
+    window.addEventListener('scroll', scrolled, { capture: true, passive: true });
     return () => {
       cancelAnimationFrame(tick);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       window.removeEventListener('keydown', key, true);
-      board?.removeEventListener('scroll', scrolled, { capture: true });
+      window.removeEventListener('scroll', scrolled, { capture: true });
     };
     // `over` is read once (the spot to start from); it's tracked inside after that.
   }, [lift, settling]);
@@ -292,10 +310,17 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
       justDragged.current = false;
     }
   }, [lift, lifted]);
+  // Sub-tasks just opened out pop in one after another: down each column, then the next one along.
+  let popped = 0;
+  // Tucked back, they go the other way: the last one first.
+  const tucking = useTucking();
+  const outs = useMemo(() => tuckOrder(tucking, columns.flatMap((c) => c.items)), [tucking, columns]);
   return (
     <div ref={boardRef} className={cx(t.board, lift && t.boardDragging)} role="list" aria-label="Board">
       {columns.map(({ status, items }) => {
         const target = lift && over?.status === status;
+        const popFrom = popped;
+        popped += items.filter((i) => revealing(i.parent)).length;
         return (
           <Column
             key={status}
@@ -304,7 +329,10 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
             {...(lift && lift.from === status ? { liftedId: lift.id } : {})}
             {...(target ? { gapAt: over.index, gapHeight: lift.height } : {})}
             reduce={reduce}
+            popFrom={popFrom}
+            {...(outs ? { outs } : {})}
             {...(projectId ? { projectId } : {})}
+            {...(repo ? { repo } : {})}
             onPress={press}
             onNudge={nudge}
             suppressClick={justDragged}
@@ -318,7 +346,7 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
       {lift && lifted
         ? createPortal(
             <motion.div className={t.cardLifted} style={{ x, y, width: lift.width, rotate: lean }} initial={reduce ? false : { scale: 1 }} animate={{ scale: settling ? 1 : 1.035 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }} aria-hidden="true">
-              <CardFace issue={lifted} selfId={selfId} solo={soloIn.split('\n').includes(lifted.projectId)} />
+              <CardFace issue={lifted} selfId={selfId} solo={soloIn.split('\n').includes(lifted.projectId)} lifted />
             </motion.div>,
             document.body,
           )
@@ -338,7 +366,10 @@ const Column = memo(function Column({
   gapAt,
   gapHeight,
   reduce,
+  popFrom,
+  outs,
   projectId,
+  repo,
   onPress,
   onNudge,
   suppressClick,
@@ -355,7 +386,12 @@ const Column = memo(function Column({
   gapAt?: number;
   gapHeight?: number;
   reduce: boolean;
+  /** How many cards popping in come before this column's (the stagger carries on across). */
+  popFrom: number;
+  /** Each card tucking back under its epic, and its turn. */
+  outs?: ReadonlyMap<string, number>;
   projectId?: string;
+  repo?: string;
   onPress: (e: ReactPointerEvent<HTMLElement>, issue: Issue, index: number) => void;
   onNudge: (issue: Issue, key: string) => void;
   suppressClick: { current: boolean };
@@ -369,6 +405,7 @@ const Column = memo(function Column({
   const shown = withGap(items, liftedId, gapAt);
   const label = STATUS_INFO[status].label;
   let index = 0;
+  let pop = popFrom;
   return (
     <section ref={(el) => register('sections', status, el)} className={cx(t.column, gapAt !== undefined && t.columnOver)} role="listitem" aria-label={`${label}, ${items.length}`}>
       <header className={t.columnHead}>
@@ -378,7 +415,7 @@ const Column = memo(function Column({
         <span className={t.grow} />
         {status === 'in_plan' ? <PlanPrs issues={items} /> : null}
         {status === 'done' ? <ArchiveDoneButton projectId={projectId} /> : null}
-        <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { projectId } : {}) })} />
+        <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />
       </header>
       <div ref={(el) => register('stacks', status, el)} className={t.cards}>
         {shown.map((item) =>
@@ -396,7 +433,7 @@ const Column = memo(function Column({
             />
           ) : (
             <motion.div key={item.id} data-card={item.id} layout={reduce ? false : 'position'} transition={SPRING} className={t.cardSlot}>
-              <Card issue={item} index={index++} onPress={onPress} onNudge={onNudge} suppressClick={suppressClick} menu={menu} selfId={selfId} solo={solo.includes(item.projectId)} />
+              <Card issue={item} index={index++} {...(revealing(item.parent) ? { pop: pop++ } : {})} {...(outs?.has(item.id) ? { out: outs.get(item.id)! } : {})} onPress={onPress} onNudge={onNudge} suppressClick={suppressClick} menu={menu} selfId={selfId} solo={solo.includes(item.projectId)} />
             </motion.div>
           ),
         )}
@@ -406,18 +443,48 @@ const Column = memo(function Column({
   );
 });
 
-/** What a card shows (on the board, and lifted under the pointer). */
-const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue; selfId: string; solo: boolean }) {
+/**
+ * Who a card's task is for, and a click picks someone else without opening the task (or starting
+ * a drag): the same menu as a row in the list and the task's page.
+ */
+function CardAssignee({ issue, selfId }: { issue: Issue; selfId: string }) {
+  const { api, act } = useTaskActions();
+  const stop = (e: { stopPropagation: () => void }): void => e.stopPropagation();
+  return (
+    <span className={t.cardAssignee} onPointerDown={stop} onClick={stop} onKeyDown={stop}>
+      <AssigneePicker projectId={issue.projectId} value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
+        <button type="button" className={t.iconHit} aria-label={`${assigneeWords(issue.assignee, selfId)}. Change who it's for`}>
+          <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} changeable />
+        </button>
+      </AssigneePicker>
+    </span>
+  );
+}
+
+/** What a card shows (on the board, and lifted under the pointer: `lifted`, nothing in it to press). */
+const CardFace = memo(function CardFace({ issue, selfId, solo, lifted }: { issue: Issue; selfId: string; solo: boolean; lifted?: boolean }) {
+  const self = useSelf();
+  const epic = useApp((s) => isEpic(s.board, issue));
   return (
     <>
       <div className={t.cardTop}>
         <span className={t.key}>{issue.key}</span>
+        <PrivateMark issue={issue} />
+        {epic ? (
+          <span className={t.epicTag}>
+            <Icon name="epic" size={11} />
+            Epic
+          </span>
+        ) : null}
         <span className={t.grow} />
+        <WaitingMark issueId={issue.id} />
         <PriorityIcon priority={issue.priority} labelled />
-        {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
+        {solo ? null : lifted ? <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} /> : <CardAssignee issue={issue} selfId={selfId} />}
       </div>
       <div className={cx(t.cardTitle, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</div>
-      <IssueMeta issue={issue} compact />
+      <IssueMeta issue={issue} compact progress={!epic} presence={false} />
+      {epic ? <EpicBar issue={issue} /> : null}
+      <OnItLine issue={issue} self={self} />
     </>
   );
 });
@@ -425,6 +492,8 @@ const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue;
 const Card = memo(function Card({
   issue,
   index,
+  pop,
+  out,
   onPress,
   onNudge,
   suppressClick,
@@ -435,6 +504,10 @@ const Card = memo(function Card({
   issue: Issue;
   /** Its place in its column. */
   index: number;
+  /** Its turn popping in, when its epic was just opened out. */
+  pop?: number;
+  /** Its turn tucking back, when its epic was just closed. */
+  out?: number;
   onPress: (e: ReactPointerEvent<HTMLElement>, issue: Issue, index: number) => void;
   onNudge: (issue: Issue, key: string) => void;
   suppressClick: { current: boolean };
@@ -443,13 +516,17 @@ const Card = memo(function Card({
   solo: boolean;
 }) {
   const { open } = useTaskActions();
+  const epic = useApp((s) => isEpic(s.board, issue));
+  const visiting = Boolean(useVisitingFrom(issue));
   return (
     <ActionsContext items={() => menu(issue)}>
       <article
-        className={t.card}
+        className={cx(t.card, epic && t.cardEpic, issue.private && t.cardPrivate, visiting && t.cardVisiting, out !== undefined ? t.tuckOut : pop !== undefined && t.pop)}
+        style={(out ?? pop) !== undefined ? ({ '--pop': out ?? pop } as CSSProperties) : undefined}
         role="button"
         tabIndex={0}
-        aria-label={`${issue.key} ${issue.title}`}
+        aria-label={`${issue.key} ${issue.title}${issue.private ? ', private' : ''}`}
+        {...taskDropProps(issue)}
         onPointerDown={(e) => onPress(e, issue, index)}
         onClick={() => {
           // The click that ends a drag isn't a click.

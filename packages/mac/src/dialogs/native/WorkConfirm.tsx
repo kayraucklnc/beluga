@@ -10,6 +10,7 @@ import { useApi, useApp } from '../../lib/beluga.js';
 import type { AskedWork } from '../../lib/work-confirm.js';
 import { MergeReview } from './MergeReview.js';
 import s from './work-confirm.module.css';
+import { primaryKey } from '../../lib/shortcuts-model.js';
 
 /**
  * Before a workspace action that starts Claude working or changes git: what will happen, in a
@@ -35,10 +36,10 @@ export function wordsFor(state: AppState, ws: Workspace, action: AskedWork): Wor
   switch (action) {
     case 'review_claude':
       return {
-        title: 'Ask Claude to review this worktree?',
+        title: 'Ask your agent to review this worktree?',
         message: (
           <>
-            <p>Claude’s sub-agents check correctness, security, tests and quality, then give a verdict in the chat: what changed, what they found, and whether it’s ready to merge.</p>
+            <p>Your agent’s sub-agents check correctness, security, tests and quality, then give a verdict in the chat: what changed, what they found, and whether it’s ready to merge.</p>
             <p className={s.quiet}>It may add a missing test or fix something small along the way; anything it changes shows in Changes for you to look over.</p>
           </>
         ),
@@ -70,8 +71,8 @@ export function wordsFor(state: AppState, ws: Workspace, action: AskedWork): Wor
     case 'merge_claude': {
       const files = state.conflicts[ws.id]?.length ?? 0;
       return {
-        title: 'Ask Claude to solve the conflict?',
-        message: <p>Claude merges {branch} into the main folder, resolves the conflict{files ? ` in ${plural(files, 'file')}` : ''} keeping both sides’ intent, runs the tests and commits the merge.</p>,
+        title: 'Ask your agent to solve the conflict?',
+        message: <p>Your agent merges {branch} into the main folder, resolves the conflict{files ? ` in ${plural(files, 'file')}` : ''} keeping both sides’ intent, runs the tests and commits the merge.</p>,
         confirm: 'Solve Conflict',
         icon: 'merge',
       };
@@ -79,15 +80,15 @@ export function wordsFor(state: AppState, ws: Workspace, action: AskedWork): Wor
     case 'compact':
       return {
         title: 'Compact this conversation?',
-        message: <p>Claude summarizes what matters so far and carries on from that summary, so it has room to keep going.</p>,
+        message: <p>Your agent summarizes what matters so far and carries on from that summary, so it has room to keep going.</p>,
         confirm: 'Compact',
         icon: 'gauge',
       };
     case 'fix_checks': {
       const pr = state.prs[ws.id];
       return {
-        title: 'Ask Claude to fix the failing checks?',
-        message: <p>Claude reads why {pr ? `pull request #${pr.number}’s` : 'the pull request’s'} checks failed, fixes the code, runs the tests, then commits and pushes to the pull request.</p>,
+        title: 'Ask your agent to fix the failing checks?',
+        message: <p>Your agent reads why {pr ? `pull request #${pr.number}’s` : 'the pull request’s'} checks failed, fixes the code, runs the tests, then commits and pushes to the pull request.</p>,
         confirm: 'Fix Checks',
         icon: 'wand',
       };
@@ -95,10 +96,10 @@ export function wordsFor(state: AppState, ws: Workspace, action: AskedWork): Wor
     case 'resolve_pr': {
       const pr = state.prs[ws.id];
       return {
-        title: 'Ask Claude to resolve the merge conflicts?',
+        title: 'Ask your agent to resolve the merge conflicts?',
         message: (
           <>
-            <p>{pr ? `Pull request #${pr.number}` : 'The pull request'} conflicts with its base, so GitHub can’t merge it. In this chat, Claude merges the latest base into <strong>{branch}</strong>, resolves each conflict keeping both sides’ intent, runs the tests, then commits and pushes.</p>
+            <p>{pr ? `Pull request #${pr.number}` : 'The pull request'} conflicts with its base, so GitHub can’t merge it. In this chat, your agent merges the latest base into <strong>{branch}</strong>, resolves each conflict keeping both sides’ intent, runs the tests, then commits and pushes.</p>
             <p className={s.quiet}>Once it’s pushed, the checks run again and you can merge.</p>
           </>
         ),
@@ -113,7 +114,7 @@ export function wordsFor(state: AppState, ws: Workspace, action: AskedWork): Wor
         message: (
           <>
             <p>{pr ? `Pull request #${pr.number}` : 'The pull request'} is done. <strong>{branch}</strong> starts again from the latest base, and the conversation stays, so the next change gets a new pull request.</p>
-            <p className={s.quiet}>If the branch has work that isn’t merged yet, nothing is lost: Claude brings the base in instead.</p>
+            <p className={s.quiet}>If the branch has work that isn’t merged yet, nothing is lost: your agent brings the base in instead.</p>
           </>
         ),
         confirm: 'Continue',
@@ -185,7 +186,7 @@ export function WorkConfirm({ wsId, action, close }: { wsId: string; action: Ask
           // Its own button pressed again closes it (see askBeforeWork), instead of closing and reopening.
           onPointerDownOutside={(e) => (anchor.contains(e.target as Node) ? e.preventDefault() : undefined)}
           onKeyDown={(e) => {
-            if (e.key !== 'Enter' || e.metaKey || e.shiftKey) return;
+            if (e.key !== 'Enter' || primaryKey(e) || e.shiftKey) return;
             if ((e.target as HTMLElement).tagName === 'BUTTON' && e.target !== start.current) return;
             e.preventDefault();
             go();

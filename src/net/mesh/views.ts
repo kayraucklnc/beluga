@@ -4,6 +4,8 @@
  * Browser-safe: types only.
  */
 
+import type { AgentRef } from '../../protocol.js';
+
 export type PresenceState = 'online' | 'away' | 'dnd' | 'offline';
 
 /** A status you set: shown to your friends and the people in your groups. */
@@ -24,6 +26,12 @@ export interface PersonView {
   readonly presence: Presence;
   /** How you're connected: straight to their Mac, or through another member's Mac (still end-to-end encrypted). */
   readonly via?: 'direct' | 'relay';
+  /** Their Beluga's version and what it does, as it said on its last link (unknown for Macs from before that). */
+  readonly beluga?: { readonly version: string; readonly can: readonly string[] };
+  /** Your two Macs speak different network versions, so they can't link: who needs to update. */
+  readonly update?: 'them' | 'you';
+  /** Their profile picture's checksum, once it's here (`network.avatar.get` gives its bytes). */
+  readonly avatar?: string;
 }
 
 /** A file shared in a chat: who has it is found by its checksum; the bytes come Mac to Mac. */
@@ -37,9 +45,33 @@ export interface ChatFile {
   readonly image?: boolean;
 }
 
+/** What the Mac a Claude in a chat can't touch would need to do (chat Claudes have no tools). */
+export interface ChatRequest {
+  /** The task, as a request to that Claude on its owner's Mac ("Send me your desktop wallpaper"). */
+  readonly ask: string;
+  readonly needs?: ReadonlyArray<'project' | 'shell' | 'files' | 'screen' | 'device'>;
+}
+
+/** A Claude's answer in a chat: to message `for`, and what it would take as a real request (the asker's Mac offers to send it). */
+export interface ClaudeReply {
+  readonly for: string;
+  readonly request?: ChatRequest;
+  /** Which of its owner's agents answered (an older Mac leaves it out: Claude). */
+  readonly agent?: AgentRef;
+}
+
 /** Who a message asks to answer: everyone's Claude in the chat, or these people's. */
 export interface ChatAsk {
   readonly to: 'all' | readonly string[];
+}
+
+/**
+ * A task between Claudes this message stands for (BLG-208): each side draws its card from its own
+ * task book by `id` (the requester's and the receiver's both know it), so it updates as the task goes.
+ */
+export interface ChatTaskRef {
+  readonly id: string;
+  readonly role: 'request';
 }
 
 /** What a message carries besides its text (all inside the encryption). */
@@ -47,8 +79,10 @@ export interface ChatExtras {
   readonly files?: readonly ChatFile[];
   /** The author called for Claudes to answer this message. */
   readonly ask?: ChatAsk;
+  /** The message is the card of a task between two people's Claudes (its text is for Macs that don't know it). */
+  readonly task?: ChatTaskRef;
   /** This message is the author's Claude answering message `for`. */
-  readonly claude?: { readonly for: string };
+  readonly claude?: ClaudeReply;
 }
 
 /** One message in a conversation with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */
@@ -65,6 +99,8 @@ export interface MessageView extends ChatExtras {
    * Group messages that can't be read (no key for them yet) are 'locked'.
    */
   readonly status?: 'waiting' | 'delivered' | 'expired' | 'locked';
+  /** When its author last changed its text (direct messages). */
+  readonly edited?: number;
 }
 
 export interface FriendView extends PersonView {
@@ -107,14 +143,31 @@ export interface InvitationView {
   readonly groupId?: string;
   /** e.g. K7QM-4XPA-R2TD (works until `codeExpiresAt`, an hour at most). */
   readonly code: string;
-  /** klaud://add#… or klaud://join#… (works until `expiresAt`). */
+  /** beluga://add#… or beluga://join#… (works until `expiresAt`). */
   readonly link: string;
   readonly expiresAt: number;
   readonly uses: number;
   /** When the code stops working (the link keeps working until `expiresAt`). */
   readonly codeExpiresAt: number;
-  /** The code as a link: klaud://add?code=K7QM-4XPA-R2TD (same lifetime as the code). */
+  /** The code as a link: beluga://add?code=K7QM-4XPA-R2TD (same lifetime as the code). */
   readonly codeLink: string;
+  /** Made for one person (a friend request sent in a room): only they can use it. */
+  readonly for?: string;
+}
+
+/**
+ * A friend request between two people in the same room (BLG-202): one they sent you (`in`,
+ * Accept makes you friends), or one you sent them (`out`, waiting for them). The invitation
+ * link itself stays in the daemon.
+ */
+export interface FriendOfferView {
+  readonly peerId: string;
+  readonly name: string;
+  readonly dir: 'in' | 'out';
+  readonly at: number;
+  readonly expiresAt: number;
+  /** Asked through a team you're both on, not a room (BLG-510): its repository ("acme/api"). */
+  readonly via?: string;
 }
 
 /** A group you asked to join and that hasn't let you in yet. */
@@ -130,6 +183,8 @@ export interface NetworkSelf {
   /** What you chose (others see "offline" while you appear offline). */
   readonly presence: Presence;
   readonly appearOffline: boolean;
+  /** Your profile picture's checksum, if you set one. */
+  readonly avatar?: string;
 }
 
 /** Everything about the network except the messages (they're kept per conversation). */
@@ -161,6 +216,8 @@ export interface LiveClaude {
   /** The message it answers. */
   readonly for: string;
   readonly since: number;
+  /** Which agent (BLG-498: its mark); an older Mac's leaves it out: Claude. */
+  readonly agent?: AgentRef;
 }
 
 export interface NetworkState extends NetworkSummary {
@@ -172,6 +229,8 @@ export interface NetworkState extends NetworkSummary {
   readonly live?: Readonly<Record<string, readonly LiveClaude[]>>;
   /** Your main channel (a group with all your friends), once it exists. */
   readonly main?: string;
+  /** Friend requests with people in your room, both ways (BLG-202). */
+  readonly offers?: readonly FriendOfferView[];
 }
 
 export const dmConversation = (peerId: string): string => `dm:${peerId}`;

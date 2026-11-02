@@ -18,6 +18,8 @@ export interface Nudge {
   /** Something that needs you is high priority (it wakes the phone); the rest batches under a collapse key. */
   readonly priority: 'high' | 'normal';
   readonly collapse?: string;
+  /** Only for a phone linked with the app in the background (Stay connected), never pushed: the Mac's own "finished" notices. */
+  readonly away?: boolean;
 }
 
 /** A phone that can be pushed to (its token and relay key, from its `push` frame). */
@@ -41,8 +43,11 @@ export interface Pusher {
  */
 export const NO_PUSH: Pusher = { push: async () => undefined };
 
-/** You're at the Mac when it was used within this long (and the screen isn't locked). */
-export const AWAY_AFTER_MS = 2 * 60_000;
+/**
+ * You're at the Mac when its keyboard or mouse was used within this long (BLG-360): the phone
+ * stays quiet, since you see it there. Five minutes without a touch and the phone is told.
+ */
+export const AWAY_AFTER_MS = 5 * 60_000;
 
 export interface PushContext {
   /** The phone is linked now (a nudge goes over the link instead). */
@@ -58,29 +63,55 @@ export interface PushContext {
   readonly canPush: boolean;
 }
 
-export type Delivery = 'nudge' | 'push' | 'none';
+/** `held`: you're at the Mac, so not now; told later if it's still waiting once you've stepped away. */
+export type Delivery = 'nudge' | 'push' | 'held' | 'none';
 
-/** How (and whether) to tell one phone something. */
+/**
+ * You're at the Mac: its keyboard or mouse was used in the last five minutes. When that can't be
+ * read (not a Mac), a Beluga window in front stands in for it.
+ */
+export const atMac = (ctx: Pick<PushContext, 'macIdleMs' | 'macFront'>): boolean => (ctx.macIdleMs !== undefined ? ctx.macIdleMs < AWAY_AFTER_MS : ctx.macFront);
+
+/**
+ * How (and whether) to tell one phone something. The app open on the phone hears it in the app
+ * (a toast), wherever you are; otherwise a notification only once you've been away from the Mac
+ * five minutes (a linked phone in the background gets it as a nudge, an unlinked one as a push).
+ */
 export function deliver(nudge: Pick<Nudge, 'kind' | 'topic'>, ctx: PushContext): Delivery {
   // Already looking at it on the phone: nothing to say.
   if (ctx.linked && ctx.inFront && nudge.topic && ctx.onScreen.has(nudge.topic)) return 'none';
-  if (ctx.linked) return 'nudge';
+  if (ctx.linked && ctx.inFront) return 'nudge';
+  if (!ctx.linked && !ctx.canPush) return 'none';
   // You're at the Mac: you see it there.
-  const atMac = ctx.macFront || (ctx.macIdleMs !== undefined && ctx.macIdleMs < AWAY_AFTER_MS);
-  if (atMac || !ctx.canPush) return 'none';
-  return 'push';
+  if (atMac(ctx)) return 'held';
+  return ctx.linked ? 'nudge' : 'push';
 }
 
+/** How long since the last key press or mouse move (Windows: GetLastInputInfo), in ms. */
+const WINDOWS_IDLE_PS = `Add-Type -Name I -Namespace Beluga -MemberDefinition '[StructLayout(LayoutKind.Sequential)] public struct L { public uint cb; public uint t; } [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref L l);'
+$l = New-Object Beluga.I+L; $l.cb = 8; [void][Beluga.I]::GetLastInputInfo([ref]$l); [Environment]::TickCount - $l.t`;
+
+/** Each system's way to ask, and how to read its answer as milliseconds. */
+const IDLE: Partial<Record<NodeJS.Platform, readonly [string, readonly string[], (out: string) => number | undefined]>> = {
+  // IOKit's HIDIdleTime, via ioreg, in nanoseconds.
+  darwin: ['ioreg', ['-c', 'IOHIDSystem', '-d', '4', '-k', 'HIDIdleTime'], (out) => {
+    const ns = /"HIDIdleTime"\s*=\s*(\d+)/.exec(out)?.[1];
+    return ns ? Math.round(Number(ns) / 1e6) : undefined;
+  }],
+  // X11 only (Wayland doesn't tell other apps): xprintidle, when it's installed.
+  linux: ['xprintidle', [], (out) => (/^\d+$/.test(out.trim()) ? Number(out.trim()) : undefined)],
+  win32: ['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_IDLE_PS], (out) => (/^-?\d+$/.test(out.trim()) ? Math.max(0, Number(out.trim())) : undefined)],
+};
+
 /**
- * Seconds since you last used the Mac's keyboard or mouse (IOKit's HIDIdleTime, via ioreg), or
- * undefined when it can't tell (not a Mac). Cheap enough to ask when there's something to push.
+ * Milliseconds since you last used this computer's keyboard or mouse, or undefined when it can't
+ * tell. Cheap enough to ask when there's something to push.
  */
 export function macIdleMs(): Promise<number | undefined> {
-  if (process.platform !== 'darwin') return Promise.resolve(undefined);
+  const how = IDLE[process.platform];
+  if (!how) return Promise.resolve(undefined);
+  const [cmd, args, read] = how;
   return new Promise((resolve) => {
-    execFile('ioreg', ['-c', 'IOHIDSystem', '-d', '4', '-k', 'HIDIdleTime'], { timeout: 3_000 }, (err, out) => {
-      const ns = err ? undefined : /"HIDIdleTime"\s*=\s*(\d+)/.exec(out)?.[1];
-      resolve(ns ? Math.round(Number(ns) / 1e6) : undefined);
-    });
+    execFile(cmd, [...args], { timeout: 3_000 }, (err, out) => resolve(err ? undefined : read(String(out))));
   });
 }

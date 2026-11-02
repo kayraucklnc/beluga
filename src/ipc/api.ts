@@ -1,7 +1,9 @@
 import { z } from 'zod';
-import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
-import { EFFORTS, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
+import { AgentRef, ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
+import { BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
+import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
+import { CHAT_LIMIT_MAX } from '../shared/chat-limit.js';
 import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
 import { NETWORK_API } from './network-api.js';
 import { STRIPE_API } from './stripe-api.js';
@@ -10,11 +12,22 @@ import { CLAUDE_CODE_API } from './claude-code-api.js';
 import { STEPS_API } from './steps-api.js';
 import { GATEWAY_API } from './gateway-api.js';
 import { BOARD_API } from './board-api.js';
+import { CI_API } from './ci-api.js';
+import { DASHBOARD_API } from './dashboard-api.js';
+import { SENTINEL_API } from './sentinel-api.js';
 import { PLANS_API } from './plans-api.js';
+import { DIALOGUES_API } from './dialogues-api.js';
+import { ISSUES_API } from './issues-api.js';
+import { TEAM_API } from './team-api.js';
 import { GIT_API } from './git-api.js';
 import { VIEWS_API } from './views-api.js';
 import { FILES_EDIT_API } from './files-api.js';
 import { COMPANION_API } from './companion-api.js';
+import { ASSISTANT_API } from './assistant-api.js';
+import { VOICE_API } from './voice-api.js';
+import { TERMINAL_IMPORT_API } from './terminal-import-api.js';
+import { AGENT_TERM_API } from './agent-term-api.js';
+import { HANDOFF_MODES } from '../shared/agent-handoff.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -38,26 +51,38 @@ function args(...items: z.ZodType[]): { args: z.ZodTuple } {
 
 export const Location = z.object({ owner: id, share: z.string().min(1).max(200), path });
 
+/** A project (all its worktrees, now and later) or one worktree, shared with a friend over the network. */
+const FriendShare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id), role: WsRole }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
+const FriendUnshare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id) }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
+
 /** A settings change (no defaults: only the keys you send change). */
 export const PrefsPatch = z
   .object({
     theme: z.enum(THEMES),
     mouse: bool,
     tunnel: z.enum(['auto', 'p2p', 'cloudflared', 'ngrok', 'none']),
+    keepAwake: z.enum(KEEP_AWAKE),
     selfApproval: z.enum(['never', 'ask']),
     notify: NotifySettings,
     // null: back to the default (JSON can't carry undefined, so "unset" travels as null).
     model: z.string().max(80).nullable().optional(),
     effort: z.enum(EFFORTS).nullable().optional(),
+    // Who answers "@you" (null: back to Claude), and per-project ones by project name (BLG-444).
+    defaultAgent: AgentRef.nullable().optional(),
+    projectAgents: z.record(z.string().min(1).max(80), AgentRef),
     autoSetup: bool,
+    branchPrefix: z.string().regex(BRANCH_PREFIX_RE, 'Use letters, digits and . _ - / only'),
     contextMeter: bool,
     autoCompact: bool,
     autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX),
+    parallelRuns: z.number().int().min(PARALLEL_RUNS_MIN).max(PARALLEL_RUNS_MAX),
+    chatLimit: z.number().int().min(0).max(CHAT_LIMIT_MAX),
     scratchFolder: bool,
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),
     friendWorktrees: z.enum(['ask', 'off']),
     chatClaude: z.enum(['everyone', 'trusted', 'off']),
+    shareUsage: z.enum(['trusted', 'everyone', 'off']),
     shell: z.string().max(200).optional(),
     shellLogin: bool,
     shellArgs: z.array(z.string().max(200)).max(20),
@@ -80,7 +105,8 @@ const TermSize = z.object({ cols: z.number().int().min(1).max(1000), rows: z.num
 
 export const API = {
   // ---- the room, chat and your preferences
-  'session.submit': args(str, opt(z.object({ channel: opt(channel), urgent: opt(bool), id: opt(id) }))),
+  // `terminal`: the conversation is seen as its agent's terminal and hasn't had a turn yet: that opens on the message (BLG-553).
+  'session.submit': args(str, opt(z.object({ channel: opt(channel), urgent: opt(bool), id: opt(id), terminal: opt(bool) }))),
   'session.copyInvite': args(),
   'session.copyLastAnswer': args(),
   'session.copyText': args(str, z.string().max(500)),
@@ -102,6 +128,9 @@ export const API = {
   'session.runOnPeerByHand': args(z.string().max(64), str, opt(channel)),
   'session.stopAgent': args(),
   'session.compact': args(channel, opt(z.string().max(2000))),
+  // A side question (/btw): answered beside the conversation, never part of it; resolves once answered.
+  'session.btw': args(channel, z.string().min(1).max(4000)),
+  'session.btwDismiss': args(channel),
   'session.quit': args(),
   'session.serveFolder': args(id, path, z.array(id).max(50)),
   'session.localLocation': args(path, bool),
@@ -131,12 +160,30 @@ export const API = {
   // ---- people and trust
   'people.setTrust': args(id, z.enum(TRUST_LEVELS)),
   'people.dismissPrompt': args(id),
+
+  // ---- what needs you: Dismiss takes an item off every list (phone, the Mac's bell) without answering it
+  'needs.dismiss': args(z.string().min(1).max(300)),
   'people.forget': args(id),
 
   // ---- workspaces you share, and ones shared with you
   'sharing.invite': args(id, id, WsRole),
   'sharing.remove': args(id, id),
   'sharing.leave': args(id, id),
+  // Over the network, with friends (core/friend-share): nobody hosts, it stays while someone is offline.
+  'sharing.shareWithFriend': args(FriendShare),
+  'sharing.unshareFriend': args(FriendUnshare),
+  // Leave a project a friend shared with you (owner, project id).
+  'sharing.leaveProject': args(id, id),
+  // Make (or try again to make) your own copy of a project a friend shares with you whole (owner, project id).
+  'sharing.copyProject': args(id, id),
+  // A friend's shared worktree's scratch folder, for your Scratch tab (owner, worktree id).
+  'sharing.scratch': args(id, id),
+  // Scrolling back in a friend's shared worktree: its page of conversation before what you have (owner, worktree id).
+  'sharing.earlier': args(id, id),
+  // Say it in a friend's worktree but to your own Claude, in your copy of the project (owner, worktree id, message).
+  'sharing.runHere': args(id, id, z.string().min(1).max(100_000)),
+  // Fork a friend's shared worktree to this Mac: its changes, Scratch and conversation, as a worktree of yours (owner, worktree id, name?).
+  'sharing.fork': args(id, id, z.string().max(120).optional()),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),
@@ -169,7 +216,7 @@ export const API = {
   'files.downloadSpec': args(z.string().max(4096)),
   'files.closeViewer': args(),
   'files.readImage': args(),
-  // An image a document points at (Markdown's ![](diagram.png)) or a PDF, read the way files.open reads one: → { mediaType, data (base64) }.
+  // An image a document points at (Markdown's ![](diagram.png)), a PDF or a video (the reader plays it), read the way files.open reads one: → { mediaType, data (base64) }.
   'files.readImageFile': args(Location),
   // A file's text without opening it in the viewer (the Mac Changes tab shows a changed file as itself): → { content, truncated }.
   'files.read': args(Location),
@@ -180,15 +227,20 @@ export const API = {
   // Load a workspace's saved conversation without going there (the Mac Overview's read-only look at an archived one).
   'workspaces.load': args(id),
   'workspaces.refresh': args(),
-  'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)) }))),
+  'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)), agent: opt(AgentRef) }))),
   'workspaces.newChat': args(id, z.string().max(200), opt(path)),
-  'workspaces.startChat': args(id, str, opt(path)),
-  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }))),
+  // `terminal`: you see it as its agent's terminal, so that opens on the message (BLG-553).
+  'workspaces.startChat': args(id, str, opt(path.nullable()), opt(z.object({ terminal: opt(bool) }))),
+  // → the new worktree's id. `plan`: its Claude plans first. `quiet`: started from the phone, the Mac's window stays put.
+  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), quiet: opt(bool), agent: opt(AgentRef), terminal: opt(bool) }))),
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),
+  // Edit a message you sent (workspace, message id, its new words, how): 'here' rewinds this conversation to it (files too), 'fork' goes on in a new worktree or chat → the conversation it went on in.
+  'workspaces.editPrompt': args(id, id, str, z.enum(['here', 'fork'])),
   // Carry a conversation (an ask chat in a main folder, or any chat) into a new worktree and go on there → the new workspace's id.
-  'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }).strict())),
+  // `agent` (BLG-506): who goes on there; unset: the conversation's own. One that can't resume the conversation starts fresh, handed it.
+  'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), agent: opt(AgentRef) }).strict())),
   'workspaces.archive': args(id, opt(bool)),
   'workspaces.restore': args(id),
   // What archiving (or freeing space) would throw away and keep → ArchivePreview (none: not a worktree that's there).
@@ -200,6 +252,12 @@ export const API = {
   'workspaces.merge': args(id),
   'workspaces.prepareRemoval': args(id),
   'workspaces.applyEnvBack': args(id),
+  // A worktree's env changes stay there: not asked about again until they change (BLG-369).
+  'workspaces.keepEnvHere': args(id),
+  // Save a worktree's env changes as the project's own variables in Beluga (every worktree gets them; the main .env is left alone).
+  'workspaces.saveEnvInBeluga': args(id),
+  // Look at a project's worktrees' env files now (untouched copies follow the main folder; changed ones are asked about).
+  'workspaces.checkEnv': args(id),
   'workspaces.askClaudeToReview': args(id),
   'workspaces.askClaudeToMerge': args(id),
   'workspaces.compact': args(id, opt(z.string().max(2000))),
@@ -222,6 +280,9 @@ export const API = {
   'workspaces.otherActivity': args(id),
   'workspaces.worktreeInfo': args(id),
   'workspaces.showConversation': args(id, z.string().min(1).max(100)),
+  // Claude Code conversations from outside Beluga in a project's folder (or `path`), and going on with one in a new worktree (BLG-321).
+  'workspaces.outsideConversations': args(id, opt(path)),
+  'workspaces.importOutside': args(id, path, z.string().regex(/^[\w-]{1,100}$/), opt(z.string().max(120))),
   'workspaces.removeOther': args(id, opt(bool)),
   'workspaces.staleOthers': args(id, opt(z.enum(['conductor', 'claude', 'other']))),
   'workspaces.cleanUpOthers': args(id, z.array(id).max(500)),
@@ -240,19 +301,49 @@ export const API = {
   'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000), opt(bool)),
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
+  /**
+   * A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent (nullish: over the socket a null arrives as undefined, see daemon/dispatch.ts).
+   * Then, when the new agent can't read the session (BLG-592): 'quiet' switches now and sends the recent conversation with your next message; 'note' (left out) has the old agent write a handoff note first.
+   */
+  'workbench.setAgent': args(channel, AgentRef.nullish(), opt(z.enum(HANDOFF_MODES))),
   'workbench.createPr': args(id, opt(str)),
+  // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message, trouble? }.
+  // https: push this once over HTTPS with gh's login (the SSH key isn't working; origin stays as it is).
+  'workbench.quickPr': args(id, opt(z.object({ draft: opt(bool), https: opt(bool) }).strict())),
+  // Merge into its base with no PR (BLG-265): commit what's left, land the branch on origin/<base> and push it there → { ok, message, trouble? }.
+  'workbench.mergeToBase': args(id, opt(z.object({ https: opt(bool) }).strict())),
+  // A fix from a GitHub trouble card (BLG-213), then Create PR again ('pr', 'pr_draft'), Merge into its base ('merge_base') or nothing ('none') → { ok, message, trouble? }.
+  'workbench.gitFix': args(id, z.enum(['push_https', 'use_https', 'install_gh', 'gh_login', 'add_ssh_key', 'check_host', 'retry']), opt(z.enum(['pr', 'pr_draft', 'merge_base', 'none']))),
+  // A failed run's card when Claude Code isn't signed in: `claude auth login` in your shell `id` (shell:N), then Claude goes on in `channel` → { ok, message }.
+  // How: 'claudeai' (a Claude subscription, the default) or 'console' (an Anthropic Console account, API billing).
+  'workbench.signInClaude': args(id, channel, opt(z.enum(['claudeai', 'console']))),
   'workbench.fixChecks': args(id),
   'workbench.resolvePrConflicts': args(id),
   'workbench.continueAfterMerge': args(id),
   'workbench.openPr': args(id),
   // Merge a worktree's PR on GitHub (gh pr merge); auto: once its checks pass. → { ok, result | reason, message }
   'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool), admin: opt(bool) }).strict()),
+  // A PR's one-click step on GitHub: bring its base in ('update_branch') or mark a draft ready ('ready') → { ok, message }.
+  'workbench.prStep': args(id, z.enum(['update_branch', 'ready'])),
+  // A worktree's PR conversation: comments, reviews and threads on lines (BLG-514).
+  'workbench.prConversation': args(id),
+  'workbench.prPost': args(id, z.discriminatedUnion('kind', [z.object({ kind: z.literal('comment'), body: z.string().min(1).max(60_000) }).strict(), z.object({ kind: z.literal('reply'), thread: z.string().min(1).max(200), body: z.string().min(1).max(60_000) }).strict(), z.object({ kind: z.enum(['resolve', 'unresolve']), thread: z.string().min(1).max(200) }).strict()])),
+  'workbench.addressPrComments': args(id, opt(z.string().min(1).max(200))),
+  // Lines of a file in a workspace, for a beluga-code block in chat → { ok, excerpt | message }.
+  'workbench.openCode': args(id, z.string().min(1).max(1000), opt(z.number().int().min(1))),
+  'workbench.excerpt': args(id, z.string().min(1).max(1000), opt(z.number().int().min(1)), opt(z.number().int().min(1))),
+  // Stop Merge When Ready from merging it (GitHub's auto-merge too) → { ok, message }.
+  'workbench.cancelMergeWhenReady': args(id),
   // A worktree's PR now (or all of them; true: check gh again), or { reason } to look at what's due:
   // 'focus' (the window came forward) or 'push' (a branch was pushed; id: which worktree).
   'workbench.refreshPrs': args(opt(z.union([id, z.object({ reason: z.enum(['focus', 'push']), id: opt(id) }).strict()])), opt(bool)),
   'workbench.editPrPrompt': args(),
   'workbench.resetPrPrompt': args(),
   'workbench.measureDisk': args(),
+  // Check Again (BLG-507): every agent asked now (Claude Code signed in? Codex installed and signed in?) → RuntimeChoice[].
+  'workbench.checkAgents': args(),
+  // An agent's own sign-in (claude auth login, codex login), opened in Terminal → true when it opened.
+  'workbench.agentSignIn': args(z.string().regex(/^[a-z][\w-]{0,31}$/)),
   'workbench.search': args(z.string().max(500)),
   'workbench.openHit': args(z.number().int().min(0)),
   'workbench.saveTemplate': args(str, opt(bool)),
@@ -273,6 +364,17 @@ export const API = {
   'env.claudeDotenv': args(opt(id), bool),
   // Connect to the database a view would use there (a project, or none: yours) → { ok, from } or { ok: false, message } (never a value).
   'env.testDatabase': args(opt(id)),
+  // Copy a project's main folder .env values into its own variables (kept even if the file goes) → how many were added.
+  'env.importDotenv': args(id),
+  // Keys a worktree adds go into the project's main .env on their own (on by default).
+  'env.newKeysBack': args(id, bool),
+  // Local and bring-your-own endpoints (BLG-449): → each with its URL and models, never its key (hasKey).
+  'env.endpoints': args(),
+  // Add (no id) or change one; key unset keeps it, '' removes it → its id.
+  'env.saveEndpoint': args(z.object({ id: opt(z.string().max(20)), label: z.string().min(1).max(40), baseUrl: z.string().min(1).max(500), key: opt(z.string().max(4000)), models: opt(z.array(z.string().max(40)).max(20)) })),
+  'env.removeEndpoint': args(z.string().max(20)),
+  // Look at every endpoint again now → the list, with which answer.
+  'env.checkEndpoints': args(),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
@@ -280,8 +382,9 @@ export const API = {
   'attachments.addFile': args(path),
   // An image you linked in a message (its file name), waiting in the box again. → { n, chip }
   'attachments.reattach': args(z.string().min(1).max(255)),
-  // `only`: the images waiting in the box (others' "[image N]" stay words).
-  'attachments.expand': args(str, channel, opt(z.array(z.number().int().positive()).max(100))),
+  // `only`: the images waiting in the box (others' "[image N]" stay words). `shown`: the number each
+  // of them has in the box, which its "[image N]" says (else N is the image's own number).
+  'attachments.expand': args(str, channel, opt(z.array(z.number().int().positive()).max(100)), opt(z.array(z.number().int().positive()).max(100))),
   // An image linked in a message (owner peer id, file name): its bytes to show, or opened in Preview.
   'attachments.read': args(id, z.string().min(1).max(255)),
   'attachments.open': args(id, z.string().min(1).max(255)),
@@ -295,6 +398,10 @@ export const API = {
   'projects.add': args(path),
   'projects.addFolder': args(path),
   'projects.suggest': args(),
+  // Start a new project: a folder (name, in this folder or your code folder), git and a first commit → { id, path }.
+  'projects.create': args(z.string().max(100), opt(path)),
+  // Where a new project goes unless you pick somewhere.
+  'projects.newHome': args(),
   // The icon of a folder that isn't a project yet (one of the suggestions).
   'projects.iconAt': args(path),
 
@@ -316,7 +423,18 @@ export const API = {
   ...GATEWAY_API,
   // ---- tasks: the board, its tasks and their briefs (board-api.ts)
   ...BOARD_API,
+  // ---- Sentinel: watchers on a schedule or by hand, their runs and reports (sentinel-api.ts)
+  ...SENTINEL_API,
+  // ---- Dashboards: the numbers sentinels keep, arranged in tiles (dashboard-api.ts)
+  ...DASHBOARD_API,
   ...PLANS_API,
+  ...DIALOGUES_API,
+  // ---- a project's GitHub issues, and handing one to Claude (issues-api.ts)
+  ...ISSUES_API,
+  // ---- a project's GitHub Actions: its runs, a run's jobs and steps, its workflows (ci-api.ts)
+  ...CI_API,
+  // ---- team boards: friends on the same GitHub repository keep one board (team-api.ts)
+  ...TEAM_API,
   // ---- git: keeping main current, GitHub, history (git-api.ts)
   ...GIT_API,
   ...VIEWS_API,
@@ -324,6 +442,14 @@ export const API = {
   ...FILES_EDIT_API,
   // ---- your phone: pairing it, removing it, what it asks for (companion-api.ts)
   ...COMPANION_API,
+  // ---- Your Mac's chats, as tabs on the Mac (assistant-api.ts)
+  ...ASSISTANT_API,
+  // ---- speaking instead of typing: the Mac writes it down (voice-api.ts)
+  ...VOICE_API,
+  // ---- bringing another terminal's look into Beluga's (terminal-import-api.ts)
+  ...TERMINAL_IMPORT_API,
+  // ---- the agent's own terminal on a conversation, and its visuals (agent-term-api.ts)
+  ...AGENT_TERM_API,
 } as const;
 
 export type Api = typeof API;

@@ -55,7 +55,7 @@ describe('the request sheet: Approve once, Always (scoped), Decline', () => {
     kay.trust(bob.id, 'trusted');
     const first = kay.gw.ask({ person: 'bob2', ask: 'tidy the hero copy', project: 'landing', needs: ['project'], by: 'agent' });
     await settle(() => task(bob, first.id)?.state === 'awaiting_approval');
-    expect(bob.approvals[0]).toMatchObject({ kind: 'request', task: first.id, title: "kay2's Claude wants to: tidy the hero copy" });
+    expect(bob.approvals[0]).toMatchObject({ kind: 'request', task: first.id, title: "kay2's agent wants to: tidy the hero copy" });
     bob.gw.decide(first.id, { answer: 'always', scope: 'this', expiry: 'week' });
     await settle(() => task(kay, first.id)?.state === 'done');
     // The approval card went away (taken back), and the rule is there, not trust.
@@ -108,7 +108,7 @@ describe('the request sheet: Approve once, Always (scoped), Decline', () => {
     bob.trust(kay.id, 'trusted');
     const first = kay.gw.ask({ person: 'bob4', kind: 'run', ask: 'npm test', command: 'npm test', by: 'agent' });
     await settle(() => bob.approvals.length === 1);
-    expect(bob.approvals[0]!.title).toBe("kay4's Claude wants to run on your Mac: npm test");
+    expect(bob.approvals[0]!.title).toBe("kay4's agent wants to run on your Mac: npm test");
     bob.approvals[0]!.answer('always');
     await settle(() => task(kay, first.id)?.state === 'done');
     // It names no folder: the rule is for where it ran (the default folder), not anywhere.
@@ -298,12 +298,16 @@ describe('a file from their Mac', () => {
     symlinkSync(path.join(elsewhere, 'private.txt'), path.join(shared, 'link.txt'));
     const linked = kay.gw.ask({ person: 'bob9', kind: 'file', ask: '', path: path.join(shared, 'link.txt'), by: 'agent' });
     await settle(() => task(kay, linked.id)?.state === 'declined');
+    // A secret in a shared folder, from someone bob trusts, still asks him (Allow once / Decline).
     const secret = kay.gw.ask({ person: 'bob9', kind: 'file', ask: '', path: path.join(shared, '.env'), by: 'agent' });
+    await settle(() => bob.approvals.length === 1);
+    expect(bob.approvals[0]).toMatchObject({ kind: 'request', task: secret.id, once: true, title: "kay9's agent wants your .env file .env" });
+    bob.approvals[0]!.answer('no');
     await settle(() => task(kay, secret.id)?.state === 'declined');
-    expect(task(kay, secret.id)?.result?.summary).toContain('not allowed');
+    expect(task(kay, secret.id)?.result?.summary).toContain('bob9 declined');
   }, 60_000);
 
-  it('one they said yes to comes from anywhere (their Desktop), with no folders shared; secrets still never', async () => {
+  it('one they said yes to comes from anywhere (their Desktop), with no folders shared', async () => {
     const desktop = mkdtempSync(path.join(os.tmpdir(), 'klaud-desktop-'));
     writeFileSync(path.join(desktop, 'contract.pdf'), 'pdf');
     writeFileSync(path.join(desktop, 'id_rsa'), 'key');
@@ -315,11 +319,65 @@ describe('a file from their Mac', () => {
     bob.approvals[0]!.answer('yes');
     await settle(() => task(kay, t.id)?.state === 'done');
     expect(readFileSync(task(kay, t.id)!.result!.files[0]!.path!, 'utf8')).toBe('pdf');
-    // A secret is refused before bob is even asked.
-    const key = kay.gw.ask({ person: 'bobA', kind: 'file', ask: '', path: path.join(desktop, 'id_rsa'), by: 'agent' });
-    await settle(() => task(kay, key.id)?.state === 'declined');
-    expect(task(kay, key.id)?.result?.summary).toContain('not allowed');
-    expect(bob.approvals).toHaveLength(1);
+  }, 60_000);
+});
+
+describe('a secret, with its own approval (BLG-209)', () => {
+  it('is asked about every time, even with full trust; Allow once sends that one file and both sides know it was approved', async () => {
+    const desktop = mkdtempSync(path.join(os.tmpdir(), 'klaud-desktop-'));
+    writeFileSync(path.join(desktop, 'id_ed25519'), 'the key');
+    const [kay, bob] = await pair('kayS', 'bobS');
+    kay.trust(bob.id, 'full');
+    bob.trust(kay.id, 'full');
+    const first = kay.gw.ask({ person: 'bobS', kind: 'file', ask: 'my laptop needs the deploy key', path: path.join(desktop, 'id_ed25519'), by: 'agent' });
+    await settle(() => bob.approvals.length === 1);
+    expect(bob.approvals[0]).toMatchObject({ kind: 'request', once: true, title: "kayS's agent wants your private SSH key id_ed25519" });
+    expect(bob.approvals[0]!.detail).toContain('asked each time');
+    expect(task(bob, first.id)).toMatchObject({ state: 'awaiting_approval', secret: { kind: 'ssh-key', label: 'your private SSH key id_ed25519' } });
+    // "Always" (from anywhere) counts once and writes no rule.
+    bob.approvals[0]!.answer('always');
+    await settle(() => task(kay, first.id)?.state === 'done');
+    const got = task(kay, first.id)!;
+    expect(readFileSync(got.result!.files[0]!.path!, 'utf8')).toBe('the key');
+    expect(got.result!.secret).toBe('private SSH key id_ed25519');
+    expect(task(bob, first.id)?.allowedBy).toContain('this once');
+    expect(bob.gw.rules.rules()).toHaveLength(0);
+    // Kay's Claude is told it was approved, so it hands it over.
+    const told = kay.gw.describe(first.id);
+    expect(told).toContain('approved sending to your user');
+    expect(told).toContain("Don't refuse");
+    // The next time asks again: bob declines this one.
+    const again = kay.gw.ask({ person: 'bobS', kind: 'file', ask: '', path: path.join(desktop, 'id_ed25519'), by: 'agent' });
+    await settle(() => bob.approvals.length === 2);
+    bob.gw.decide(again.id, { answer: 'no', reason: 'not this one' });
+    await settle(() => task(kay, again.id)?.state === 'declined');
+    expect(task(kay, again.id)?.result?.summary).toBe('bobS declined: not this one');
+    expect(task(kay, again.id)?.result?.secret).toBeUndefined();
+  }, 60_000);
+
+  it('the keychains (and Beluga’s own files) never go: declined before anyone is asked', async () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), 'klaud-home-'));
+    mkdirSync(path.join(home, 'Library', 'Keychains'), { recursive: true });
+    writeFileSync(path.join(home, 'Library', 'Keychains', 'login.keychain-db'), 'keys');
+    const [kay, bob] = await pair('kayK', 'bobK');
+    kay.trust(bob.id, 'full');
+    bob.trust(kay.id, 'full');
+    const t = kay.gw.ask({ person: 'bobK', kind: 'file', ask: '', path: path.join(home, 'Library', 'Keychains', 'login.keychain-db'), by: 'agent' });
+    await settle(() => task(kay, t.id)?.state === 'declined');
+    expect(task(kay, t.id)?.result?.summary).toContain('not allowed');
+    expect(bob.approvals).toHaveLength(0);
+  }, 60_000);
+
+  it('a friend whose Beluga declines every secret hears so at once', async () => {
+    const [kay, bob] = await pair('kayO', 'bobO');
+    const can = (f: string): boolean => Boolean(kay.store.getState().network.friends.find((x) => x.peerId === bob.id)?.beluga?.can.includes(f));
+    await settle(() => can('task.secret'));
+    // bob's Mac says it takes files, but not secrets (as an older Beluga does).
+    bob.person.mesh.offer(['task.secret'], false);
+    await settle(() => !can('task.secret') && can('task.file'));
+    expect(() => kay.gw.ask({ person: 'bobO', kind: 'file', ask: '', path: '~/.ssh/id_rsa', by: 'agent' })).toThrow(/^bobO's Beluga .+ can't send secrets bobO approves yet\. Ask bobO to update Beluga\.$/);
+    // Any other file still goes.
+    expect(kay.gw.ask({ person: 'bobO', kind: 'file', ask: '', path: '~/notes.md', by: 'person' }).state).toBe('sent');
   }, 60_000);
 });
 
@@ -376,7 +434,7 @@ describe('questions from their Claude', () => {
     const t = kay.gw.ask({ person: 'bobB', ask: 'deploy staging', by: 'agent', conversation: 'ws:q1' });
     await settle(() => kay.resumes.length === 1);
     expect(kay.resumes[0]).toMatchObject({ channel: 'ws:q1' });
-    expect(kay.resumes[0]!.prompt).toContain("bobB's Claude has a question about task");
+    expect(kay.resumes[0]!.prompt).toContain("bobB's agent has a question about task");
     expect(kay.resumes[0]!.prompt).toContain('Deploy now or tonight?');
     kay.gw.answer(t.id, 'skip', 'person');
     await settle(() => task(kay, t.id)?.state === 'done');

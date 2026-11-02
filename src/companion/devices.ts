@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { readJson, writeJson } from '../net/mesh/files.js';
-import { DeviceCert, type DeviceView, MAX_DEVICES } from './protocol.js';
+import { DeviceCert, type DeviceView, LinkPath, MAX_DEVICES, PHONE_USE } from './protocol.js';
 
 /**
  * Your paired phones, kept in ~/.beluga/devices.json (0600): each one's certificate (public keys
@@ -14,7 +14,14 @@ export const DeviceRecord = z.object({
   pairedAt: z.number().int().min(0),
   lastSeen: z.number().int().min(0).optional(),
   app: z.string().max(40).optional(),
+  /** How its last link came, and that in words (Settings › Phone). */
+  path: LinkPath.optional(),
+  note: z.string().max(300).optional(),
   push: z.object({ platform: z.enum(['fcm', 'apns']), token: z.string().max(4096), relayKey: z.string().max(200) }).optional(),
+  /** How freely your Claude may use this phone (BLG-150, Settings › Phone); off by default. */
+  use: z.enum(PHONE_USE).optional(),
+  /** The phone's own switch was off when it last said (its Stop): every route is refused until it says yes (BLG-187). */
+  stopped: z.boolean().optional(),
 });
 export type DeviceRecord = z.infer<typeof DeviceRecord>;
 
@@ -56,7 +63,7 @@ export class DeviceBook {
     return gone;
   }
 
-  update(id: string, patch: Partial<Pick<DeviceRecord, 'lastSeen' | 'app' | 'push'>>): void {
+  update(id: string, patch: Partial<Pick<DeviceRecord, 'lastSeen' | 'app' | 'push' | 'path' | 'note' | 'use' | 'stopped'>>): void {
     const current = this.get(id);
     if (!current) return;
     this.save(this.list.map((r) => (r === current ? { ...r, ...patch } : r)));
@@ -73,6 +80,8 @@ export class DeviceBook {
       ...(r.lastSeen !== undefined ? { lastSeen: r.lastSeen } : {}),
       linked: linked.has(deviceId(r.cert)),
       push: Boolean(r.push),
+      ...(r.path ? { path: r.path } : {}),
+      ...(r.note ? { note: r.note } : {}),
     }));
   }
 

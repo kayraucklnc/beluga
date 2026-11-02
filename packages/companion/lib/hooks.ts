@@ -1,5 +1,6 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { NeedsYou, OutputView, Topic } from './link/protocol';
+import { kv } from './kv';
 import { type CachedView, type FileState, type LinkState, type OutboxItem, store, type Toast } from './store';
 
 /** The screens' way into the store. Each hook re-renders only when its own key changes. */
@@ -9,6 +10,12 @@ export function useLink(): LinkState {
     (fn) => store.subscribe('state', fn),
     () => store.getState(),
   );
+}
+
+/** Does the Mac have this (by its protocol's minor)? Re-renders when the link learns it. */
+export function useSupports(what: Parameters<typeof store.supports>[0]): boolean {
+  useLink();
+  return store.supports(what);
 }
 
 /** A topic's view; subscribes to it on the Mac while the screen is mounted. */
@@ -40,6 +47,15 @@ export function useFile(ref: string | undefined, variant: 'thumb' | 'full' | 'te
   );
 }
 
+/** How saving an output on the phone goes (lib/saved.ts): only watched, never started here. */
+export function useSaving(ref: string | undefined): FileState | undefined {
+  const key = `${ref}#save`;
+  return useSyncExternalStore(
+    (fn) => (ref ? store.subscribe(`file:${key}`, fn) : () => {}),
+    () => (ref ? store.file(ref, 'save') : undefined),
+  );
+}
+
 /** The newest we know of an output (a growing log's size). */
 export function useOutput(ref: string | undefined): OutputView | undefined {
   return useSyncExternalStore(
@@ -47,6 +63,39 @@ export function useOutput(ref: string | undefined): OutputView | undefined {
     () => store.snapshot(`out:${ref}`, () => (ref ? store.output(ref) : undefined)),
   );
 }
+
+/** A project's icon (a data: URI) by its checksum: fetched once, then from the cache. */
+export function useIcon(sum: string | undefined): string | undefined {
+  const phase = useSyncExternalStore(
+    (fn) => store.subscribe('state', fn),
+    () => store.getState().phase,
+  );
+  useEffect(() => void store.icon(sum), [sum, phase]);
+  return useSyncExternalStore(
+    (fn) => (sum ? store.subscribe(`icon:${sum}`, fn) : () => {}),
+    () => store.cachedIcon(sum),
+  );
+}
+
+/** Seconds since `ts`, ticking once a second while shown (the phone counts; nothing streams). */
+export function useSince(ts: number | undefined): number | undefined {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (ts === undefined) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [ts]);
+  return ts === undefined ? undefined : Math.max(0, Math.round((now - ts) / 1000));
+}
+
+/** "42s", "3m 05s", "1h 02m". */
+export const elapsed = (s: number | undefined): string => {
+  if (s === undefined) return '';
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+};
 
 export function useOutbox(): OutboxItem[] {
   return useSyncExternalStore(
@@ -84,4 +133,22 @@ export function until(ts: number | undefined, now = Date.now()): string {
   if (h < 24) return `${h} h ${m % 60} min`;
   const d = Math.floor(h / 24);
   return `${d} d ${h % 24} h`;
+}
+
+/**
+ * Which groups of a list are folded (Work's projects, Tasks' projects): kept between launches,
+ * per list. `folded(id)` and `toggle(id)`; a group nobody folded is open.
+ */
+export function useFolded(list: string): { readonly folded: (id: string) => boolean; readonly toggle: (id: string) => void } {
+  const key = `folded:${list}`;
+  const [ids, setIds] = useState<readonly string[]>(() => kv.get<string[]>(key) ?? []);
+  return {
+    folded: (id) => ids.includes(id),
+    toggle: (id) =>
+      setIds((was) => {
+        const next = was.includes(id) ? was.filter((x) => x !== id) : [...was, id];
+        kv.set(key, next);
+        return next;
+      }),
+  };
 }

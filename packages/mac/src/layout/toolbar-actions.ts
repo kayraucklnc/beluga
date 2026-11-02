@@ -1,10 +1,12 @@
+import { type BranchState, branchState, onGitHub } from '@beluga/core/branch-state.js';
 import type { AppState } from '@beluga/core/store.js';
 import { type PlanOwner, planOwnerOf } from '@beluga/core/plans/owner.js';
 import { planTitle } from '@beluga/core/plans/model.js';
 import { type WorkspaceAction, type WorkspaceButton, workspaceButtons } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import type { IconName } from '../components/Icon.js';
-import { COMMAND_KEYS, runRunning } from '../lib/commands.js';
+import { runRunning } from '../lib/commands.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 import { mergeTargetOf } from '../lib/merge-review.js';
 import type { PlanAction } from '../lib/plan-task.js';
 import { asksBeforeWork } from '../lib/work-confirm.js';
@@ -34,11 +36,18 @@ export interface ToolAction {
   readonly action: WorkspaceAction | PrStep | PlanAction;
 }
 
+const SHORT: Partial<Record<ToolAction['action'], string>> = { merge_claude: 'Solve', resolve_pr: 'Resolve', fix_checks: 'Fix', pr: 'PR', open_plan: 'Plan', open_task: 'Task', stop_run: 'Stop', merge_anyway: 'Merge', review_claude: 'Review', continue_after_merge: 'Continue' };
+
+/** An action in one word, for the folded toolbar ("PR", "Fix", "Merge"): its icon alone didn't say enough. */
+export const shortOf = (a: ToolAction): string => (a.label.startsWith('PR #') ? a.label : SHORT[a.action] ?? a.label.replace(/…$/, '').split(' ')[0]!);
+
 /** A pull request's next steps that ask before Claude or git does them (see work-confirm.ts). */
 export type PrStep = 'fix_checks' | 'resolve_pr' | 'continue_after_merge';
 export const isPrStep = (a: string): a is PrStep => a === 'fix_checks' || a === 'resolve_pr' || a === 'continue_after_merge';
 
 export interface ToolbarActions {
+  /** Where its branch stands, and its steps: when it has any, they lead instead of `primary` (BranchControl). */
+  readonly branch?: BranchState;
   readonly primary?: ToolAction;
   /** Icon buttons, in order (some may move under ⋯ when the window is narrow). */
   readonly icons: readonly ToolAction[];
@@ -65,16 +74,24 @@ const ICON: Record<WorkspaceAction, IconName> = {
   setup: 'terminal',
 };
 
+/** The shortcut behind each button (its key is yours: Settings › Keyboard). */
 const KEYS: Partial<Record<WorkspaceAction, string>> = {
-  commit: COMMAND_KEYS['ws-commit'],
-  pr: COMMAND_KEYS['ws-pr'],
-  merge: COMMAND_KEYS['ws-merge'],
-  merge_claude: COMMAND_KEYS['ws-merge'],
-  run: COMMAND_KEYS['ws-run'],
-  stop_run: COMMAND_KEYS['ws-run'],
-  review_claude: COMMAND_KEYS['ws-review'],
-  archive: COMMAND_KEYS['ws-archive'],
+  commit: 'ws-commit',
+  pr: 'ws-pr',
+  merge: 'ws-merge',
+  merge_claude: 'ws-merge',
+  run: 'ws-run',
+  stop_run: 'ws-run',
+  review_claude: 'ws-review',
+  archive: 'ws-archive',
 };
+
+/** A button's key, when its shortcut has one. */
+function keysOf(action: WorkspaceAction): { keys?: string } {
+  const id = KEYS[action];
+  const keys = id ? shortcutKeys(id) : undefined;
+  return keys ? { keys } : {};
+}
 
 /**
  * Menu-style names for the shared buttons (Finder → Show in Finder, PR → Create Pull Request).
@@ -85,7 +102,7 @@ function labelOf(b: WorkspaceButton, pr: boolean): string {
     case 'pr':
       return pr ? b.label : 'Create PR';
     case 'review_claude':
-      return 'Ask Claude to Review…';
+      return 'Ask Your Agent to Review…';
     case 'commit':
       return 'Commit…';
     case 'merge':
@@ -113,7 +130,7 @@ function labelOf(b: WorkspaceButton, pr: boolean): string {
 
 /** Tooltips for the icons that ask first: what they'd do, ending in "…" (they ask before doing it). */
 function tipOf(b: WorkspaceButton): string | undefined {
-  if (b.action === 'review_claude') return 'Ask Claude to review this worktree…';
+  if (b.action === 'review_claude') return 'Ask your agent to review this worktree…';
   return asksBeforeWork(b.action) && !b.disabled ? `${b.hint}…` : undefined;
 }
 
@@ -124,17 +141,11 @@ const toAction = (b: WorkspaceButton, pr: boolean): ToolAction => ({
   ...(tipOf(b) ? { tip: tipOf(b) } : {}),
   icon: ICON[b.action],
   action: b.action,
-  ...(KEYS[b.action] ? { keys: KEYS[b.action] } : {}),
+  ...keysOf(b.action),
   ...(b.disabled ? { disabled: true } : {}),
   ...(b.tone ? { tone: b.tone } : {}),
   ...(b.action === 'archive' || b.action === 'delete' ? { danger: true } : {}),
 });
-
-/** Its project pushes somewhere and the GitHub CLI isn't known to be missing: PRs are the way to merge. */
-function onGitHub(state: AppState, ws: Workspace): boolean {
-  const sync = state.projects.find((p) => p.id === ws.projectId)?.sync;
-  return state.gh !== false && (!sync || Boolean(sync.upstream));
-}
 
 /** What this workspace needs next, in the order it matters. */
 function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[]): ToolAction | undefined {
@@ -145,15 +156,15 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   if (solve) return { ...solve, tone: 'error' };
   // GitHub can't merge a PR that conflicts with its base: resolving that comes first.
   if (pr?.state === 'OPEN' && pr.conflicts) {
-    return { id: 'resolve_pr', label: 'Resolve Merge Conflicts…', hint: `PR #${pr.number} conflicts with ${mergeTargetOf(state, ws)}: Claude merges it in here, resolves the conflicts and pushes`, icon: 'merge', action: 'resolve_pr', tone: 'error' };
+    return { id: 'resolve_pr', label: 'Resolve Merge Conflicts…', hint: `PR #${pr.number} conflicts with ${mergeTargetOf(state, ws)}: your agent merges it in here, resolves the conflicts and pushes`, icon: 'merge', action: 'resolve_pr', tone: 'error' };
   }
   if (pr?.state === 'OPEN' && pr.checks === 'failing') {
-    return { id: 'fix_checks', label: 'Fix Checks…', hint: `PR #${pr.number}'s checks are failing: Claude reads the logs and fixes them`, icon: 'wand', action: 'fix_checks', tone: 'error' };
+    return { id: 'fix_checks', label: 'Fix Checks…', hint: `PR #${pr.number}'s checks are failing: your agent reads the logs and fixes them`, icon: 'wand', action: 'fix_checks', tone: 'error' };
   }
   // On GitHub, a branch's next step is its pull request (Claude commits anything left as it opens it):
   // there its checks run live and it merges into origin. Merge Locally stays under ⋯.
   const create = !pr && onGitHub(state, ws) ? by('pr') : undefined;
-  if (create) return { ...create, label: 'Create PR…', hint: `Claude commits what’s left, pushes ${ws.branch ?? 'this branch'} and opens a pull request into ${mergeTargetOf(state, ws)}; its checks show here as they run` };
+  if (create) return { ...create, label: 'Create Pull Request…', hint: `Pushes ${ws.branch ?? 'this branch'} and opens a pull request into ${mergeTargetOf(state, ws)}, with your agent or straight away; its checks show here as they run` };
   const commit = by('commit');
   if (commit) return commit;
   if (pr?.state === 'OPEN') {
@@ -203,19 +214,20 @@ export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
   const withDelete = !ws.archived && ws.kind !== 'main' && !ws.external && !buttons.some((b) => b.action === 'delete') && !state.prefs.hiddenButtons.includes('delete');
   const own = [...buttons.map((b) => {
     // While the run script runs, its button stops it.
-    if (b.action === 'run' && runRunning(state, ws.id)) return { ...toAction(b, pr), id: 'stop_run', action: 'stop_run' as const, label: 'Stop Running', icon: 'stop' as const, hint: 'Stop the run script', keys: KEYS.stop_run };
+    if (b.action === 'run' && runRunning(state, ws.id)) return { ...toAction(b, pr), id: 'stop_run', action: 'stop_run' as const, label: 'Stop Running', icon: 'stop' as const, hint: 'Stop the run script', ...keysOf('stop_run') };
     return toAction(b, pr);
   }), ...(withDelete ? [ws.kind === 'worktree' ? DELETE : { ...DELETE, hint: 'Remove it from Beluga and delete the conversation' }] : [])];
   const owner = ws.archived ? undefined : planOwnerOf(state.plans, state.board, ws.id);
   const all = owner ? asPlanTask(own, owner, pr) : own;
-  const primary = pickPrimary(state, ws, all);
+  const branch = branchState(state, ws, { planned: Boolean(owner) });
+  // The branch's own steps lead (Squash and Merge, Resolve with Claude, Continue After Merge…); a plan's task keeps Open Plan.
+  const primary = branch?.steps.length ? undefined : pickPrimary(state, ws, all);
   const shown = (a: ToolAction): boolean => a.action !== primary?.action || isPrStep(primary.action);
   const icons = ICONS.flatMap((id) => all.filter((a) => a.action === id && shown(a)));
-  // A merged PR: archive it, delete it, or carry on here with a new one.
-  const merged = state.prs[ws.id]?.state === 'MERGED' && !ws.archived && !owner;
-  const after: ToolAction[] = merged ? [{ id: 'continue_after_merge', label: 'Continue After Merge…', hint: `PR #${state.prs[ws.id]!.number} is done: start this branch again from the latest base and keep the conversation; the next change gets a new PR`, icon: 'branch', action: 'continue_after_merge' }] : [];
-  const more = inSections([...all.filter((a) => !icons.includes(a) && shown(a)), ...after]);
-  return { ...(primary ? { primary } : {}), icons, more };
+  // What the branch's own menu offers (Archive, Delete, Continue After Merge, Commit…) lives there, not twice in ⋯.
+  const steps = new Set<string>(branch?.steps.map((step) => step.id));
+  const more = inSections(all.filter((a) => !icons.includes(a) && shown(a) && !steps.has(a.action)));
+  return { ...(branch ? { branch } : {}), ...(primary ? { primary } : {}), icons, more };
 }
 
 /** Actions in ⋯'s sections, in their order there (any section left empty is dropped). */
@@ -242,7 +254,7 @@ function asPlanTask(all: readonly ToolAction[], owner: PlanOwner, pr: boolean): 
   const rest = all.flatMap((a): ToolAction[] => {
     if (a.action === 'pr' && !pr) return [];
     // Solving a conflict finishes a local merge: it stays, but says so and warns first (actions.run).
-    if (a.action === 'merge_claude') return [{ ...a, hint: `Claude finishes this merge by hand, which skips “${name}”: Beluga merges it into the plan itself` }];
+    if (a.action === 'merge_claude') return [{ ...a, hint: `Your agent finishes this merge by hand, which skips “${name}”: Beluga merges it into the plan itself` }];
     if (a.action !== 'merge') return [a];
     return [{ ...a, id: 'merge_anyway', label: 'Merge Anyway…', action: 'merge_anyway', hint: `Beluga merges this into “${name}” itself; merging it by hand skips the plan` }];
   });

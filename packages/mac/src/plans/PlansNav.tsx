@@ -1,37 +1,21 @@
 import type { Plan } from '@beluga/core/plans/model.js';
-import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/beluga.js';
 import { Row } from '../layout/sidebar-parts.js';
 import { DotMark } from '../layout/signal-marks.js';
-import { projectOfView } from '../tasks/use-tasks.js';
 import { nextWords, planStatus, titleOf } from './plans-model.js';
 import { usePlanActions, usePlanView } from './use-plans.js';
 import n from './PlansNav.module.css';
 
 /**
- * The sidebar's Plans row, and under it each plan that's running: how far it got, a pulse while
- * Claude works on its tasks, a dot when it waits for you. Plans opens on the project you're in.
+ * Each running plan as a row under Work (BLG-197): how far it got, a pulse while Claude works on
+ * its tasks, a dot when it waits for you.
  */
-export function PlansNav() {
-  const actions = useActions();
-  const enabled = useApp((s) => s.plans.enabled);
-  const view = useApp((s) => s.view);
-  const here = useApp(projectOfView);
+export function PlanSideRows() {
   const plans = useApp((s) => s.plans.plans);
   const running = plans.filter((x) => x.status === 'active').sort((a, b) => (b.approvedAt ?? b.createdAt) - (a.approvedAt ?? a.createdAt));
-  if (!enabled) return null;
-  const shown = view.kind === 'plan' && running.some((x) => x.id === view.id);
   return (
     <>
-      <Row
-        icon={<Icon name="flag" size={14} />}
-        label="Plans"
-        detail={running.length ? `${running.length} running` : 'Big work, planned with Claude'}
-        selected={view.kind === 'plans' || (view.kind === 'plan' && !shown)}
-        onClick={() => actions.run({ type: 'view', view: { kind: 'plans', ...(here ? { projectId: here } : {}) } })}
-      />
       {running.map((plan) => (
         <PlanSideRow key={plan.id} plan={plan} indent={1} />
       ))}
@@ -52,7 +36,7 @@ export function ProgressRing({ share, live }: { share: number; live?: boolean })
 }
 
 /**
- * One plan as a sidebar row: its name, a progress ring (in Claude’s color while tasks run), and a dot when it
+ * One plan as a sidebar row: its name, a progress ring (in the plan color while tasks run), and a dot when it
  * needs you (why, in the tooltip). Clicking opens the plan. Used under Plans, and under a project.
  */
 function PlanSideRow({ plan, indent = 0 }: { plan: Plan; indent?: number }) {
@@ -78,7 +62,7 @@ function PlanSideRow({ plan, indent = 0 }: { plan: Plan; indent?: number }) {
       label={title}
       detail={tip}
       onClick={() => open(plan.id)}
-      trailing={needs ? <DotMark tone={status.tone === 'error' ? 'error' : 'warn'} signal="needs" /> : working ? <DotMark tone="claude" live signal="working" /> : null}
+      trailing={needs ? <DotMark tone={status.tone === 'error' ? 'error' : 'warn'} signal="needs" /> : working ? <DotMark tone="plan" live signal="working" /> : null}
     />
   );
 }

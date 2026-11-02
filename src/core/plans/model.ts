@@ -1,3 +1,4 @@
+import type { AgentRef } from '../../protocol.js';
 import type { Actor, IssuePr, Priority } from '../board/model.js';
 
 /**
@@ -17,9 +18,9 @@ export type Autonomy = (typeof AUTONOMIES)[number];
  * `summary` the one sentence a choice of it shows, `hint` the longer how-it-runs.
  */
 export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly summary: string; readonly hint: string }>> = {
-  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Claude lines up what can start; you start each task' },
+  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Your agent lines up what can start; you start each task' },
   gated: { label: 'Check-ins', summary: 'Runs, then waits for you at each milestone', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
-  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
+  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: your agent checks each one; it stops only when something fails' },
 };
 
 /** When a plan runs its e2e and full test suites: once per milestone at its check, or only at the end. */
@@ -108,6 +109,13 @@ export interface MilestoneRun {
   readonly checkAsked?: number;
   /** The one Claude doing its tasks, in one worktree (see pilot.ts). */
   readonly agent?: MilestoneAgent;
+  /**
+   * The conversation that checks it (a workspace id): a Claude of its own, not the head's, so the
+   * plan's conversation stays free while it checks and milestones are checked side by side.
+   */
+  readonly checker?: string;
+  /** Passing it couldn't merge its tasks into the plan's branch (not a conflict: a dirty checkout, no git identity): why, until it's passed again. */
+  readonly mergeFailed?: { readonly at: number; readonly reason: string };
 }
 
 /**
@@ -138,6 +146,30 @@ export interface Combining {
     /** Claude was asked and it's still there: it waits for you. */
     readonly stuck?: boolean;
   };
+}
+
+/** Main merged into the plan's branch (its PR conflicts with main): in the hidden worktree, a conflict there fixed by the plan's Claude. */
+export interface PlanMainMerge {
+  readonly at: number;
+  /** What was merged in ("origin/main"). */
+  readonly main: string;
+  readonly conflict?: {
+    readonly at: number;
+    readonly dir: string;
+    readonly files: readonly string[];
+    /** Claude was asked and it's still there: it waits for you. */
+    readonly stuck?: boolean;
+  };
+}
+
+/** The plan's pull request as GitHub last showed it: what stands in the way of merging it too. */
+export interface PlanPr extends IssuePr {
+  /** GitHub says it conflicts with main. */
+  readonly conflicts?: boolean;
+  /** Auto-merge is on: GitHub merges it once its checks and reviews pass. */
+  readonly autoMerge?: boolean;
+  /** Behind main (main needs merging in first), or blocked by main's rules. */
+  readonly mergeState?: 'behind' | 'blocked';
 }
 
 /**
@@ -225,6 +257,8 @@ export interface Plan {
   readonly maxParallel: number;
   /** When the e2e and full test suites run (tasks only run typecheck and the tests they touched). */
   readonly testsAt: TestsAt;
+  /** The agent (and model) its milestones and tasks are worked on by (BLG-497); none: your default. A task's own agent beats it. */
+  readonly agent?: AgentRef;
   readonly paused: boolean;
   readonly runs: Readonly<Record<string, MilestoneRun>>;
   /** Tasks whose start is being combined from several branches (by plan task id). */
@@ -235,16 +269,49 @@ export interface Plan {
   readonly branch?: string;
   /** Passed milestones being merged into the branch (by milestone id). */
   readonly merging?: Readonly<Record<string, PlanMerge>>;
+  /** Main being merged into the plan's branch (its PR conflicted with main), or stopped at a conflict for Claude to fix. */
+  readonly mainMerge?: PlanMainMerge;
   /** The branch's pull request into main, as last seen. */
-  readonly pr?: IssuePr;
+  readonly pr?: PlanPr;
   readonly shipped?: PlanShipped;
   /** Plans that ran before they had a branch were caught up once (passed milestones merged into one). */
   readonly caughtUp?: boolean;
+  /** Its shape on the board: an epic for the plan, one under it per milestone (see epics.ts). */
+  readonly epics?: PlanEpics;
+  /** Beluga moving its stalled milestones along (see the pilot's rescue), by milestone id: kept, so a restart doesn't start over. */
+  readonly rescue?: Readonly<Record<string, PlanRescue>>;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly approvedAt?: number;
   readonly doneAt?: number;
+}
+
+/**
+ * A plan with nothing running and nothing waiting on you is stalled: Beluga moves it along, a step
+ * further each time the same thing stays stuck (send it on, a fresh Claude, the head Claude decides),
+ * and only then tells you, saying what it tried.
+ */
+export interface PlanRescue {
+  /** How far the milestone had got (see milestoneMark): moving on from there starts the ladder over. */
+  readonly sig: string;
+  /** What it's stuck on now (a check, stopped tasks, idle work…): a new kind starts its ladder over. */
+  readonly kind?: string;
+  /** How many steps up the ladder it has gone for that kind. */
+  readonly tries: number;
+  /** Steps taken in all, across kinds: past a few, it's yours (no going round in circles). */
+  readonly total?: number;
+  readonly at: number;
+  /** What was tried, in words (shown when it's left to you). */
+  readonly tried: readonly string[];
+  /** Left to you: nothing more is tried until something moves. */
+  readonly yours?: boolean;
+}
+
+/** A plan's epics on the board (task ids): the plan's own, and each milestone's (by milestone id). */
+export interface PlanEpics {
+  readonly plan: string;
+  readonly milestones: Readonly<Record<string, string>>;
 }
 
 export interface PlansState {
@@ -303,6 +370,26 @@ export const planById = (state: PlansState, id: string): Plan | undefined => sta
 
 /** The plan a conversation is the home of (the newest, when several were). */
 export const planForHome = (state: PlansState, channel: string): Plan | undefined => [...state.plans].reverse().find((p) => p.home === channel);
+
+/** The plan a board task stands for as an epic: the plan's own, or one of its milestones' (see epics.ts). */
+export function planEpicOf(state: PlansState, issueId: string): { readonly plan: Plan; readonly milestone?: PlanMilestone } | undefined {
+  for (const plan of state.plans) {
+    if (!plan.epics) continue;
+    if (plan.epics.plan === issueId) return { plan };
+    const id = Object.entries(plan.epics.milestones).find(([, epic]) => epic === issueId)?.[0];
+    const milestone = id ? shownBody(plan)?.milestones.find((m) => m.id === id) : undefined;
+    if (milestone) return { plan, milestone };
+  }
+  return undefined;
+}
+
+/** The plan and milestone a conversation checks (see MilestoneRun.checker). */
+export function checkerOf(state: PlansState, channel: string): { readonly plan: Plan; readonly milestone: string } | undefined {
+  if (!channel.startsWith('ws:')) return undefined;
+  const id = channel.slice(3);
+  for (const plan of state.plans) for (const [milestone, run] of Object.entries(plan.runs ?? {})) if (run?.checker === id) return { plan, milestone };
+  return undefined;
+}
 
 /**
  * The conversation is a live plan's own (its head Claude plans and runs it there): it has no

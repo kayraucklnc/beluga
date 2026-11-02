@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { AgentRef } from '../protocol.js';
 import { AUTO_COMPACT_DEFAULT, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from './context-usage.js';
+import { PARALLEL_RUNS_DEFAULT, PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from './run-slots.js';
+import { CHAT_LIMIT_DEFAULT, CHAT_LIMIT_MAX } from './chat-limit.js';
 import { coercePerKind, coerceSound, DEFAULT_SOUND, DEFAULT_VOLUME, PerKindSounds, SoundChoice } from './notify-sound.js';
 
 // Settings as data (no file access), so the reducer and the clients can use them anywhere.
@@ -17,6 +20,15 @@ export type TrustLevel = (typeof TRUST_LEVELS)[number];
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORTS)[number];
 
+/** What new worktrees' branches start with (`beluga/fix-login`); empty: just the name. */
+export const BRANCH_PREFIX_DEFAULT = 'beluga/';
+/** A prefix git accepts in front of a slug: letters, digits, `. _ - /`, no `..`, `//`, or part starting with `.` `-` `/`. */
+export const BRANCH_PREFIX_RE = /^(?![./-])(?!.*\.\.)(?!.*\/\/)(?!.*\/[.-])[\w./-]{0,40}$/;
+
+/** Keep the Mac awake for your phone: never, only on power, or always (the display may still sleep). */
+export const KEEP_AWAKE = ['off', 'power', 'always'] as const;
+export type KeepAwake = (typeof KEEP_AWAKE)[number];
+
 /** Which events can notify you (desktop notification + the in-app inbox). */
 export const NotifySettings = z.object({
   /** Show a desktop notification (macOS Notification Center, notify-send on Linux). */
@@ -31,6 +43,8 @@ export const NotifySettings = z.object({
   madeSounds: z.array(z.number().int().min(0).max(0xffffffff)).max(12).default([]),
   /** Claude finished (or stopped) in a workspace you're not looking at. */
   done: z.boolean().default(true),
+  /** Also when it's the conversation you're looking at: a run of yours that took a while, once nothing else runs there. */
+  doneHere: z.boolean().default(true),
   /** Claude asks a question, proposes a plan, or needs an approval. */
   needsYou: z.boolean().default(true),
   /** Errors, merge conflicts, failed setup scripts. */
@@ -43,6 +57,8 @@ export const NotifySettings = z.object({
   mentions: z.boolean().default(true),
   /** Background work finishes: a task Claude runs in the background, a new worktree's setup. */
   background: z.boolean().default(true),
+  /** Sentinels: a run's result, a failure, one pausing itself (one waiting for you still tells, under needsYou). */
+  sentinels: z.boolean().default(true),
   /** A plan speaks for its tasks: you hear at milestones and when it needs you; its tasks' news goes quietly into the inbox. */
   planMilestones: z.boolean().default(true),
   /** When Claude needs you (a question, an approval, a decision, a milestone to pass): a card on top of whatever you're doing, as friends' requests get. */
@@ -64,12 +80,20 @@ export const Settings = z.object({
   policy: z.enum(['ask', 'auto', 'deny']).optional(),
   mouse: z.boolean().default(true),
   tunnel: z.enum(['auto', 'p2p', 'cloudflared', 'ngrok', 'none']).default('auto'),
+  /** Keep the Mac from sleeping while a phone is paired, so it stays reachable (companion/awake.ts): never, on power only, or always. */
+  keepAwake: z.enum(KEEP_AWAKE).default('off'),
   /** Whether your own Claude asks before shell commands and other risky actions. */
   selfApproval: z.enum(['never', 'ask']).default('never'),
   notify: NotifySettings.default(NotifySettings.parse({})),
   /** Model for new conversations (unset: Claude Code's default). */
   model: z.string().regex(/^[\w.:[\]-]{1,80}$/).optional(),
   effort: z.enum(EFFORTS).optional(),
+  /** The agent that answers when someone addresses you plainly ("@kay"); published on your peer card. Unset: Claude. */
+  defaultAgent: AgentRef.optional(),
+  /** A project's own default agent (by project name), over `defaultAgent` for work in that project. */
+  projectAgents: z.record(z.string().min(1).max(80), AgentRef).optional(),
+  /** What new worktrees' branches start with (`beluga/<name>`); empty: no prefix. */
+  branchPrefix: z.string().regex(BRANCH_PREFIX_RE).catch(BRANCH_PREFIX_DEFAULT),
   /** Run the project's setup script (e.g. npm install) in every new worktree. */
   autoSetup: z.boolean().default(true),
   /** Show how full each conversation's context is. */
@@ -80,6 +104,10 @@ export const Settings = z.object({
   autoCompactChosen: z.boolean().optional(),
   /** How full (percent) a conversation gets before it's compacted. */
   autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX).catch(AUTO_COMPACT_DEFAULT),
+  /** How many conversations your Claude works in at once; a message past it waits for one to finish (and says so). */
+  parallelRuns: z.number().int().min(PARALLEL_RUNS_MIN).max(PARALLEL_RUNS_MAX).catch(PARALLEL_RUNS_DEFAULT),
+  /** How many chats Your Mac and Sentinel each keep open (shared/chat-limit.ts); 0: no limit. */
+  chatLimit: z.number().int().min(0).max(CHAT_LIMIT_MAX).catch(CHAT_LIMIT_DEFAULT),
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder. */
   scratchFolder: z.boolean().default(true),
   /** How much of Claude's sub-agent work the chat shows. */
@@ -90,6 +118,8 @@ export const Settings = z.object({
   friendWorktrees: z.enum(['ask', 'off']).default('ask'),
   /** Who may call your Claude into a chat (you always can): friends in the chat, people you trust, or only you. */
   chatClaude: z.enum(['everyone', 'trusted', 'off']).default('everyone'),
+  /** Who sees how much of your plans (Claude Code, Codex…) you have left, on your profile: people you trust, every friend, or no one (BLG-597). */
+  shareUsage: z.enum(['trusted', 'everyone', 'off']).default('trusted'),
   /** Your main channel: a group with all your friends (made the first time you open it). */
   mainChannel: z.string().regex(/^[0-9a-f]{32}$/).optional(),
   /** People you chose a trust level for (by their key-derived id). */
@@ -104,8 +134,14 @@ export const Settings = z.object({
   earningsCurrency: z.string().regex(/^[a-z]{3}$/).optional(),
   /** Be on the Beluga network (friends, groups, presence) while the Mac app's daemon runs. Off by default for now. */
   network: z.boolean().optional(),
+  /** Where frames wait for a friend you're never online with at the same time (BLG-272): a mailbox's https URL, or "off". Unset: Beluga's own. */
+  mailbox: z.union([z.string().url().max(300), z.literal('off')]).optional(),
+  /** Minutes a frame waits for a friend's link before it goes to their mailbox. */
+  mailboxAfterMin: z.number().min(0).max(24 * 60).optional(),
   /** "Ask me for…": a short note friends' Claudes see on your card (the gateway, Mac app). */
   askMeFor: z.string().max(280).optional(),
+  /** Friends your Claude may ask without checking with you first ("Always" on its "Ask X's Claude?" card), by peer id. */
+  askFreely: z.array(z.string().max(80)).max(500).optional(),
   /** What friends' Claudes may do here, by trust level (checked fully in core/gateway/access.ts). */
   capabilities: z.object({ levels: z.record(z.string(), z.record(z.string(), z.string())).optional(), folders: z.array(z.string().max(4096)).max(20).optional() }).optional(),
 });

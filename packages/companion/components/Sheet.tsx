@@ -6,6 +6,7 @@ import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring, wi
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 import { color, elevation, spring } from '../lib/theme';
+import { KeyboardLift } from './KeyboardLift';
 
 /**
  * A bottom sheet: springs up, dims what's behind, drags down to put away (a flick is enough).
@@ -28,7 +29,10 @@ export function Sheet({ visible, onDismiss, children, header, maxHeight = 0.86, 
       drag.value = 0;
       y.value = withSpring(0, { stiffness: 300, damping: 32, mass: 0.9 });
     } else if (mounted) {
-      y.value = withTiming(height, { duration: 240 }, () => scheduleOnRN(setMounted, false));
+      // Only once it's fully down: opened again on its way down, the spring up cancels this, and the sheet stays.
+      y.value = withTiming(height, { duration: 240 }, (done) => {
+        if (done) scheduleOnRN(setMounted, false);
+      });
     }
   }, [visible]);
 
@@ -66,19 +70,22 @@ export function Sheet({ visible, onDismiss, children, header, maxHeight = 0.86, 
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: color.scrim }, dim]}>
         <Pressable style={{ flex: 1 }} onPress={close} accessibilityLabel="Close" />
       </Animated.View>
-      <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: height * maxHeight }, sheet]}>
-        <View style={{ borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: insets.bottom + 8, backgroundColor: elevation.card.surface, borderWidth: 1, borderBottomWidth: 0, borderColor: elevation.card.border, maxHeight: height * maxHeight, overflow: 'hidden' }}>
-          <GestureDetector gesture={pan}>
-            <View>
-              <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
-                <View style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: color.hairlineStrong }} />
+      {/* The card sits at the bottom of a layer the keyboard lifts (as the code entry's screen is), so a field, its chips and Send stay above it (BLG-46). */}
+      <KeyboardLift style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end', paddingTop: insets.top + 8 }]} pointerEvents="box-none">
+        <Animated.View style={[{ maxHeight: height * maxHeight, flexShrink: 1 }, sheet]}>
+          <View style={{ borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: insets.bottom + 8, backgroundColor: elevation.card.surface, borderWidth: 1, borderBottomWidth: 0, borderColor: elevation.card.border, maxHeight: height * maxHeight, flexShrink: 1, overflow: 'hidden' }}>
+            <GestureDetector gesture={pan}>
+              <View>
+                <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
+                  <View style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: color.hairlineStrong }} />
+                </View>
+                {header}
               </View>
-              {header}
-            </View>
-          </GestureDetector>
-          {children}
-        </View>
-      </Animated.View>
+            </GestureDetector>
+            {children}
+          </View>
+        </Animated.View>
+      </KeyboardLift>
     </View>
   );
   return window ? (

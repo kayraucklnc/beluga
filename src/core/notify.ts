@@ -1,17 +1,22 @@
 import type { NotifySettings } from './settings.js';
-import { type DomainState, type LogItem, type Store } from './store.js';
+import { type DomainState, type LogItem, type Store, isRunning } from './store.js';
 import { dndActive } from '../shared/quiet.js';
+import { isSentinelChat } from './sentinel/model.js';
 import { loudestKind, type SoundChoice, type SoundPrefs, soundFor, volumeOf } from '../shared/notify-sound.js';
 import { type Issue, issueForWorkspace } from './board/model.js';
-import { type Plan, planById, planForHome, planTitle } from './plans/model.js';
+import { type Plan, checkerOf, planById, planForHome, planTitle } from './plans/model.js';
 import { type MilestoneView, planView } from './plans/progress.js';
 import { isDecisionQid } from './plans/decisions.js';
+import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
+import { allNeeds, needMatches } from '../companion/needs-you.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import { agentLabel, agentName } from '../shared/agent-label.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
 
 /** What exactly happened, when the kind alone doesn't say (screens pick an icon by it). */
-export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test';
+export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test' | 'sentinel';
 
 export interface NoticeEvent {
   readonly kind: NoticeKind;
@@ -26,11 +31,21 @@ export interface NoticeEvent {
   readonly quiet?: boolean;
   /** A friend's request (the gateway) this approval is about. */
   readonly task?: string;
+  /** That approval is Allow once / Decline only (a secret): the notification offers no Always. */
+  readonly once?: boolean;
   /** The plan it's about (its id), and the plan's task (its id there): opening it goes to the plan at that task. */
   readonly plan?: string;
   readonly planTask?: string;
+  /**
+   * What waits for you that it's about: a needs-you item's id (companion/needs-you.ts), or the
+   * start of one (`gwq:<task>`). The bell answers it in place and opens where it lives; answered,
+   * the notice is read (BLG-255).
+   */
+  readonly need?: string;
   /** What happened, once: a notice with the same key is never raised again (a plan's milestone passing…). */
   readonly key?: string;
+  /** Worth a desktop notification even while a screen in front shows its conversation (a long run of yours ended there). */
+  readonly watched?: boolean;
 }
 
 /** A desktop notification: what it says, and where clicking it goes (when it's about one place). */
@@ -47,9 +62,16 @@ export interface DesktopNote {
   readonly approval?: string;
   /** The friend's request that approval is about. */
   readonly task?: string;
+  /** That approval offers no Always (a secret): only Review…. */
+  readonly once?: boolean;
   /** Only what Claude needs from you, and the Mac's on-screen pop-up shows it: a banner would say it twice (its sound still plays). */
   readonly popup?: boolean;
+  /** A friend's message while Beluga is in front: the window shows it as a banner, with its sound (macOS hides banners of the app in front). */
+  readonly banner?: boolean;
 }
+
+/** A message from a friend or a group (the Beluga network), not the room's chat. */
+const isNetworkMessage = (e: NoticeEvent): boolean => e.kind === 'mentions' && e.channel !== undefined && /^(dm|group):/.test(e.channel);
 
 /** Your network status says not now (Do Not Disturb, or appearing offline): notices still arrive, silently. */
 export function presenceQuiet(state: Pick<DomainState, 'network'>): boolean {
@@ -57,9 +79,14 @@ export function presenceQuiet(state: Pick<DomainState, 'network'>): boolean {
   return Boolean(self && (self.appearOffline || self.presence.state === 'dnd'));
 }
 
+/** Where what waits for you lives (companion/needs-you.ts reads these). */
+const WAITING = ['approvals', 'questions', 'gateway', 'plans', 'board', 'knocks', 'network', 'team', 'sentinel'] as const satisfies ReadonlyArray<keyof DomainState>;
+
 /** Runs that end like this were your own doing, so they're not worth a notification. */
 const QUIET_ERRORS = /^(Interrupted by a newer message|Cancelled by owner|Stopped by owner)/;
 const RECENT_LOG = 200;
+/** A run of yours this long is one you stopped watching: its end is announced even in the conversation on screen. */
+export const WATCHED_RUN_MS = 20_000;
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
@@ -75,6 +102,11 @@ const firstLine = (text: string, max = 140): string => {
 /** "add-auth", "the group chat", or a shared workspace's name. */
 export function placeName(state: DomainState, channel: string): string {
   if (channel === 'room') return state.peers.length > 1 ? 'the group chat' : 'your chat';
+  if (isAssistant(channel)) return ASSISTANT_TITLE;
+  if (isSentinelChat(channel)) return 'the Sentinel chat';
+  // A friends' chat (your Claude acts there when you ask it, BLG-207).
+  if (channel.startsWith('dm:')) return `your chat with ${state.network.friends.find((f) => f.peerId === channel.slice(3))?.name ?? 'a friend'}`;
+  if (channel.startsWith('group:')) return state.network.groups.find((g) => g.id === channel.slice(6))?.name ?? 'a channel';
   const id = channel.slice(3);
   const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) ?? state.shared.find((w) => w.id === id);
   return ws?.name ?? 'a workspace';
@@ -95,7 +127,7 @@ export function planOfChannel(state: Pick<DomainState, 'plans' | 'board'>, chann
   const issue = issueForWorkspace(state.board, channel.slice(3));
   const plan = issue?.plan ? planById(state.plans, issue.plan.id) : undefined;
   if (issue?.plan && plan) return { plan, issue, task: issue.plan.task };
-  const home = planForHome(state.plans, channel);
+  const home = planForHome(state.plans, channel) ?? checkerOf(state.plans, channel)?.plan;
   return home ? { plan: home } : undefined;
 }
 
@@ -168,13 +200,30 @@ function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
         continue;
       }
       if (run.check?.verdict === 'fail' && run.check.at !== oldRun?.check?.at) {
-        out.push({ kind: 'problems', tag: 'milestone', title: `${name}: “${m.milestone.title}” didn’t pass its check`, body: firstLine(run.check.notes) || 'See what Claude found', ...at, key: `plan:${plan.id}:${id}:failed:${run.check.at}` });
+        out.push({ kind: 'problems', tag: 'milestone', title: `${name}: “${m.milestone.title}” didn’t pass its check`, body: firstLine(run.check.notes) || 'See what your agent found', ...at, key: `plan:${plan.id}:${id}:failed:${run.check.at}` });
         continue;
       }
       if (yoursToPass(m) && !yoursToPass(was.get(id))) {
-        const body = run.check?.verdict === 'pass' ? 'Claude checked it: pass it to go on' : 'Its tasks are finished: pass it to go on';
-        out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${m.milestone.title}” is ready for you`, body, ...at, key: `plan:${plan.id}:${id}:yours:${run.checkAsked ?? 0}:${run.check?.at ?? 0}` });
+        const body = run.check?.verdict === 'pass' ? 'Your agent checked it: pass it to go on' : 'Its tasks are finished: pass it to go on';
+        out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${m.milestone.title}” is ready for you`, body, ...at, need: `plan:${plan.id}:pass:${id}`, key: `plan:${plan.id}:${id}:yours:${run.checkAsked ?? 0}:${run.check?.at ?? 0}` });
       }
+    }
+    // Beluga woke a task and it stopped again, or it climbed a milestone's whole rescue ladder: only
+    // then is it yours, and you hear why (the plan goes on by itself until then).
+    const titleOf = new Map(after.milestones.flatMap((m) => [[m.milestone.id, m.milestone.title] as const, ...m.tasks.map((t) => [t.task.id, t.task.title] as const)]));
+    for (const [taskId, w] of Object.entries(plan.watch ?? {})) {
+      if (!w.needsYou || old.watch?.[taskId]?.needsYou) continue;
+      out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${titleOf.get(taskId) ?? 'A task'}” stopped twice`, body: `${w.reason}. Resume it, or open its chat`, ...at, need: `plan:${plan.id}:stalled:${taskId}`, key: `plan:${plan.id}:${taskId}:stalled:${w.at}` });
+    }
+    for (const [msId, merge] of Object.entries(plan.merging ?? {})) {
+      const c = merge.conflict;
+      if (!c?.stuck || old.merging?.[msId]?.conflict?.stuck) continue;
+      out.push({ kind: 'needsYou', tag: 'conflict', title: `${name}: merging “${titleOf.get(msId) ?? 'a milestone'}” hit a conflict Claude couldn’t fix`, body: `${c.key ?? c.merging} conflicts in ${c.files.join(', ')}: fix it in ${c.dir} and it passes`, ...at, key: `plan:${plan.id}:${msId}:conflict:${c.at}` });
+    }
+    for (const [unitId, r] of Object.entries(plan.rescue ?? {})) {
+      if (!r.yours || old.rescue?.[unitId]?.yours) continue;
+      const what = titleOf.get(unitId);
+      out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: stuck${what ? ` on “${what}”` : ''}`, body: r.tried.length ? `Beluga tried: ${r.tried.join('; ')}` : 'Beluga couldn’t move it on by itself', ...at, need: `plan:${plan.id}:rescue:${unitId}`, key: `plan:${plan.id}:${unitId}:rescue:${r.at}` });
     }
   }
   return out;
@@ -189,17 +238,35 @@ function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
   const out: NoticeEvent[] = [];
   for (const item of next.log.slice(-RECENT_LOG)) {
     if (item.type !== 'agent' || !isFinal(item.status)) continue;
+    // The Sentinel chat is quiet: you're looking at it when you use it (docs/sentinel.md §12).
+    if (isSentinelChat(item.channel)) continue;
     const old = before.get(item.id);
     if (!old || isFinal(old.status)) continue;
     const mine = item.owner === selfId;
     // A friend's Claude matters when it was working for you.
     if (!mine && item.requesterName !== selfName) continue;
-    const who = mine ? 'Claude' : `${item.ownerName}'s Claude`;
+    const who = mine ? agentName(item.agent ?? defaultAgentOf(next.self)) : agentLabel(item.agent, item.ownerName, false);
     const where = placeName(next, item.channel);
-    if (item.status === 'done') out.push({ kind: 'done', title: `${who} finished in ${where}`, body: firstLine(item.text) || 'Done', channel: item.channel });
+    if (item.status === 'done') out.push({ kind: 'done', title: `${who} finished in ${where}`, body: firstLine(item.text) || 'Done', channel: item.channel, ...(mine && allDone(next, item) ? { watched: true } : {}) });
     else if (!QUIET_ERRORS.test(item.text)) out.push({ kind: 'problems', title: `${who} stopped in ${where}`, body: firstLine(item.text) || item.status, channel: item.channel });
   }
   return [...out, ...finishedTasks(next, before)];
+}
+
+/** The agent of your latest run in a conversation (the one asking there now, BLG-503); none: your default. */
+function speakerIn(state: DomainState, channel: string | undefined): AgentRef {
+  const selfId = state.self?.peerId;
+  const run = state.log
+    .slice(-RECENT_LOG)
+    .reverse()
+    .find((l): l is AgentItem => l.type === 'agent' && l.channel === channel && l.owner === selfId);
+  return run?.agent ?? defaultAgentOf(state.self);
+}
+
+/** A long run of yours ended and nothing else runs or waits its turn in that conversation: everything there is finished. */
+function allDone(state: DomainState, item: AgentItem): boolean {
+  if (item.endTs === undefined || item.endTs - item.ts < WATCHED_RUN_MS) return false;
+  return !state.log.slice(-RECENT_LOG).some((l) => l.type === 'agent' && l.channel === item.channel && l.id !== item.id && isRunning(l.status));
 }
 
 /** A task your Claude started in the background (a test run, a build) ending while it works on. */
@@ -249,6 +316,34 @@ function messagesForYou(prev: DomainState, next: DomainState): NoticeEvent[] {
   return out;
 }
 
+/**
+ * Someone mentions you in a task's comment ("@kayra can you look?", BLG-419): a teammate's comment
+ * arrives with the board. Opening it goes to the task.
+ */
+function taskMentions(prev: DomainState, next: DomainState, now: number): NoticeEvent[] {
+  if (prev.board.issues === next.board.issues) return [];
+  const selfId = next.selfId;
+  const name = next.self?.name ?? next.network.self?.name;
+  if (!selfId || !name) return [];
+  // "@Kayra Uckilinc" as typed, or "@KayraUckilinc" as the "@" list puts it.
+  const handles = [...new Set([name, name.replace(/[^\p{L}\p{N}_.-]+/gu, '')])].filter((h) => h.length > 1).map(escapeRe);
+  const mention = new RegExp(`(^|[^\\w@])@(${handles.join('|')})(?![\\w-])`, 'iu');
+  const before = new Map(prev.board.issues.map((i) => [i.id, i]));
+  const out: NoticeEvent[] = [];
+  for (const issue of next.board.issues) {
+    const was = before.get(issue.id);
+    // A task you hadn't got yet is history (the board loading, a teammate's board arriving).
+    if (!was || was === issue || was.activity === issue.activity) continue;
+    const seen = new Set(was.activity.map((e) => e.id));
+    for (const e of issue.activity) {
+      if (seen.has(e.id) || e.kind !== 'comment' || !e.body || now - e.at > STALE_MESSAGE_MS) continue;
+      if (e.by.kind !== 'person' || e.by.id === selfId || !mention.test(e.body)) continue;
+      out.push({ kind: 'mentions', tag: 'mention', title: `${e.by.name} mentioned you on ${issue.key}`, body: firstLine(e.body), channel: `task:${issue.id}`, key: `task-mention:${e.id}` });
+    }
+  }
+  return out;
+}
+
 /** Messages older than this arriving (a group catching up after days away) aren't news any more. */
 const STALE_MESSAGE_MS = 12 * 60 * 60_000;
 
@@ -269,15 +364,28 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
     const old = before.messages[conversation];
     if (old === list) continue;
     const seen = new Set((old ?? []).map((m) => m.id));
-    const fresh = list.filter((m) => !seen.has(m.id) && !m.mine && m.status !== 'locked' && now - m.ts < STALE_MESSAGE_MS);
+    // A task's card says nothing new: the task itself asks you (or tells you it ran).
+    const fresh = list.filter((m) => !seen.has(m.id) && !m.mine && !m.task && m.status !== 'locked' && now - m.ts < STALE_MESSAGE_MS);
     if (fresh.length > MESSAGE_BURST * 4) continue;
     const group = conversation.startsWith('group:') ? after.groups.find((g) => `group:${g.id}` === conversation) : undefined;
     for (const m of fresh) {
-      const who = m.claude ? `${m.name}’s Claude` : m.name;
+      const who = m.claude ? agentLabel(m.claude.agent, m.name, false) : m.name;
       const title = group ? (mention.test(m.text) ? `${who} mentioned you in ${group.name}` : `${who} in ${group.name}`) : who;
       const body = firstLine(m.text) || (m.files?.length ? `Sent ${m.files.map((f) => f.name).join(', ')}` : '');
       out.push({ kind: 'mentions', tag: group && mention.test(m.text) ? 'mention' : 'message', title, body, channel: conversation, ...(quiet ? { quiet: true } : {}) });
     }
+  }
+  return out;
+}
+
+/** A dialogue between your agents that just paused at its cap: it waits for your Continue. */
+function dialogueNews(prev: DomainState, next: DomainState): NoticeEvent[] {
+  if (prev.dialogues === next.dialogues) return [];
+  const out: NoticeEvent[] = [];
+  for (const d of Object.values(next.dialogues)) {
+    if (d.remoteChair || d.status !== 'paused' || prev.dialogues[d.id]?.status === 'paused') continue;
+    const channel = d.channel ?? 'room';
+    out.push({ kind: 'needsYou', tag: 'question', title: `Your agents paused in ${placeName(next, channel)}`, body: `${firstLine(d.topic)}: continue, or stop`, channel, need: `dialogue:${d.id}`, key: `dialogue:${d.id}:paused:${d.pauseAt}` });
   }
   return out;
 }
@@ -287,7 +395,7 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
  * stopped, needs an answer or approval, a merge conflict, someone joined or invited you.
  */
 export function detectNotices(prev: DomainState, next: DomainState, now = Date.now()): NoticeEvent[] {
-  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...networkMessages(prev, next, now), ...planNews(prev, next)];
+  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...taskMentions(prev, next, now), ...networkMessages(prev, next, now), ...planNews(prev, next), ...dialogueNews(prev, next)];
   if (prev.approvals !== next.approvals) {
     const seen = new Set(prev.approvals.map((a) => a.id));
     // Someone else's request waits for you either way; on Do Not Disturb it just doesn't make a sound.
@@ -295,8 +403,9 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     for (const a of next.approvals) {
       if (seen.has(a.id)) continue;
       // An approval a plan's task asks for opens the plan there.
-      const inPlan = a.channel !== undefined && planOfChannel(next, a.channel) ? { channel: a.channel } : {};
-      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
+      // One in a friends' chat (a request that came from there, your Claude working there) opens that chat.
+      const inPlan = a.channel !== undefined && (planOfChannel(next, a.channel) || /^(dm|group):/.test(a.channel)) ? { channel: a.channel } : {};
+      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.once ? { once: true } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
     }
   }
   if (prev.questions !== next.questions) {
@@ -304,12 +413,13 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     for (const q of next.questions) {
       if (seen.has(q.qid)) continue;
       const where = placeName(next, q.channel);
+      const who = agentName(speakerIn(next, q.channel));
       out.push(
         q.question.kind === 'plan'
-          ? { kind: 'needsYou', tag: 'plan', ref: q.qid, title: `Claude has a plan for ${where}`, body: 'Approve it, or say what to change', channel: q.channel }
+          ? { kind: 'needsYou', tag: 'plan', ref: q.qid, title: `${who} has a plan for ${where}`, body: 'Approve it, or say what to change', channel: q.channel }
           : isDecisionQid(q.qid)
             ? { kind: 'needsYou', tag: 'question', ref: q.qid, title: `Your call in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel }
-            : { kind: 'needsYou', tag: 'question', ref: q.qid, title: `Claude asks in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel },
+            : { kind: 'needsYou', tag: 'question', ref: q.qid, title: `${who} asks in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel },
       );
     }
   }
@@ -324,22 +434,26 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     const seen = new Set(prev.peers.map((p) => p.peerId));
     const still = new Set(next.peers.map((p) => p.peerId));
     const selfId = next.self?.peerId;
-    for (const p of next.peers) if (!seen.has(p.peerId) && p.peerId !== selfId) out.push({ kind: 'people', tag: 'joined', title: `${p.name} joined`, body: p.agent ? 'They brought their Claude' : 'Say hi in the group chat', channel: 'room' });
+    for (const p of next.peers) if (!seen.has(p.peerId) && p.peerId !== selfId) out.push({ kind: 'people', tag: 'joined', title: `${p.name} joined`, body: p.agent ? `They brought their ${agentName(defaultAgentOf(p))}` : 'Say hi in the group chat', channel: 'room' });
     // Only while you're still in the room: losing the room isn't news about each person.
     if (next.status === 'connected' && next.peers.some((p) => p.peerId === selfId)) {
-      for (const p of prev.peers) if (!still.has(p.peerId) && p.peerId !== selfId) out.push({ kind: 'people', tag: 'left', title: `${p.name} left`, body: p.agent ? 'Their Claude left with them' : 'They left the room', channel: 'room' });
+      for (const p of prev.peers) if (!still.has(p.peerId) && p.peerId !== selfId) out.push({ kind: 'people', tag: 'left', title: `${p.name} left`, body: p.agent ? `Their ${agentName(defaultAgentOf(p))} left with them` : 'They left the room', channel: 'room' });
     }
   }
   if (prev.shared !== next.shared) {
     const seen = new Set(prev.shared.map((w) => `${w.owner}:${w.id}`));
     for (const w of next.shared) {
       if (seen.has(`${w.owner}:${w.id}`)) continue;
-      const owner = next.peers.find((p) => p.peerId === w.owner)?.name ?? 'Someone';
-      out.push({ kind: 'people', tag: 'invited', title: `${owner} invited you to ${w.name}`, body: w.role === 'contribute' ? 'You can work there with their Claude' : 'You can follow along', channel: `ws:${w.id}` });
+      const peer = next.peers.find((p) => p.peerId === w.owner);
+      const owner = peer?.name ?? 'Someone';
+      out.push({ kind: 'people', tag: 'invited', title: `${owner} invited you to ${w.name}`, body: w.role === 'contribute' ? `You can work there with their ${agentName(defaultAgentOf(peer))}` : 'You can follow along', channel: `ws:${w.id}` });
     }
   }
   return next.plans.plans.length ? out.map((e) => scopeToPlan(next, e)) : out;
 }
+
+/** Friends' messages arriving within this long show as one banner. */
+const BANNER_MS = 400;
 
 export interface NotifierDeps {
   readonly store: Store;
@@ -372,6 +486,8 @@ export class Notifier {
   private lastSent = 0;
   /** Keys of what was already announced (a plan's milestone passing…): never twice. */
   private readonly told = new Set<string>();
+  private banners: NoticeEvent[] = [];
+  private bannerTimer?: NodeJS.Timeout;
 
   constructor(private readonly deps: NotifierDeps) {
     this.prev = deps.store.getState();
@@ -381,6 +497,7 @@ export class Notifier {
   stop(): void {
     this.unsubscribe();
     clearTimeout(this.timer);
+    clearTimeout(this.bannerTimer);
   }
 
   /** Raise a notification directly (pull requests, setup scripts, handoffs). */
@@ -390,7 +507,7 @@ export class Notifier {
 
   /** Show a test notification whatever the settings say (you asked for it). */
   test(): void {
-    const e: NoticeEvent = { kind: 'done', tag: 'test', title: 'Notifications work', body: 'This is how Beluga tells you Claude finished or needs you' };
+    const e: NoticeEvent = { kind: 'done', tag: 'test', title: 'Notifications work', body: 'This is how Beluga tells you your agent finished or needs you' };
     this.deps.store.dispatch({ type: 'notice_add', notice: { kind: e.kind, tag: e.tag, title: e.title, body: e.body } });
     this.queue.push(e);
     this.flush();
@@ -404,6 +521,7 @@ export class Notifier {
     // Opening a conversation reads its notices; answering something reads the notice about it.
     if (prev.attention !== next.attention) this.markSeen(next);
     if (prev.approvals !== next.approvals || prev.questions !== next.questions) this.markAnswered(next);
+    if (WAITING.some((k) => prev[k] !== next[k]) && next.inbox.some((n) => !n.read && n.need !== undefined)) this.markSettled(prev, next);
     const events = detectNotices(prev, next, this.now());
     if (events.length) this.handle(events, next);
   }
@@ -419,28 +537,60 @@ export class Notifier {
     for (const n of state.inbox) if (!n.read && n.ref !== undefined && !open.has(n.ref)) this.deps.store.dispatch({ type: 'notice_read', id: n.id });
   }
 
+  /** A notice about something that waited for you (a team-up, a friend's question…) is read once it's settled, here or on another screen. */
+  private markSettled(prev: DomainState, next: DomainState): void {
+    const was = allNeeds(prev).map((x) => x.id);
+    const now = allNeeds(next).map((x) => x.id);
+    for (const n of next.inbox) {
+      const need = n.need;
+      if (n.read || need === undefined) continue;
+      if (was.some((id) => needMatches(id, need)) && !now.some((id) => needMatches(id, need))) this.deps.store.dispatch({ type: 'notice_read', id: n.id });
+    }
+  }
+
   private handle(events: readonly NoticeEvent[], state: DomainState, direct = false): void {
     const prefs = state.prefs.notify;
     const desktop = desktopAllowed(state, this.now());
     for (const raw of events) {
       const e = direct ? scopeToPlan(state, raw) : raw;
-      if (!enabled(prefs, e.kind)) continue;
+      if (!enabled(prefs, e.kind, e.tag)) continue;
       if (e.key !== undefined) {
         if (this.told.has(e.key) || state.inbox.some((n) => n.key === e.key)) continue;
         this.told.add(e.key);
       }
       // A screen in front shows it: a direct notice (it isn't in the chat) still shows as a toast.
+      // A long run of yours ending there still reaches the desktop (you may have looked away), not the bell.
       if (e.channel !== undefined && state.attention.visible.includes(e.channel)) {
         if (direct) this.deps.toast?.(`${e.title}${e.body ? `: ${e.body}` : ''}`, e.kind === 'problems' ? 'warn' : 'info');
+        else if (e.watched && prefs.doneHere !== false && desktop && !e.quiet) this.queue.push(e);
         continue;
       }
-      const { kind, tag, ref, title, body, channel, plan, planTask, key } = e;
+      const { kind, tag, ref, title, body, channel, plan, planTask, need, key } = e;
       // A plan's task speaking quietly: it's in the inbox under the plan, already read.
       const read = Boolean(e.quiet && plan);
-      this.deps.store.dispatch({ type: 'notice_add', notice: { kind, ...(tag ? { tag } : {}), ...(ref ? { ref } : {}), title, body, channel, ...(plan ? { plan } : {}), ...(planTask ? { planTask } : {}), ...(key ? { key } : {}) }, ...(read ? { read } : {}) });
-      if (desktop && !e.quiet) this.queue.push(e);
+      this.deps.store.dispatch({ type: 'notice_add', notice: { kind, ...(tag ? { tag } : {}), ...(ref ? { ref } : {}), title, body, channel, ...(plan ? { plan } : {}), ...(planTask ? { planTask } : {}), ...(need ? { need } : {}), ...(key ? { key } : {}) }, ...(read ? { read } : {}) });
+      // You're in Beluga, looking at another conversation: a friend's message shows in the window.
+      if (state.attention.front && isNetworkMessage(e) && !e.quiet && !dndActive(prefs, this.now())) this.banners.push(e);
+      else if (desktop && !e.quiet) this.queue.push(e);
     }
     this.flush();
+    this.flushBanners();
+  }
+
+  /** Friends' messages shown in the window, a burst as one banner. */
+  private flushBanners(): void {
+    if (!this.banners.length || this.bannerTimer) return;
+    this.bannerTimer = setTimeout(() => {
+      this.bannerTimer = undefined;
+      const batch = this.banners;
+      this.banners = [];
+      if (!batch.length) return;
+      const prefs = this.deps.store.getState().prefs.notify;
+      const note = combine(batch, prefs);
+      const many = batch.length > 1 ? { title: `${batch.length} new messages`, body: batch.map((e) => e.title).slice(0, 4).join(' · ') } : {};
+      this.deps.desktop({ ...note, ...many, banner: true });
+    }, BANNER_MS);
+    this.bannerTimer.unref?.();
   }
 
   private now(): number {
@@ -476,10 +626,14 @@ export function combine(batch: readonly NoticeEvent[], prefs: boolean | SoundPre
   const sound = { ...soundOf(batch, prefs), ...(popup && batch.every((e) => e.kind === 'needsYou') ? { popup: true } : {}) };
   const channel = first.channel !== undefined && batch.every((e) => e.channel === first.channel) ? { channel: first.channel } : {};
   // One approval on its own can be answered from the notification itself.
-  const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}) } : {};
+  const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}), ...(first.once ? { once: true } : {}) } : {};
   if (batch.length === 1) return { title: first.title, body: first.body, ...sound, ...channel, ...approval };
   return { title: `${batch.length} updates in Beluga`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), ...sound, ...channel };
 }
 
-/** Whether you want to hear about this kind (missing in old settings: yes). */
-export const enabled = (prefs: NotifySettings, kind: NoticeKind): boolean => prefs[kind] !== false;
+/**
+ * Whether you want to hear about this kind (missing in old settings: yes). Sentinels have their own
+ * switch on top, for their results and failures; one that waits for you (a merge to allow) still tells.
+ */
+export const enabled = (prefs: NotifySettings, kind: NoticeKind, tag?: NoticeTag): boolean =>
+  prefs[kind] !== false && !(tag === 'sentinel' && kind !== 'needsYou' && prefs.sentinels === false);

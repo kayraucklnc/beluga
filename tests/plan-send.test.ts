@@ -40,8 +40,17 @@ describe('plan chat send (KLD-66)', () => {
     expect(api.sent).toEqual(['look at ![image 3](/tmp/3.png)']);
   });
 
+  it('passes the numbers the box showed along with the images', async () => {
+    const api = fakeApi();
+    const seen: unknown[][] = [];
+    const expand = api.attachments.expand;
+    api.attachments.expand = async (text, channel, only, shown) => (seen.push([only, shown]), expand(text, channel));
+    await sendPlanMessage(api, planMessage('look at [image 1]', [7], [1]), 'ws:plan');
+    expect(seen).toEqual([[[7], [1]]]);
+  });
+
   it('a send that resolves but did not go is an error', async () => {
-    await expect(sendPlanMessage(fakeApi({ went: false }), planMessage('hi'), 'ws:plan')).rejects.toThrow("Claude can't be asked here");
+    await expect(sendPlanMessage(fakeApi({ went: false }), planMessage('hi'), 'ws:plan')).rejects.toThrow("The agent can't be asked here");
     // Older daemons answer nothing: that's a send.
     await expect(sendPlanMessage(fakeApi({ went: undefined }), planMessage('hi'), 'ws:plan')).resolves.toBeUndefined();
   });
@@ -81,7 +90,7 @@ describe('plan chat Retry (KLD-69)', () => {
   it('Retry with images reuses the links made the first time (the box already gave its images up)', async () => {
     const api = fakeApi({ went: false });
     const message = planMessage('look at [image 3]');
-    await expect(sendPlanMessage(api, message, 'ws:plan')).rejects.toThrow("Claude can't be asked here");
+    await expect(sendPlanMessage(api, message, 'ws:plan')).rejects.toThrow("The agent can't be asked here");
     // Anything expand would say now (the images left the box with the first try) doesn't matter.
     api.attachments.expand = async () => {
       throw new Error('no such image');

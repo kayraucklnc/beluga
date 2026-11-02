@@ -9,7 +9,7 @@ import r from './room.module.css';
 
 type Tone = 'ok' | 'warn' | 'error';
 
-const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite'));
+const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite-room'));
 
 /** What remote access is doing, in words. */
 function reach(phase: string | undefined, detail: string | undefined, hasLink: boolean): string {

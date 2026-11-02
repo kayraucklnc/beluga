@@ -1,4 +1,4 @@
-import type { ClaudeQuestion, GuestCan, WsRole } from '../protocol.js';
+import type { AgentRef, ClaudeQuestion, GuestCan, WsRole } from '../protocol.js';
 
 /** Claude (yours or a friend's) is waiting for an answer from you. */
 export interface PendingQuestion {
@@ -24,6 +24,14 @@ export interface SharedWorkspace {
   readonly can?: GuestCan;
   /** The owner's share for its folder. */
   readonly share: string;
+  /** Shared over the network by a friend (core/friend-share), not through today's room: it stays while the room is gone. */
+  readonly via?: 'mesh';
+  /** Over the network: the owner's project it belongs to. */
+  readonly projectId?: string;
+  /** Over the network: there's earlier conversation to scroll back to (BLG-259). */
+  readonly earlier?: boolean;
+  /** The owner's agent that runs there (BLG-448): theirs, never yours. Unset: an older Mac's, Claude. */
+  readonly agent?: AgentRef;
 }
 
 export interface RosterEntry {
@@ -134,7 +142,7 @@ export type CollabAction =
   | { type: 'roster'; id: string; members: readonly RosterEntry[] }
   | { type: 'plan_mode'; channel: string; on: boolean }
   | { type: 'peer_gone'; peerIds: readonly string[] }
-  /** You left the room: everything shared with you goes. */
+  /** You left the room: everything shared with you in it goes (what friends shared over the network stays). */
   | { type: 'shared_clear' }
   | { type: 'offer'; offer: Offer; active: boolean }
   | { type: 'trust_prompt'; peerId: string; show: boolean }
@@ -178,8 +186,11 @@ export function reduceCollab(state: CollabState, action: CollabAction): CollabSt
       return { ...state, roster: { ...state.roster, [action.id]: action.members } };
     case 'plan_mode':
       return { ...state, planMode: action.on ? { ...state.planMode, [action.channel]: true } : without(state.planMode, action.channel) };
-    case 'shared_clear':
-      return { ...state, shared: [], roster: {}, questions: [], offers: [], shells: {} };
+    case 'shared_clear': {
+      const kept = state.shared.filter((w) => w.via === 'mesh');
+      const roster = Object.fromEntries(Object.entries(state.roster).filter(([id]) => kept.some((w) => w.id === id)));
+      return { ...state, shared: kept, roster, questions: [], offers: [], shells: {} };
+    }
     case 'offer': {
       const rest = state.offers.filter((o) => !(o.owner === action.offer.owner && o.name === action.offer.name));
       return { ...state, offers: action.active ? [...rest, action.offer] : rest };

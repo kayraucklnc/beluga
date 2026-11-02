@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { AgentRef } from '../../protocol.js';
+import { AVATAR_MAX } from './avatars.js';
 import { NameSchema, PeerIdSchema, PresenceSchema, ProfileSchema } from './schemas.js';
 
 /**
@@ -17,17 +19,35 @@ const msgId = z.string().regex(/^[\w-]{8,64}$/);
 const tid = z.number().int().min(0).max(2 ** 31);
 
 export const LinkMessage = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('hello'), proto: z.number().int(), name: NameSchema, presence: PresenceSchema }),
+  /**
+   * `app`, `can`: their Beluga's version and what it does (net/mesh/features.ts); Macs from before them send neither.
+   * `avatar`: the checksum of their profile picture (net/mesh/avatars.ts); said again when it changes, left out when there's none.
+   */
+  z.object({
+    t: z.literal('hello'),
+    proto: z.number().int(),
+    name: NameSchema,
+    presence: PresenceSchema,
+    app: z.string().max(64).optional(),
+    can: z.array(z.string().max(40)).max(64).optional(),
+    avatar: hex64.optional(),
+  }),
   z.object({ t: z.literal('presence'), presence: PresenceSchema }),
   /** A direct message (end-to-end: the link is a Noise channel between the two of you). */
   z.object({ t: z.literal('dm'), id: msgId, text: z.string().max(8_000), ts: z.number().int().min(0), x: z.unknown().optional() }),
-  /** Someone's Claude started (or stopped) answering in a conversation: `g` a group's id, or none for your direct messages. */
-  z.object({ t: z.literal('live'), g: groupId.optional(), for: z.string().min(1).max(80), state: z.enum(['thinking', 'idle']) }),
+  /** Someone's Claude started (or stopped) answering in a conversation: `g` a group's id, or none for your direct messages; `agent`: which of theirs (BLG-498; an older Mac leaves it out). */
+  z.object({ t: z.literal('live'), g: groupId.optional(), for: z.string().min(1).max(80), state: z.enum(['thinking', 'idle']), agent: AgentRef.optional().catch(undefined) }),
   /** Chat files (core/chat-files): ask for a piece of a file by checksum, in a conversation you share. */
   z.object({ t: z.literal('f_get'), rid: msgId, sha: hex64, g: groupId.optional(), off: z.number().int().min(0), len: z.number().int().min(1).max(FILE_PIECE) }),
   z.object({ t: z.literal('f_data'), rid: msgId, off: z.number().int().min(0), d: z.string().max(Math.ceil(FILE_PIECE / 3) * 4) }),
   z.object({ t: z.literal('f_err'), rid: msgId, off: z.number().int().min(0), e: z.string().max(200) }),
+  /** Profile pictures: ask for the one someone said is theirs; they answer with its bytes (base64), or nothing. */
+  z.object({ t: z.literal('av_get'), sha: hex64 }),
+  z.object({ t: z.literal('av_data'), sha: hex64, d: z.string().max(Math.ceil(AVATAR_MAX / 3) * 4) }),
   z.object({ t: z.literal('dm_ack'), id: msgId }),
+  /** The author deleted (no `text`) or edited one of their direct messages; `at` orders edits (BLG-425). */
+  z.object({ t: z.literal('dm_change'), id: msgId, text: z.string().max(8_000).optional(), at: z.number().int().min(0) }),
+  z.object({ t: z.literal('dm_change_ack'), id: msgId, at: z.number().int().min(0) }),
   /** The newest entries I have of a group we're both in. */
   z.object({ t: z.literal('g_heads'), group: groupId, heads: z.array(hex64).max(64) }),
   /** Send me what I'm missing (these are my newest entries). */
@@ -41,6 +61,10 @@ export const LinkMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('tun_close'), tid, o: z.boolean(), reason: z.string().max(200).optional() }),
   /** The gateway (tasks between Claudes, core/gateway): a frame it checks itself, between friends only. */
   z.object({ t: z.literal('gw'), p: z.unknown() }),
+  /** Sharing projects, worktrees and folders with friends (core/friend-share): a frame it checks itself, between friends only. */
+  z.object({ t: z.literal('share'), p: z.unknown() }),
+  /** Team boards (core/team): friends on the same GitHub repo; a frame it checks itself, between friends only. */
+  z.object({ t: z.literal('team'), p: z.unknown() }),
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

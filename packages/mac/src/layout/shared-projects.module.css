@@ -1,0 +1,18 @@
+/* A friend's project in Projects: its icon with the owner's avatar on the corner. */
+.icon {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.badge {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  display: inline-flex;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--bg-sidebar-solid);
+}
+/* Its owner's Mac is offline: still there, a little quieter. */
+.away {
+  opacity: 0.72;
+}

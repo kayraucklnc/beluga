@@ -12,7 +12,7 @@ import { z } from 'zod';
  */
 
 export const VIEW_FENCE = 'beluga-view';
-export const VIEW_TYPES = ['table', 'chart', 'stats', 'code', 'colors'] as const;
+export const VIEW_TYPES = ['table', 'chart', 'stats', 'code', 'colors', 'gantt', 'heatmap', 'calendar'] as const;
 export type ViewType = (typeof VIEW_TYPES)[number];
 
 /** `beluga-view`, or a type's own tag (`beluga-table`, `beluga-chart`…) that says which it is. */
@@ -245,7 +245,7 @@ export type QueryPatch = { readonly sort?: { readonly key: string; readonly dir:
 
 const viewSchema = z.object({
   version: z.literal(1).optional(),
-  type: kindOf(VIEW_TYPES, { grid: 'table', list: 'table', graph: 'chart', plot: 'chart', kpi: 'stats', metrics: 'stats', snippet: 'code', palette: 'colors', colours: 'colors' }, 'table'),
+  type: kindOf(VIEW_TYPES, { grid: 'table', list: 'table', graph: 'chart', plot: 'chart', kpi: 'stats', metrics: 'stats', snippet: 'code', palette: 'colors', colours: 'colors', timeline: 'gantt', roadmap: 'gantt', schedule: 'gantt', matrix: 'heatmap', heat: 'heatmap', activity: 'calendar', contributions: 'calendar', days: 'calendar' }, 'table'),
   title: clip(120).optional(),
   summary: clip(400).optional(),
   columns: z.array(columnSchema).max(MAX_COLUMNS).optional(),
@@ -293,6 +293,20 @@ const viewSchema = z.object({
   // ---- colors
   swatches: z.array(colorSchema).max(64).optional(),
   pick: z.boolean().optional(),
+  // ---- gantt (a bar per row from "start" to "end", in lanes by "group"), heatmap ("x" × "y" by
+  // "value"), calendar (a day grid of "value" by date)
+  /** The column naming each row (a gantt's bar, a calendar day's words). */
+  label: clip(80).optional(),
+  start: clip(80).optional(),
+  end: clip(80).optional(),
+  /** A gantt bar's progress (0–1, or a percent). */
+  progress: clip(80).optional(),
+  /** The column whose number colors a heatmap's cell or a calendar's day. */
+  value: clip(80).optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  /** A gantt's line at today (on unless false). */
+  today: z.boolean().optional(),
 });
 type RawView = z.infer<typeof viewSchema>;
 
@@ -333,6 +347,14 @@ export interface View {
   readonly startLine: number;
   readonly swatches: readonly Swatch[];
   readonly pick: boolean;
+  readonly label?: string;
+  readonly start?: string;
+  readonly end?: string;
+  readonly progress?: string;
+  readonly value?: string;
+  readonly min?: number;
+  readonly max?: number;
+  readonly today: boolean;
 }
 
 export type ViewParse =
@@ -361,7 +383,10 @@ export function looksUnfinished(text: string): boolean {
 
 /** Read a view from parsed JSON (the tool's input, or a block's). `type`: what the fence said. */
 export function readView(raw: unknown, type?: ViewType): ViewParse {
-  const input = type && raw && typeof raw === 'object' && !Array.isArray(raw) ? { type, ...(raw as object) } : Array.isArray(raw) ? { type: type ?? 'table', data: raw } : raw;
+  const given = type && raw && typeof raw === 'object' && !Array.isArray(raw) ? { type, ...(raw as object) } : Array.isArray(raw) ? { type: type ?? 'table', data: raw } : raw;
+  // A chart "of kind" heatmap, gantt or calendar is that view.
+  const asked = given && typeof given === 'object' ? (given as { chart?: unknown }).chart : undefined;
+  const input = typeof asked === 'string' && /^(heatmap|gantt|timeline|calendar)$/i.test(asked) ? { ...(given as object), type: asked.toLowerCase() === 'timeline' ? 'gantt' : asked.toLowerCase(), chart: undefined } : given;
   const parsed = viewSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -399,7 +424,7 @@ function tidy(v: RawView): ViewParse {
   if (type === 'code' && v.code === undefined && !v.source) return { ok: false, error: 'a code view needs "code" or a "source"', incomplete: false };
   if (type === 'colors' && !swatches.length && !v.pick) return { ok: false, error: 'a colors view needs "swatches"', incomplete: false };
   if (type === 'stats' && !items.length && !kept.length && !v.source) return { ok: false, error: 'a stats view needs "items"', incomplete: false };
-  if ((type === 'table' || type === 'chart') && !kept.length && !v.source) return { ok: false, error: `a ${type} needs "data" or a "source"`, incomplete: false };
+  if ((type === 'table' || type === 'chart' || type === 'gantt' || type === 'heatmap' || type === 'calendar') && !kept.length && !v.source) return { ok: false, error: `a ${type} needs "data" or a "source"`, incomplete: false };
   const view: View = {
     type,
     ...(v.title ? { title: v.title } : {}),
@@ -408,7 +433,7 @@ function tidy(v: RawView): ViewParse {
     rows: kept,
     ...(v.code !== undefined ? { text: v.code } : {}),
     ...(v.source ? { source: v.source as Source } : {}),
-    pageSize: v.pageSize ?? (type === 'table' ? 10 : 200),
+    pageSize: v.pageSize ?? (type === 'table' ? 10 : type === 'calendar' ? 500 : 200),
     ...(v.total !== undefined ? { total: v.total } : {}),
     ...(v.at !== undefined ? { at: v.at } : {}),
     actions: v.actions ?? [],
@@ -437,6 +462,14 @@ function tidy(v: RawView): ViewParse {
     startLine: v.startLine ?? 1,
     swatches,
     pick: v.pick ?? false,
+    ...(v.label ? { label: v.label } : {}),
+    ...(v.start ? { start: v.start } : {}),
+    ...(v.end ? { end: v.end } : {}),
+    ...(v.progress ? { progress: v.progress } : {}),
+    ...(v.value ? { value: v.value } : {}),
+    ...(v.min !== undefined ? { min: v.min } : {}),
+    ...(v.max !== undefined ? { max: v.max } : {}),
+    today: v.today ?? true,
   };
   return { ok: true, view, warnings };
 }
@@ -733,7 +766,11 @@ export interface ViewNeedsApproval {
   readonly needsApproval: true;
   readonly what: string;
 }
-export type ViewFetchResult = ViewPage | ViewNeedsApproval;
+/** Asked only for what was kept (`cache: 'only'`), and nothing was. */
+export interface ViewNotKept {
+  readonly notKept: true;
+}
+export type ViewFetchResult = ViewPage | ViewNeedsApproval | ViewNotKept;
 
 export const compareCells = (a: Cell, b: Cell): number => {
   if (a === b) return 0;

@@ -17,9 +17,9 @@ describe('adding friends without a server', () => {
     const ann = await net.add('ann');
     const bob = await net.add('bob');
     const invite = await ann.mesh.createInvite();
-    expect(invite.link).toMatch(/^klaud:\/\/add#[\w-]{22}$/);
+    expect(invite.link).toMatch(/^beluga:\/\/add#[\w-]{22}$/);
     expect(invite.code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
-    expect(invite.codeLink).toBe(`klaud://add?code=${invite.code}`);
+    expect(invite.codeLink).toBe(`beluga://add?code=${invite.code}`);
     // The code works for an hour, the link for a day.
     expect(invite.codeExpiresAt - Date.now()).toBeLessThanOrEqual(60 * 60 * 1000);
     expect(invite.expiresAt - invite.codeExpiresAt).toBeGreaterThan(22 * 60 * 60 * 1000);

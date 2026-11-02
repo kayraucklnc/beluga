@@ -70,6 +70,14 @@ export class ContextReport {
     }
   }
 
+  /** The run switched model mid-session (another was picked for the conversation): its window from now on. */
+  switched(model: string | undefined): void {
+    this.model = model;
+    this.window = knownWindow(model);
+    this.sent = -1;
+    if (this.used) this.send();
+  }
+
   /** Claude Code's PostCompact hook: the summary it continues from. */
   summary(text: string): void {
     const summary = text.trim().slice(0, MAX_SUMMARY_CHARS);

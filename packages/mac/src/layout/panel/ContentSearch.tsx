@@ -1,5 +1,5 @@
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
-import type { ContentResults, LineMatch } from '@beluga/core/workspace-files.js';
+import type { ContentResults, LineMatch, NameResults } from '@beluga/core/workspace-files.js';
 import { Icon } from '../../components/Icon.js';
 import { cx } from '../../components/ui.js';
 import { useBeluga } from '../../lib/beluga.js';
@@ -47,6 +47,41 @@ export function useContentSearch(wsId: string, query: string, flags: SearchFlags
     const t = setTimeout(() => {
       client.api.files
         .searchContent(wsId, q, { ...flags, slot: 'files-tab' })
+        .then((results) => {
+          if (mine !== seq.current || results.cancelled) return;
+          setState(results.error ? { searching: false, error: results.error, query: q } : { searching: false, results, query: q });
+        })
+        .catch((err: unknown) => mine === seq.current && setState({ searching: false, error: err instanceof Error ? err.message : String(err), query: q }));
+    }, DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [key, on]);
+  return state;
+}
+
+export interface NameSearchState {
+  readonly results?: NameResults;
+  readonly query?: string;
+  readonly searching: boolean;
+  readonly error?: string;
+}
+
+/** The Files tab filtering by name: every file in the folder whose path matches, from the daemon, a moment after you stop typing. */
+export function useNameSearch(wsId: string, query: string, flags: SearchFlags, on: boolean): NameSearchState {
+  const { client } = useBeluga();
+  const [state, setState] = useState<NameSearchState>({ searching: false });
+  const seq = useRef(0);
+  const q = query.trim() ? query : '';
+  const key = `${wsId}\0${q}\0${flags.caseSensitive}\0${flags.regex}\0${flags.wholeWord}`;
+  useEffect(() => {
+    const mine = ++seq.current;
+    if (!on || !q) {
+      setState({ searching: false });
+      return;
+    }
+    setState((st) => ({ ...st, searching: true }));
+    const t = setTimeout(() => {
+      client.api.files
+        .searchNames(wsId, flags.regex ? q : q.trim(), { ...flags, slot: 'files-tab' })
         .then((results) => {
           if (mine !== seq.current || results.cancelled) return;
           setState(results.error ? { searching: false, error: results.error, query: q } : { searching: false, results, query: q });

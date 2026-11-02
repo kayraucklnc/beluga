@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { contentIn } from '../src/workspaces/git.js';
 import { catchUpPrompt, resolvePrConflictsPrompt } from '../src/workspaces/pr.js';
 import type { PullRequest } from '../src/core/work-store.js';
+import { buildShippedAppend } from '../src/agent/prompt.js';
+import { Store, initialState, shippedText } from '../src/core/store.js';
 
 /** Continue After Merge moves a branch to the base only when everything on it is already there. */
 
@@ -76,5 +78,22 @@ describe('what Claude is asked', () => {
     const text = catchUpPrompt(pr, 'main');
     expect(text).toContain('git merge origin/main');
     expect(text).toMatch(/Don't push/);
+  });
+});
+
+describe('the line where the merged PR ends', () => {
+  it('stays on the chat item, with words for screens that draw text', () => {
+    const store = new Store(initialState('room'));
+    store.dispatch({ type: 'system', channel: 'ws:w1', text: shippedText(7, 'main'), shipped: { number: 7, url: 'https://github.com/bob/api/pull/7', into: 'main' } });
+    const item = store.getState().log.at(-1)!;
+    expect(item).toMatchObject({ type: 'system', channel: 'ws:w1', shipped: { number: 7, into: 'main' } });
+    expect(item.type === 'system' && item.text).toContain('PR #7');
+  });
+
+  it('tells Claude the earlier work shipped and what’s next is a new PR', () => {
+    const text = buildShippedAppend({ number: 7, url: 'https://github.com/bob/api/pull/7', into: 'main' });
+    expect(text).toContain('#7');
+    expect(text).toMatch(/new pull request/);
+    expect(text).toMatch(/Continue After Merge/);
   });
 });

@@ -2,10 +2,14 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { BootstrapNode } from 'hyperdht';
 import type { Identity } from '../net/crypto.js';
+import { DEFAULT_MAILBOX_URL, type MailboxOptions } from '../net/mesh/mailbox.js';
 import { Mesh } from '../net/mesh/mesh.js';
+import { loadSettings } from './settings.js';
 import type { Timing } from '../net/mesh/links.js';
 import type { Store } from './store.js';
 import { belugaEnv } from './beluga-env.js';
+import { installedVersion } from './version.js';
+import { localMentions } from './team/mentions.js';
 
 /**
  * The Beluga network as a core service: starts your Mac's mesh node (src/net/mesh) next to
@@ -32,6 +36,16 @@ export interface NetworkOptions {
   readonly bootstrap?: readonly BootstrapNode[];
   readonly host?: string;
   readonly timing?: Partial<Timing>;
+  /** The mailbox (default: settings `mailbox`, BELUGA_MAILBOX, or Beluga's own). */
+  readonly mailbox?: MailboxOptions;
+}
+
+/** Which mailbox frames go to when a friend isn't online with you (BLG-272); undefined: none. */
+export function mailboxOptions(settings: { readonly mailbox?: string; readonly mailboxAfterMin?: number }): MailboxOptions | undefined {
+  const env = belugaEnv('MAILBOX');
+  const url = env !== undefined && env !== '' ? env : (settings.mailbox ?? DEFAULT_MAILBOX_URL);
+  if (!url || url === 'off' || url === '0' || !/^https?:\/\//.test(url)) return undefined;
+  return { url, ...(settings.mailboxAfterMin !== undefined ? { afterMs: settings.mailboxAfterMin * 60_000 } : {}) };
 }
 
 const isAlive = (pid: number): boolean => {
@@ -83,7 +97,8 @@ export async function startNetwork(opts: NetworkOptions): Promise<NetworkService
   const unlock = lock(opts.dir);
   let mesh: Mesh;
   try {
-    mesh = await Mesh.start({ identity: opts.identity, name: opts.name, dir: opts.dir, ...(opts.bootstrap ? { bootstrap: opts.bootstrap } : {}), ...(opts.host ? { host: opts.host } : {}), ...(opts.timing ? { timing: opts.timing } : {}) });
+    const mailbox = opts.mailbox ?? mailboxOptions(loadSettings());
+    mesh = await Mesh.start({ identity: opts.identity, name: opts.name, dir: opts.dir, app: installedVersion(), ...(opts.bootstrap ? { bootstrap: opts.bootstrap } : {}), ...(opts.host ? { host: opts.host } : {}), ...(opts.timing ? { timing: opts.timing } : {}), ...(mailbox ? { mailbox } : {}) });
   } catch (err) {
     unlock();
     throw err;
@@ -105,14 +120,21 @@ export async function startNetwork(opts: NetworkOptions): Promise<NetworkService
   };
   let stopped = false;
   mesh.on('change', push);
+  // A team task a message names, by this Mac's own key (core/team/mentions.ts).
+  const local = <M extends { readonly text: string }>(m: M): M => {
+    const text = localMentions(m.text, store.getState().board.issues);
+    return text === m.text ? m : { ...m, text };
+  };
   mesh.on('message', (message) => {
-    store.dispatch({ type: 'net_message', message });
+    store.dispatch({ type: 'net_message', message: local(message) });
     if (store.getState().attention.shown.includes(message.conversation)) mesh.markRead(message.conversation);
   });
+  mesh.on('unsent', (conversation, id) => store.dispatch({ type: 'net_unsent', conversation, id }));
+  mesh.on('cleared', (conversation) => store.dispatch({ type: 'net_cleared', conversation }));
   const offAction = store.onAction((action) => {
     if (action.type === 'attention') readShown();
   });
-  store.dispatch({ type: 'net_messages', messages: mesh.recent() });
+  store.dispatch({ type: 'net_messages', messages: Object.fromEntries(Object.entries(mesh.recent()).map(([c, list]) => [c, list.map((m) => local(m))])) });
   store.dispatch({ type: 'net_summary', summary: mesh.summary() });
   readShown();
   const service: NetworkService = {
@@ -143,6 +165,11 @@ export function attachNetwork(session: object, service: NetworkService): void {
 export function detachNetwork(session: object): void {
   if (!services.delete(session)) return;
   for (const fn of watchers.get(session) ?? []) fn(undefined);
+}
+
+/** Quitting: mail what still waits for friends while every outbox is still running (BLG-272). */
+export async function leaveNetwork(session: object): Promise<void> {
+  await services.get(session)?.mesh.leaving();
 }
 
 /** Hear this session's network come up and go down (now, and on every change). The gateway sends tasks over it. */
@@ -211,6 +238,8 @@ function launch(host: NetworkHost): Launch {
       stopped = true;
       const service = await ready;
       if (!service) return;
+      // Before anything stops: what friends haven't taken goes to their mailboxes (BLG-272).
+      await service.mesh.leaving();
       detachNetwork(host.session);
       await service.stop();
     },

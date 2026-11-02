@@ -1,0 +1,163 @@
+/*
+ * A side question (/btw) above the box you type in: a small card of its own, in a soft peach so it
+ * reads as "beside the chat", never part of it. No glow; a hairline in its colour and a quiet lift.
+ */
+
+.card {
+  --btw: #e0975f;
+  margin: 0 6px 8px;
+  border-radius: var(--radius-l);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--btw) 8%, var(--bg-raised)), var(--bg-raised) 56px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--btw) 30%, transparent),
+    0 6px 20px -10px rgba(0, 0, 0, 0.18);
+  animation: rise var(--dur) var(--ease-out);
+  overflow: hidden;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 8px 0 10px;
+  font-size: 0.82rem;
+}
+.tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--btw) 15%, transparent);
+  color: color-mix(in srgb, var(--btw) 68%, var(--text));
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.thinking .tag :global(svg) {
+  animation: twinkle 1.4s ease-in-out infinite;
+}
+@keyframes twinkle {
+  50% {
+    opacity: 0.4;
+    transform: rotate(12deg) scale(0.9);
+  }
+}
+.question {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.acts {
+  display: flex;
+  flex: none;
+  gap: 1px;
+}
+.act {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+.act:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.body {
+  max-height: min(260px, 38vh);
+  overflow-y: auto;
+  padding: 6px 14px 2px;
+  line-height: 1.5;
+}
+.answer > :first-child {
+  margin-top: 0;
+}
+.answer > :last-child {
+  margin-bottom: 0;
+}
+/* While Claude writes: a soft caret after the last word. */
+.writing > :last-child::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--btw) 75%, var(--text));
+  vertical-align: middle;
+  animation: breathe 1s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+}
+.shimmer {
+  display: inline-block;
+  padding: 2px 0 4px;
+  background: linear-gradient(90deg, var(--text-3) 0%, var(--text) 50%, var(--text-3) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  color: var(--danger, #d0605e);
+}
+.retry {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--btw) 72%, var(--text));
+}
+.retry:hover {
+  text-decoration: underline;
+}
+.foot {
+  padding: 4px 14px 8px;
+  color: var(--text-3);
+  font-size: 0.76rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .thinking .tag :global(svg),
+  .writing > :last-child::after,
+  .shimmer {
+    animation: none;
+  }
+  .shimmer {
+    color: var(--text-2);
+    background: none;
+  }
+}
+:root[data-motion='reduce'] .card,
+:root[data-motion='reduce'] .thinking .tag :global(svg),
+:root[data-motion='reduce'] .writing > :last-child::after,
+:root[data-motion='reduce'] .shimmer {
+  animation: none;
+}

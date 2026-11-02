@@ -5,7 +5,7 @@ import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import s from './ask.module.css';
 
-const HINT = 'A worktree from the latest origin, with this conversation; Claude goes on there';
+const HINT = 'This chat becomes a worktree from the latest origin; your agent goes on in it';
 
 /** "Continue in New Worktree…": the way out of a questions-only chat (opens its sheet). */
 export function ContinueButton({ wsId, className, variant = 'primary' }: { wsId: string; className?: string; variant?: 'primary' | 'plain' }) {
@@ -32,7 +32,7 @@ export function AskBanner({ wsId }: { wsId: string }) {
       <div className={s.banner} role="note" aria-label="Questions only">
         <Icon name="eye" size={13} className={s.icon} />
         <span className={s.text}>
-          <span className={s.lead}>Questions only</span> — Claude won’t change anything in main. Ask for a change and it moves to a new worktree.
+          <span className={s.lead}>Questions only</span> — your agent won’t change anything in main. Ask for a change and this chat becomes a worktree.
         </span>
         <ContinueButton wsId={wsId} variant="plain" className={s.button} />
       </div>
@@ -47,16 +47,16 @@ export function AskBanner({ wsId }: { wsId: string }) {
 function SyncBanner({ running }: { running: boolean }) {
   return (
     <div className={s.wrap}>
-      <div className={s.banner} role="note" aria-label={running ? 'Claude is updating main' : 'Updating main'}>
+      <div className={s.banner} role="note" aria-label={running ? 'Your agent is updating main' : 'Updating main'}>
         {running ? <Dot tone="claude" live /> : <Icon name="download" size={13} className={s.icon} />}
         <span className={s.text}>
           {running ? (
             <>
-              <span className={s.lead}>Claude is updating main</span> — it may only sync git here (fetch, merge or rebase, stash, resolve conflicts). It keeps your changes and never pushes.
+              <span className={s.lead}>Your agent is updating main</span> — it may only sync git here (fetch, merge or rebase, stash, resolve conflicts). It keeps your changes and never pushes.
             </>
           ) : (
             <>
-              <span className={s.lead}>Updating main</span> — Claude’s update run is over; from here on this chat is questions only.
+              <span className={s.lead}>Updating main</span> — your agent’s update run is over; from here on this chat is questions only.
             </>
           )}
         </span>

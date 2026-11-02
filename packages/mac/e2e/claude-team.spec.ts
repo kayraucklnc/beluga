@@ -72,11 +72,9 @@ test('a team of agents shows its members, its messages, and messages in transcri
   await team.getByRole('button', { name: /^Write the pricing page/ }).click();
   await expect(page.getByRole('log', { name: 'Sub-agent Write the pricing page' }).locator('[data-received-message]')).toContainText('Message from critic');
 
-  // The lead's transcript says whom it messaged, by name: the session opens its folder's chat, whose strip opens it.
+  // The lead's transcript says whom it messaged, by name (in a main folder, the session opens as its transcript).
   await sidebar(page).getByRole('button', { name: /^Activity/ }).click();
-  await session.getByRole('button', { name: /^Ship the pricing page.*Open Chat/ }).click();
-  const strip = page.getByRole('region', { name: 'Claude Code in this folder' });
-  await strip.getByRole('button', { name: /Ship the pricing page/ }).click();
+  await session.getByRole('button', { name: /^Ship the pricing page.*Open/ }).click();
   await expect(page.getByRole('log', { name: 'Claude Code session Ship the pricing page' })).toContainText('→ sent to critic: Check the copy for jargon');
 
   // Done: both answer, so they stop counting as running for the specs after this one.

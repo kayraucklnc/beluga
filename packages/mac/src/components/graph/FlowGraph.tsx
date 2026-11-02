@@ -16,7 +16,7 @@ import {
 import type { Graph, GraphDirection } from '@beluga/shared/graph-spec.js';
 import { IconButton } from '../ui.js';
 import { reducedMotion, useDocTheme } from '../markdown/use-doc-theme.js';
-import { type ElkOutput, type Focus, INLINE_MAX_HEIGHT, type Placed, type Route, SIMPLEX_MAX_EDGES, type Size, bestLayout, elkGraph, handleSides, inlineAspect, neighborhood, nodeBoxes, parentsFirst, placeLabels, placesOf, routesOf, stepFocus, turned } from './graph-model.js';
+import { type ElkOutput, type Focus, INLINE_MAX_HEIGHT, type Placed, type Route, SIMPLEX_MAX_EDGES, type Size, backEdges, bestLayout, elkGraph, handleSides, inlineAspect, neighborhood, nodeBoxes, parentsFirst, placeLabels, placesOf, routesOf, stepFocus, turned } from './graph-model.js';
 import { cachedLayout, rememberLayout } from './layout-cache.js';
 import { layout } from './layout.js';
 import { useSharpZoom } from './sharp-zoom.js';
@@ -49,6 +49,11 @@ export interface FlowGraphProps {
   /** Nodes stand for something that opens (a task): the details panel's main button, and double-click. */
   readonly onOpen?: (nodeId: string) => void;
   readonly openLabel?: string;
+  /**
+   * What the layout depends on (its nodes and lines, not their statuses): while it stays the same,
+   * a new graph (a CI run moving along) updates the drawing in place instead of laying it out again.
+   */
+  readonly shapeKey?: string;
 }
 
 /** A fresh canvas for each graph (Claude rewrote the block, the file changed): nothing carries over. */
@@ -63,7 +68,7 @@ const keyOf = (graph: Graph): number => {
 export default function FlowGraph(props: FlowGraphProps) {
   return (
     <ReactFlowProvider>
-      <Canvas key={keyOf(props.graph)} {...props} />
+      <Canvas key={props.shapeKey ?? keyOf(props.graph)} {...props} />
     </ReactFlowProvider>
   );
 }
@@ -154,6 +159,15 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
   };
   const frame = (ms: number): void => (stepRef.current >= 0 ? frameStep(stepRef.current, ms) : frameAll(ms));
 
+  // The same shape with new words or statuses (shapeKey): the nodes take them where they are.
+  const first = useRef(graph);
+  useEffect(() => {
+    if (first.current === graph) return;
+    first.current = graph;
+    const by = new Map(graph.nodes.map((n) => [n.id, n]));
+    setNodes((now) => now.map((n) => (by.has(n.id) ? { ...n, data: { ...n.data, node: by.get(n.id)! } } : n)));
+  }, [graph]);
+
   // Shown from the cache: frame it once React Flow knows the canvas, and size the card.
   useEffect(() => {
     if (!cached) return;
@@ -190,8 +204,8 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
       const dir = pick.direction;
       if (dir !== start) setDirection(dir);
       const places = placesOf(out);
-      // Down, ELK leaves labels to us: each finds a free spot on its line.
-      const lines = placeLabels(routesOf(out), new Map(graph.edges.flatMap((e) => (e.label ? [[e.id, e.label] as const] : []))), nodeBoxes(out));
+      // Labels ELK left alone find a free spot on their line.
+      const lines = placeLabels(routesOf(out, backEdges(graph)), new Map(graph.edges.flatMap((e) => (e.label ? [[e.id, e.label] as const] : []))), nodeBoxes(out));
       setRoutes(lines);
       setMoved(new Set());
       if (out.width && out.height) {
@@ -354,8 +368,13 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         zoomOnScroll={false}
         panOnScroll={!inline}
         preventScrolling={!inline}
+        // React Flow's Space-to-pan listens on the whole window and swallows Space there: inline (in a
+        // chat or a document) Space scrolls the page; dragging still pans.
+        panActivationKeyCode={inline ? null : 'Space'}
         zoomOnPinch
         panOnDrag
+        // Nothing in a graph is deleted by a key (React Flow listens for Backspace on the whole window).
+        deleteKeyCode={null}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} className={g.dots} />
         {!inline ? <MiniMap pannable zoomable className={g.minimap} nodeClassName={(n) => (n.type === 'group' ? g.miniGroup! : g.miniNode!)} /> : null}

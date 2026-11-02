@@ -4,7 +4,8 @@ import { cursorFor } from '../shared/templates-text.js';
 import { MOUSE_OFF, MOUSE_ON } from './tty/codes.js';
 import type { MenuContext } from './menu-actions.js';
 import type { MenuKind } from './menus.js';
-import { TUNNEL_ORDER, type SettingsSection } from './settings-menus.js';
+import { agentPicker } from '../shared/agent-picker.js';
+import { TUNNEL_ORDER, type SettingsSection, myAgentPicker } from './settings-menus.js';
 import { joinArgs } from '../shared/shells.js';
 import type { WorkspaceAction } from './workspace-models.js';
 import { NOTICE_FILTERS } from './notice-models.js';
@@ -84,9 +85,23 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
     return true;
   }
   if (id.startsWith('model:') && menu.kind === 'model') {
-    void bench.setModel(menu.channel, id.slice('model:'.length));
+    const model = id.slice('model:'.length);
+    const mine = latest.prefs.defaultAgent;
+    // New conversations on an agent other than Claude: the model goes with that agent (Settings' model is Claude's).
+    if (!menu.channel && mine && mine.runtime !== 'claude') setPrefs({ defaultAgent: { runtime: mine.runtime, label: mine.label, ...(model ? { model } : {}) } });
+    else void bench.setModel(menu.channel, model);
     return true;
   }
+  if (id.startsWith('agent:') && menu.kind === 'model' && menu.channel) {
+    const [runtime = '', ...rest] = id.slice('agent:'.length).split(':');
+    const model = rest.join(':');
+    const group = myAgentPicker(latest, menu.channel).groups.find((g) => g.runtime === runtime && g.available);
+    // A local endpoint that isn't answering stays where it is (its row says why).
+    if (group?.models.find((m) => m.value === model)?.why) return true;
+    if (group) void bench.setAgent(menu.channel, group.isDefault && !model ? null : { runtime, label: group.label, ...(model ? { model } : {}) });
+    return true;
+  }
+  if (id.startsWith('runtime:') && menu.kind === 'model') return true;
   if (id.startsWith('trust:') && menu.kind === 'person') {
     const peer = latest.peers[menu.index];
     const level = id.slice('trust:'.length) as TrustLevel;
@@ -141,7 +156,7 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
   if (id.startsWith('rws:') && menu.kind === 'remote_ws') {
     patchUi({ focus: 'chat', buffer: '', cursor: 0, pending: { kind: 'remote', projectId: id.slice(4), peerId: menu.peerId } });
     const peer = latest.peers.find((p) => p.peerId === menu.peerId);
-    toast(`Describe the task for ${peer?.name ?? 'their'} Claude in ${id.slice(4)}, then Enter`);
+    toast(`Describe the task for ${peer ? `${peer.name}'s` : 'their'} agent in ${id.slice(4)}, then Enter`);
     return true;
   }
   const wsId = menu.kind === 'pr' ? menu.id : undefined;

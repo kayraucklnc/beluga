@@ -8,10 +8,11 @@ import { overlaps, planView, tidyOffer, waves } from '../src/core/plans/progress
 import { PlansWork, type PlansWorkDeps } from '../src/core/plans/work.js';
 import type { CombineResult } from '../src/workspaces/git.js';
 import type { PlanGit } from '../src/core/plans/plan-git.js';
-import type { IssuePr } from '../src/core/board/model.js';
+import type { PlanPr } from '../src/core/plans/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
+import { planOf } from '../src/core/plans/owner.js';
 import { PLAN_TOOL_NAMES, createPlanToolDefs, milestoneInput, toOps } from '../src/agent/plan-tools.js';
 import { decideTool } from '../src/agent/policy.js';
 import { createMockBackend } from '../src/agent/mock.js';
@@ -22,12 +23,13 @@ const ws = (id: string, projectId: string, name: string, kind: Workspace['kind']
 const project = (id: string, name: string, workspaces: Workspace[] = []): Project => ({ id, name, root: `/tmp/${name}`, base: 'main', workspaces });
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titlePlan?: (goal: string) => Promise<string | undefined>; workers?: 'milestone' | 'task'; forYou?: PlansWorkDeps['forYou']; cancel?: PlansWorkDeps['cancel'] } = {}) {
+function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titlePlan?: (goal: string) => Promise<string | undefined>; workers?: 'milestone' | 'task'; forYou?: PlansWorkDeps['forYou']; cancel?: PlansWorkDeps['cancel']; rescueMs?: number; now?: () => number } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('main', 'api', 'bob-api', 'chat', { askOnly: true } as Partial<Workspace>)])] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
   const asked: Array<{ prompt: string; channel: string; echo: boolean }> = [];
   const made: Array<{ name: string; base?: string; quiet?: boolean }> = [];
+  const archived: string[] = [];
   let n = 0;
   const add = (w: Workspace): void => {
     store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => (p.id === w.projectId ? { ...p, workspaces: [...p.workspaces, w] } : p)) });
@@ -52,17 +54,22 @@ function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titleP
     renameChat: async (id: string, name: string) => {
       store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => ({ ...p, workspaces: p.workspaces.map((w) => (w.id === id ? { ...w, name } : w)) })) });
     },
+    archive: async (id: string) => {
+      archived.push(id);
+      store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => ({ ...p, workspaces: p.workspaces.map((w) => (w.id === id ? { ...w, archived: true } : w)) })) });
+      return true;
+    },
   } as unknown as WorkspaceController;
   const board = new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name });
   const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push({ prompt, channel, echo: true }) });
   const plans = new Plans({ store, dir: null });
   const intents: unknown[] = [];
-  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => void asked.push({ prompt, channel, echo }), intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.workers ? { workers: opts.workers } : {}), ...(opts.forYou ? { forYou: opts.forYou } : {}), ...(opts.cancel ? { cancel: opts.cancel } : {}) });
+  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => `ask-${asked.push({ prompt, channel, echo })}`, intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.workers ? { workers: opts.workers } : {}), ...(opts.forYou ? { forYou: opts.forYou } : {}), ...(opts.cancel ? { cancel: opts.cancel } : {}), ...(opts.rescueMs !== undefined ? { rescueMs: opts.rescueMs } : {}), ...(opts.now ? { now: opts.now } : {}) });
   const claude = boardWork.myClaude();
   const me = boardWork.me();
   /** Claude in a worktree finishes its run, or works. */
   const run = (channel: string, status: 'started' | 'done', id = `r-${Math.random()}`): void => store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: id, requester: 'p-me', event: status, text: '', ts: Date.now(), channel });
-  return { store, board, boardWork, plans, work, asked, made, intents, claude, me, run, add };
+  return { store, board, boardWork, plans, work, asked, made, archived, intents, claude, me, run, add, controller };
 }
 
 describe('a new plan’s name (KLD-28)', () => {
@@ -189,6 +196,78 @@ describe('writing a plan', () => {
   });
 });
 
+describe('a plan on the board: the plan, its milestones as epics, their tasks under them (BLG-471)', () => {
+  const approved = () => {
+    const t = setup();
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main' }, t.claude);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(BODY);
+    t.work.approve(plan.id);
+    const get = (id: string) => t.board.need(id);
+    const byTitle = (title: string) => t.store.getState().board.issues.find((i) => i.title === title)!;
+    return { ...t, plan, get, byTitle, epics: () => t.plans.need(plan.id).epics! };
+  };
+
+  it('approving makes an epic for the plan and one per milestone under it, with each milestone’s tasks under that', () => {
+    const t = approved();
+    const e = t.epics();
+    expect(t.get(e.plan)).toMatchObject({ title: 'Payments', origin: 'plan', status: 'todo' });
+    expect(t.get(e.plan).plan).toBeUndefined();
+    expect(t.get(e.milestones.safe!)).toMatchObject({ title: 'Safe payments', parent: e.plan, status: 'todo' });
+    // A milestone that waits on another starts in the Backlog, like its tasks.
+    expect(t.get(e.milestones.refunds!)).toMatchObject({ title: 'Refunds', parent: e.plan, status: 'backlog' });
+    expect(t.get(e.milestones.refunds!).brief.context).toContain('A refund works end to end');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) expect(t.byTitle(title).parent).toBe(e.milestones.safe);
+    for (const title of ['Refund endpoint', 'Live keys']) expect(t.byTitle(title).parent).toBe(e.milestones.refunds);
+  });
+
+  it('changing the plan keeps it true: a renamed milestone, a moved task, a sub-task under its own parent, a milestone taken out', () => {
+    const t = approved();
+    const e = t.epics();
+    t.work.edit(t.plan.id, [
+      { op: 'update_milestone', id: 'safe', title: 'Safe payments, everywhere' },
+      { op: 'move_task', id: 'receipts', milestone: 'refunds' },
+      { op: 'add_task', milestone: 'safe', task: { id: 'sub', title: 'Sub', parent: 'auth' } },
+    ]);
+    expect(t.get(e.milestones.safe!).title).toBe('Safe payments, everywhere');
+    expect(t.byTitle('Receipts once').parent).toBe(e.milestones.refunds);
+    expect(t.byTitle('Sub').parent).toBe(t.byTitle('Auth on payment routes').id);
+    // The same epics: nothing made twice.
+    expect(t.epics()).toEqual(e);
+    t.work.edit(t.plan.id, [{ op: 'remove_milestone', id: 'refunds' }]);
+    expect(t.get(e.milestones.refunds!).status).toBe('canceled');
+    expect(t.epics().milestones.refunds).toBeUndefined();
+  });
+
+  it('the epics follow their tasks: under way, merged into the plan, done', () => {
+    const t = approved();
+    const e = t.epics();
+    t.board.update(t.byTitle('Auth on payment routes').id, { status: 'in_progress' }, t.claude);
+    expect(t.get(e.milestones.safe!).status).toBe('in_progress');
+    expect(t.get(e.plan).status).toBe('in_progress');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(t.byTitle(title).id, { status: 'in_plan' }, t.claude);
+    expect(t.get(e.milestones.safe!).status).toBe('in_plan');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(t.byTitle(title).id, { status: 'done' }, t.claude);
+    expect(t.get(e.milestones.safe!).status).toBe('done');
+  });
+
+  it('a plan from before epics gets them once; deleting the plan cancels them and lets its tasks out', async () => {
+    const t = approved();
+    const e = t.epics();
+    // As if it was approved before epics existed.
+    for (const id of [...Object.values(e.milestones), e.plan]) t.board.remove(id);
+    t.plans.setEpics(t.plan.id, { plan: 'gone', milestones: {} });
+    const fresh = new PlansWork({ store: t.store, plans: t.plans, board: t.boardWork, askClaude: () => undefined, intend: () => undefined, delayMs: 0, git: null });
+    await tick(5);
+    const again = t.plans.need(t.plan.id).epics!;
+    expect(again.plan).not.toBe('gone');
+    expect(t.byTitle('Refund endpoint').parent).toBe(again.milestones.refunds);
+    fresh.remove(t.plan.id);
+    expect(t.get(again.plan).status).toBe('canceled');
+    expect(t.byTitle('Refund endpoint').parent).toBeUndefined();
+    fresh.stop();
+  });
+});
+
 describe('a draft stays off the board until approved', () => {
   it('Claude writes the draft; the board has nothing; Approve puts it all there', () => {
     const { store, plans, work, claude } = setup();
@@ -198,10 +277,14 @@ describe('a draft stays off the board until approved', () => {
     expect(store.getState().board.issues).toHaveLength(0);
     work.approve(plan.id);
     const issues = store.getState().board.issues;
-    expect(issues).toHaveLength(5);
+    // Its 5 tasks, and its shape: an epic for the plan, one for each of its 2 milestones.
+    expect(issues.filter((i) => i.plan)).toHaveLength(5);
+    expect(issues).toHaveLength(8);
     const byTitle = (t: string) => issues.find((i) => i.title === t)!;
     // The milestone being worked on is Ready (todo); later ones wait in the Backlog.
-    expect(byTitle('Auth on payment routes')).toMatchObject({ status: 'todo', origin: 'plan', estimate: 3, plan: { id: plan.id, milestone: 'safe', task: 'auth' }, assignee: { kind: 'claude' } });
+    expect(byTitle('Auth on payment routes')).toMatchObject({ status: 'todo', origin: 'plan', estimate: 3, plan: { id: plan.id, milestone: 'safe', task: 'auth' } });
+    // Claude's plan tasks are no one's (a task is for a person, BLG-278); yours are yours.
+    expect(byTitle('Auth on payment routes').assignee).toBeUndefined();
     expect(byTitle('Refund endpoint').status).toBe('backlog');
     expect(byTitle('Live keys').assignee).toMatchObject({ kind: 'person', id: 'p-me' });
     expect(byTitle('Receipts once').blockedBy).toEqual([byTitle('Idempotent webhooks').id]);
@@ -245,7 +328,7 @@ describe('a draft stays off the board until approved', () => {
     const plan = plans.create({ projectId: 'api', home: 'ws:main' }, claude);
     work.forRun('ws:main', 'p-me')!.tools!.write({ title: 'P', goal: '', milestones: [{ title: 'M', tasks: [{ title: 'Old task', issue: old.key } as never, { title: 'New' }] }] });
     work.approve(plan.id);
-    expect(store.getState().board.issues).toHaveLength(2);
+    expect(store.getState().board.issues.filter((i) => i.plan)).toHaveLength(2);
     expect(board.need(old.id).plan?.id).toBe(plan.id);
     expect(board.need(old.id).status).toBe('in_progress');
   });
@@ -309,27 +392,76 @@ describe('running a plan', () => {
     expect(issue(t, 'Receipts once').status).toBe('in_progress');
   });
 
-  it('finished tasks: Claude is asked to check the criteria; gated waits for you; passing opens the next milestone', async () => {
+  it('finished tasks: a checker of its own checks the criteria; gated waits for you; passing opens the next milestone', async () => {
     const t = await running('gated');
     for (const title of ['Auth on payment routes', 'Idempotent webhooks']) t.board.update(issue(t, title).id, { status: 'done' }, t.me);
     await tick(5);
     t.board.update(issue(t, 'Receipts once').id, { status: 'in_review' }, t.claude);
     await tick(5);
-    const check = t.asked.find((a) => a.channel === 'ws:main' && a.prompt.includes('Check its pass criteria'));
+    // Not the head Claude's conversation: one made for this milestone's check, folded into the plan.
+    const checker = t.plans.need(t.plan.id).runs.safe?.checker;
+    expect(checker).toBeDefined();
+    expect(t.asked.some((a) => a.channel === 'ws:main' && a.prompt.includes('Check its pass criteria'))).toBe(false);
+    const check = t.asked.find((a) => a.channel === `ws:${checker}` && a.prompt.includes('Check its pass criteria'));
     expect(check?.echo).toBe(false);
     expect(check?.prompt).toContain('401 without a session');
+    expect(check?.prompt).toContain('You are the checker of milestone');
     expect(planView(t.plans.need(t.plan.id), t.store.getState().board).current?.state).toBe('checking');
     expect(planView(t.plans.need(t.plan.id), t.store.getState().board).next.kind).toBe('checking');
-    t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', '1 ✓ 2 ✓');
+    // The checker reads the plan and records its verdict: nothing else.
+    const run = t.work.forRun(`ws:${checker}`, 'p-me')!;
+    expect(run.tools!.only).toEqual(['plan_get', 'plan_gate']);
+    expect(createPlanToolDefs(run.tools!).map((d) => d.name)).toEqual(['plan_get', 'plan_gate']);
+    expect(() => run.tools!.update([], 'no')).toThrow(/only plan_get and plan_gate/);
+    expect(() => run.tools!.gate('refunds', 'pass', 'x')).toThrow(/only/);
+    run.tools!.gate('safe', 'pass', '1 ✓ 2 ✓');
     await tick(5);
     const v = planView(t.plans.need(t.plan.id), t.store.getState().board);
     expect(v.current?.milestone.id).toBe('safe');
     expect(v.next.kind).toBe('pass');
     t.work.pass(t.plan.id, 'safe');
     await tick(5);
+    // Its checker is done: archived.
+    expect(t.archived).toEqual([checker]);
     expect(issue(t, 'Refund endpoint').status).toBe('in_progress');
     // "Live keys" is yours: it waits for you.
     expect(issue(t, 'Live keys').status).toBe('todo');
+  });
+
+  it('the head Claude’s conversation stays free: a failed check reaches it with the notes, to add the fix tasks', async () => {
+    const t = await running('autopilot');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(issue(t, title).id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    const checker = t.plans.need(t.plan.id).runs.safe!.checker!;
+    expect(t.store.getState().log.some((l) => l.channel === 'ws:main' && l.type === 'system' && /a Claude of its own is checking/.test(l.text))).toBe(true);
+    // Folded into the plan, like its home and its worktrees.
+    expect(planOf(t.store.getState(), checker)?.id).toBe(t.plan.id);
+    const said = t.work.forRun(`ws:${checker}`, 'p-me')!.tools!.gate('safe', 'fail', '2. ✗ Retries aren’t idempotent. Fix: key webhook writes by event id.');
+    expect(said).toMatch(/adds the fix tasks/);
+    const head = t.asked.filter((a) => a.channel === 'ws:main').at(-1)!;
+    expect(head.prompt).toContain('The checker of milestone “Safe payments” failed it');
+    expect(head.prompt).toContain('key webhook writes by event id');
+    expect(head.prompt).toMatch(/Don't stop to ask the user/);
+  });
+
+  it('a check that ends without a verdict is asked once more, then left to you (Autopilot never waits silently)', async () => {
+    const t = await running('autopilot');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(issue(t, title).id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    const channel = `ws:${t.plans.need(t.plan.id).runs.safe!.checker!}`;
+    const first = t.asked.findIndex((a) => a.channel === channel);
+    t.run(channel, 'started', `ask-${first + 1}`);
+    t.run(channel, 'done', `ask-${first + 1}`);
+    await tick(5);
+    const nudge = t.asked.findIndex((a) => a.channel === channel && a.prompt.includes('ended without a verdict'));
+    expect(nudge).toBeGreaterThan(first);
+    expect(planView(t.plans.need(t.plan.id), t.store.getState().board).current?.state).toBe('checking');
+    t.run(channel, 'started', `ask-${nudge + 1}`);
+    t.run(channel, 'done', `ask-${nudge + 1}`);
+    await tick(5);
+    // Not asked a third time: the plan says so.
+    expect(t.asked.filter((a) => a.channel === channel && a.prompt.includes('ended without a verdict'))).toHaveLength(1);
+    expect(t.plans.need(t.plan.id).activity.at(-1)?.text).toMatch(/ended twice without a verdict/);
   });
 
   it.each(['step', 'gated', 'autopilot'] as const)('%s: while the head Claude checks, the plan waits on Claude; it’s yours to pass only once the check is back (KLD-22)', async (autonomy) => {
@@ -351,7 +483,7 @@ describe('running a plan', () => {
     await tick(5);
     t.work.setAutonomy(t.plan.id, 'autopilot');
     const kinds = t.plans.need(t.plan.id).activity.map((e) => `${e.kind}: ${e.text}`);
-    expect(kinds.filter((k) => k.startsWith('started:'))).toEqual([expect.stringMatching(/^started: started one Claude for “Safe payments” \([A-Z]+-\d+, [A-Z]+-\d+, [A-Z]+-\d+\) in a new worktree$/)]);
+    expect(kinds.filter((k) => k.startsWith('started:'))).toEqual([expect.stringMatching(/^started: started one agent for “Safe payments” \([A-Z]+-\d+, [A-Z]+-\d+, [A-Z]+-\d+\) in a new worktree$/)]);
     expect(kinds).toContainEqual(expect.stringMatching(/^finished: finished [A-Z]+-\d+ “Idempotent webhooks”$/));
     expect(kinds.at(-1)).toBe('autonomy: switched the plan to Autopilot');
   });
@@ -499,7 +631,9 @@ describe('review fixes', () => {
     expect(made).toBe(5);
     fail = false;
     t.work.approve(plan.id);
-    expect(t.store.getState().board.issues).toHaveLength(5);
+    expect(t.store.getState().board.issues.filter((i) => i.plan)).toHaveLength(5);
+    // And its epics once: the plan's and its 2 milestones'.
+    expect(t.store.getState().board.issues).toHaveLength(8);
   });
 
   it('Claude can’t start tasks on a step-by-step or paused plan; you can', async () => {
@@ -529,7 +663,7 @@ describe('review fixes', () => {
     t.work.approve(plan.id);
     await tick(10);
     await tick(10);
-    expect(t.store.getState().board.issues.filter((i) => i.status === 'in_progress')).toHaveLength(1);
+    expect(t.store.getState().board.issues.filter((i) => i.plan && i.status === 'in_progress')).toHaveLength(1);
   });
 
   it('the last milestone passing asks for the recap; a check can be asked again', async () => {
@@ -760,7 +894,7 @@ describe('a task that builds on several unfinished tasks starts from their combi
     const before = t.made.length;
     await t.review('A', 'B');
     expect(t.made).toHaveLength(before);
-    expect(t.task('two')).toMatchObject({ state: 'running', step: `Combining ${t.issue('A').key} and ${t.issue('B').key}: Claude is fixing a conflict in shared.txt` });
+    expect(t.task('two')).toMatchObject({ state: 'running', step: `Combining ${t.issue('A').key} and ${t.issue('B').key}: the agent is fixing a conflict in shared.txt` });
     const fixup = t.asked.filter((a) => a.channel === 'ws:main' && a.prompt.includes('/tmp/.bases/p/two-base'));
     expect(fixup).toHaveLength(1);
     expect(fixup[0]!.prompt).toContain('shared.txt');
@@ -803,11 +937,12 @@ describe('a task that builds on several unfinished tasks starts from their combi
 describe('the plan’s branch: tasks start from it, milestones merge into it, one PR at the end', () => {
   /** A fake of git and GitHub: what was asked, and what it answers. */
   function fakeGit() {
-    const log = { ensured: [] as string[], merged: [] as Array<{ into: string; branches: readonly string[] }>, retired: [] as Array<{ ws: string; branch?: string }> };
+    const log = { pushed: [] as string[], ensured: [] as string[], merged: [] as Array<{ into: string; branches: readonly string[] }>, retired: [] as Array<{ ws: string; branch?: string }> };
     const existing = new Set<string>();
     const inMain = new Set<string>();
-    let pr: IssuePr | undefined;
+    let pr: PlanPr | undefined;
     let conflict: ((branches: readonly string[]) => CombineResult | undefined) | undefined;
+    let mergeError: string | undefined;
     const git: PlanGit = {
       ensureBranch: async (_p, b) => {
         log.ensured.push(b);
@@ -823,10 +958,15 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
       retire: async (_p, ws, branch) => void log.retired.push({ ws: ws ?? '', ...(branch ? { branch } : {}) }),
       findPr: async () => pr,
       openPr: async (_p, _branch, title) => (pr = { number: 7, url: 'https://github.com/bob/api/pull/7', state: 'OPEN', title, draft: false, checks: 'pending' }),
-      mergePr: async () => void (pr = { ...pr!, state: 'MERGED' }),
+      push: async (_p, b) => void log.pushed.push(b),
+      mainRef: async () => 'origin/main',
+      mergePr: async (_p, _n, opts) => {
+        if (mergeError) throw new Error(mergeError);
+        pr = opts?.auto ? { ...pr!, autoMerge: true } : { ...pr!, state: 'MERGED' };
+      },
       mergeLocal: async () => ({ ok: true }),
     };
-    return { git, log, existing, inMain, setPr: (p: IssuePr | undefined) => (pr = p), setConflict: (c: typeof conflict) => (conflict = c) };
+    return { git, log, existing, inMain, setPr: (p: PlanPr | undefined) => (pr = p), setConflict: (c: typeof conflict) => (conflict = c), failMerge: (why: string | undefined) => (mergeError = why) };
   }
 
   async function running(autonomy: 'gated' | 'autopilot' = 'gated', body: BodyInput = BODY) {
@@ -1012,6 +1152,70 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.view().next.kind).toBe('done');
   });
 
+  it('a milestone whose merge fails (not a conflict) keeps why on it until it’s passed again', async () => {
+    const t = await running();
+    t.setConflict(() => {
+      throw new Error('fatal: plan/payments is checked out with uncommitted changes\nmore');
+    });
+    await t.passSafe();
+    const run = () => t.plans.need(t.plan.id).runs['safe'];
+    expect(run()?.passedAt).toBeUndefined();
+    expect(run()?.mergeFailed?.reason).toBe('fatal: plan/payments is checked out with uncommitted changes');
+    t.setConflict(undefined);
+    t.work.pass(t.plan.id, 'safe');
+    expect(run()?.mergeFailed).toBeUndefined();
+    await t.settle();
+    expect(run()?.passedAt).toBeDefined();
+  });
+
+  it('Merge on GitHub pushes the branch first, asks GitHub again, and says GitHub’s no in plain words', async () => {
+    const t = await running();
+    await t.passSafe();
+    await t.work.openPr(t.plan.id);
+    t.log.pushed.length = 0;
+    // GitHub says no: the reason in words, nothing shipped.
+    t.failMerge('GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)');
+    await expect(t.work.mergePr(t.plan.id)).rejects.toThrow(/approving review/);
+    expect(t.log.pushed).toEqual(['plan/payments']);
+    expect(t.plans.need(t.plan.id).shipped).toBeUndefined();
+    // Merge When Checks Pass: queued, shown as auto-merge on.
+    t.failMerge(undefined);
+    await t.work.mergePr(t.plan.id, { auto: true });
+    expect(t.plans.need(t.plan.id).pr).toMatchObject({ state: 'OPEN', autoMerge: true });
+    expect(t.plans.need(t.plan.id).shipped).toBeUndefined();
+    // Merged on GitHub meanwhile: the click finds it merged, and the plan ships.
+    t.setPr({ ...t.plans.need(t.plan.id).pr!, state: 'MERGED' });
+    await t.work.mergePr(t.plan.id);
+    expect(t.plans.need(t.plan.id).shipped).toMatchObject({ how: 'pr', number: 7 });
+  });
+
+  it('a PR that conflicts with main: Resolve Conflicts merges main into the plan’s branch, a conflict goes to the plan’s Claude, then it’s pushed', async () => {
+    const t = await running();
+    await t.passSafe();
+    await t.work.openPr(t.plan.id);
+    let fixed = false;
+    t.setConflict((branches) => (fixed || branches[0] !== 'origin/main' ? undefined : { ok: false, branch: 'plan/payments', dir: '/tmp/.bases/p/plan-payments', merging: 'origin/main', files: ['src/pay.ts'] }));
+    t.log.pushed.length = 0;
+    await t.work.bringInMain(t.plan.id);
+    expect(t.plans.need(t.plan.id).mainMerge).toMatchObject({ main: 'origin/main', conflict: { files: ['src/pay.ts'] } });
+    expect(t.asked.at(-1)?.prompt).toContain('merging origin/main into the plan\'s branch plan/payments');
+    expect(t.log.pushed).toEqual([]);
+    fixed = true;
+    await t.work.bringInMain(t.plan.id);
+    expect(t.plans.need(t.plan.id).mainMerge).toBeUndefined();
+    expect(t.log.pushed).toEqual(['plan/payments']);
+    expect(t.plans.need(t.plan.id).activity.map((e) => e.text)).toContain('merged origin/main into plan/payments');
+  });
+
+  it('a PR closed on GitHub is said at once on Merge, not merged', async () => {
+    const t = await running();
+    await t.passSafe();
+    await t.work.openPr(t.plan.id);
+    t.setPr({ ...t.plans.need(t.plan.id).pr!, state: 'CLOSED' });
+    await expect(t.work.mergePr(t.plan.id)).rejects.toThrow(/closed on GitHub/);
+    expect(t.plans.need(t.plan.id).pr?.state).toBe('CLOSED');
+  });
+
   it('a PR closed without merging leaves its tasks Merged into Plan and says so on the plan', async () => {
     const t = await running();
     await t.passSafe();
@@ -1083,5 +1287,97 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     const { ISSUE_STATUSES, STATUS_INFO } = await import('../src/core/board/model.js');
     expect(ISSUE_STATUSES.slice(3, 6)).toEqual(['in_review', 'in_plan', 'done']);
     expect(STATUS_INFO.in_plan.label).toBe('Merged into Plan');
+  });
+});
+
+describe('soak: a long plan on Autopilot reaches the end by itself, with Claudes that misbehave (BLG-473)', () => {
+  // Five milestones, two side by side at the start, each with two or three tasks.
+  const LONG: BodyInput = {
+    title: 'Long run',
+    goal: 'Ship it all',
+    milestones: [
+      { id: 'a', title: 'A', criteria: ['A works'], dependsOn: [], tasks: [{ id: 'a1', title: 'A one' }, { id: 'a2', title: 'A two', blockedBy: ['a1'] }] },
+      { id: 'b', title: 'B', criteria: ['B works'], dependsOn: [], tasks: [{ id: 'b1', title: 'B one' }, { id: 'b2', title: 'B two' }] },
+      { id: 'c', title: 'C', criteria: ['C works'], dependsOn: ['a'], tasks: [{ id: 'c1', title: 'C one' }, { id: 'c2', title: 'C two' }, { id: 'c3', title: 'C three', blockedBy: ['c1'] }] },
+      { id: 'd', title: 'D', criteria: ['D works'], dependsOn: ['b', 'c'], tasks: [{ id: 'd1', title: 'D one' }, { id: 'd2', title: 'D two' }] },
+      { id: 'e', title: 'E', criteria: ['E works'], dependsOn: ['d'], tasks: [{ id: 'e1', title: 'E one' }, { id: 'e2', title: 'E two' }] },
+    ],
+  } as BodyInput;
+
+  it('Claudes that stop after one task or never answer, checks without a verdict, and a restart: it still gets there, never left to you', async () => {
+    // A minute passes between looks; a milestone quiet for three is moved along.
+    let clock = 1_000_000;
+    const t = setup({ rescueMs: 3 * 60_000, now: () => clock });
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main', autonomy: 'autopilot' }, t.claude);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(LONG);
+    let work = t.work;
+    work.approve(plan.id);
+    await tick(5);
+
+    const sentTo = new Map<string, number>();
+    // C's Claude never answers; D's checker never records a verdict.
+    const deaf = new Set(['c']);
+    const deafChecker = new Set(['d']);
+    const checksOf = new Map<string, number>();
+    let seen = 0;
+    /** The fake Claudes answer what Beluga asked since they last looked, badly the first time. */
+    const answer = (): void => {
+      for (; seen < t.asked.length; seen++) {
+        const { prompt, channel } = t.asked[seen]!;
+        const now = t.plans.need(plan.id);
+        const milestoneOf = Object.entries(now.runs).find(([, r]) => r?.agent && `ws:${r.agent.worktree}` === channel)?.[0];
+        const checking = Object.entries(now.runs).find(([, r]) => r?.checker && `ws:${r.checker}` === channel)?.[0];
+        const finish = (id: string, all: boolean): void => {
+          const tasks = now.body!.milestones.find((m) => m.id === id)!.tasks.map((x) => t.board.need(x.issueId!)).filter((i) => i.status !== 'in_review' && i.status !== 'done' && i.status !== 'canceled');
+          for (const i of all ? tasks : tasks.slice(0, 1)) t.board.update(i.id, { status: 'in_review' }, t.claude);
+        };
+        if (milestoneOf && deaf.has(milestoneOf)) {
+          // This milestone's Claude never answers.
+        } else if (milestoneOf) {
+          // A milestone's Claude: the first time it does one task and stops; after that, all of them.
+          const n = (sentTo.get(milestoneOf) ?? 0) + 1;
+          sentTo.set(milestoneOf, n);
+          finish(milestoneOf, n > 1);
+        } else if (checking) {
+          // A checker: its first turn ends without a verdict; the next one passes it.
+          const n = (checksOf.get(checking) ?? 0) + 1;
+          checksOf.set(checking, n);
+          if (n > 1 && !deafChecker.has(checking)) work.forRun(channel, 'p-me')!.tools!.gate(checking, 'pass', 'Checked: works.');
+        } else if (channel === 'ws:main' && prompt.includes('The plan has gone quiet')) {
+          // The head Claude, asked to decide: it does what's stuck itself (the work, or the check).
+          const about = prompt.split('\n')[0]!;
+          for (const m of now.body!.milestones) {
+            if (!about.includes(`“${m.title}”`)) continue;
+            if (about.includes('the check of')) work.forRun('ws:main', 'p-me')!.tools!.gate(m.id, 'pass', 'Checked it myself.');
+            else finish(m.id, true);
+          }
+        }
+      }
+    };
+
+    for (let i = 0; i < 600 && t.plans.need(plan.id).status !== 'done'; i++) {
+      answer();
+      // A restart partway: everything Beluga kept in memory is gone, the plan and the board stay.
+      if (i === 40) {
+        work.stop();
+        work = new PlansWork({ store: t.store, plans: t.plans, board: t.boardWork, controller: t.controller, askClaude: (prompt, channel, echo) => `ask-${t.asked.push({ prompt, channel, echo })}`, intend: () => undefined, delayMs: 0, rescueMs: 3 * 60_000, now: () => clock });
+      }
+      clock += 60_000;
+      work.pilot.tick();
+      await tick(3);
+    }
+    work.stop();
+    const done = t.plans.need(plan.id);
+    expect(done.status).toBe('done');
+    expect(Object.values(done.runs).every((r) => r?.passedAt)).toBe(true);
+    // It had to be moved along, and was never left to you.
+    expect(done.activity.some((a) => a.text.includes(' went quiet: '))).toBe(true);
+    expect(done.activity.some((a) => a.text.startsWith('Stuck on'))).toBe(false);
+    expect(Object.values(done.rescue ?? {}).some((r) => r.yours)).toBe(false);
+    // Every rung was needed somewhere: sent on, woken, started over, asked again, a fresh checker, the head Claude.
+    const said = done.activity.map((a) => a.text).join('\n');
+    for (const rung of ['sent the Claude doing', 'woke BOB-', 'started it again', 'asked for the check of', 'to a fresh checker', 'asked the plan’s Claude to decide']) expect(said).toContain(rung);
+    // Its epics followed it: every milestone's is In Review (merged into the plan with no branch here, then done once shipped).
+    for (const id of Object.values(done.epics!.milestones)) expect(['in_review', 'in_plan', 'done']).toContain(t.board.need(id).status);
   });
 });

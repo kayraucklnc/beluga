@@ -7,6 +7,7 @@ import { Icon, type IconName } from './Icon.js';
 import { Select, type SelectEntry } from './Select.js';
 import { cx } from './ui.js';
 import s from './form.module.css';
+import { primaryKey } from '../lib/shortcuts-model.js';
 
 export { Checkbox } from './Alert.js';
 
@@ -60,6 +61,10 @@ export function FormSheet({ title, intro, icon, submitLabel, onSubmit, onCancel,
           className={s.sheet}
           style={{ width: `min(${width}px, calc(100vw - 48px))` }}
           aria-describedby={undefined}
+          // Escape in a field with its suggestions open (New Task's "@") closes them, not the sheet.
+          onEscapeKeyDown={(e) => {
+            if (document.activeElement?.getAttribute('aria-expanded') === 'true' && document.activeElement.getAttribute('aria-haspopup') === 'listbox') e.preventDefault();
+          }}
           onOpenAutoFocus={(e) => {
             // The first field gets the focus (not the close button).
             const root = e.currentTarget as HTMLElement | null;
@@ -78,7 +83,7 @@ export function FormSheet({ title, intro, icon, submitLabel, onSubmit, onCancel,
               if (!hideSubmit) void submit();
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.metaKey && !hideSubmit) {
+              if (e.key === 'Enter' && primaryKey(e) && !hideSubmit) {
                 e.preventDefault();
                 void submit();
               }

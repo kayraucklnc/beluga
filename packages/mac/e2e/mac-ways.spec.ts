@@ -46,14 +46,15 @@ test('■ Stop stops Claude here, and what was queued comes back to the box', as
 
 test('the toolbar puts what the workspace needs next up front, the rest one click away with its keys', async ({ page }) => {
   await openWorkspace(page, 'add-auth');
-  const primary = toolbar(page).locator('button[class*="primary"]');
+  // The main step of the split button (its "Other steps for this branch" half comes after it).
+  const primary = toolbar(page).locator('button[class*="primary"]').first();
   await expect(primary).toHaveText(/Merge|Commit|Create PR|PR #|Fix Checks|Solve Conflict|Run/);
   // Calm: the one thing to do next, Run, and ⋯ (no row of git icons, no terminal or ⌘K buttons).
   const tools = toolbar(page).getByRole('group', { name: 'Workspace actions' }).getByRole('button');
   expect(await tools.count()).toBeLessThanOrEqual(2);
   await expect(toolbar(page).getByRole('button', { name: /^(Show|Hide) the terminal|^Everything you can do/ })).toHaveCount(0);
   await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
-  await expect(page.getByRole('menuitem', { name: /Ask Claude to Review…/ })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /Ask Your Agent to Review…/ })).toBeVisible();
   const archive = page.getByRole('menuitem', { name: /Archive…/ });
   await expect(archive).toContainText('⌃⌘A');
   await page.keyboard.press('Escape');

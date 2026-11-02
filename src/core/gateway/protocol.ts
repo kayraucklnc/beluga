@@ -1,3 +1,4 @@
+import { AgentRef, ProviderUsage } from '../../protocol.js';
 import { z } from 'zod';
 
 /**
@@ -65,6 +66,26 @@ const json = (max: number) =>
 export const Expects = z.union([z.literal('files'), z.record(z.string(), z.unknown()).and(json(MAX_SCHEMA_CHARS))]);
 export type Expects = z.infer<typeof Expects>;
 
+/**
+ * A turn of a chaired dialogue (core/dialogues, BLG-468) riding a task: which dialogue, turn n of
+ * its cap, who chairs it, and what was said since this side last spoke, so both threads match.
+ * Declared by the chair only (never by an agent's tools): the gateway counts its asks against the
+ * dialogue's own cap instead of the per-conversation limit, and its mode keeps talk read-only.
+ */
+export const DialogueEnvelope = z.object({
+  id: z.string().regex(/^dlg_[\w-]{6,40}$/),
+  turn: z.number().int().min(1).max(10_000),
+  cap: z.number().int().min(1).max(10_000),
+  /** The chair's owner, by name (whoever started it). */
+  chair: z.string().min(1).max(80),
+  topic: z.string().min(1).max(500),
+  mode: z.enum(['talk', 'cross-reference', 'work']),
+  /** Who talks, as the chair sees them (owner unset: the chair's). */
+  participants: z.array(z.object({ agent: z.object({ runtime: z.string().max(32), model: z.string().max(64).optional(), label: z.string().max(64) }), owner: z.string().max(80).optional() })).min(2).max(4),
+  said: z.array(z.object({ name: z.string().max(100), text: z.string().max(16_000), agent: z.boolean() })).max(20).default([]),
+});
+export type DialogueEnvelope = z.infer<typeof DialogueEnvelope>;
+
 export const TaskRequest = z.object({
   t: z.literal('task_request'),
   id: TaskId,
@@ -89,6 +110,15 @@ export const TaskRequest = z.object({
   path: z.string().min(1).max(4096).optional(),
   /** Who asked: the person's Claude, or the person from their screen. */
   by: z.enum(['agent', 'person']).default('agent'),
+  /** The channel you both are in that it was asked from (its card is there; otherwise it's in your DM). */
+  chat: z.string().regex(/^group:[\w-]{1,80}$/).optional(),
+  /** A turn of a chaired dialogue (an older Mac drops it and runs it as a plain ask). */
+  dialogue: DialogueEnvelope.optional(),
+  /**
+   * ask: which of their agents (one their card lists, BLG-503). Their Mac runs it there when it's set
+   * up, else on their default agent and says so; an older Mac drops it and runs its default.
+   */
+  agent: AgentRef.optional(),
   ts: z.number().int().min(0),
 });
 export type TaskRequest = z.infer<typeof TaskRequest>;
@@ -124,11 +154,21 @@ export const TaskResult = z.object({
   files: z.array(ResultFile).max(MAX_FILES).default([]),
   /** The steps it took (short lines). */
   log: z.array(z.string().max(300)).max(60).default([]),
+  /** A file request for a secret that its owner approved, that one time ("private SSH key id_ed25519"): the requester's Claude is told so. */
+  secret: z.string().min(1).max(200).optional(),
+  /** An ask: which of their agents answered (runtime and model; BLG-448). An older Mac leaves it out: Claude. */
+  agent: AgentRef.optional(),
   ts: z.number().int().min(0),
 });
 export type TaskResult = z.infer<typeof TaskResult>;
 
-export const TaskCancel = z.object({ t: z.literal('task_cancel'), id: TaskId, ts: z.number().int().min(0) });
+export const TaskCancel = z.object({
+  t: z.literal('task_cancel'),
+  id: TaskId,
+  /** A dialogue stopped on this side (BLG-468): it ends on the other side too, whichever way the task went. */
+  dialogue: z.object({ id: z.string().regex(/^dlg_[\w-]{6,40}$/), why: z.string().max(300) }).optional(),
+  ts: z.number().int().min(0),
+});
 export type TaskCancel = z.infer<typeof TaskCancel>;
 
 const QuestionId = z.string().regex(/^q_[\w-]{6,40}$/);
@@ -182,6 +222,8 @@ export const PeerCardMsg = z.object({
   projects: z.array(z.string().min(1).max(80)).max(60).default([]),
   /** My Claude is on. */
   claude: z.boolean().default(true),
+  /** How much of my plans I have left, one per provider (BLG-597): only to people I share it with. */
+  usages: z.array(ProviderUsage).max(8).optional(),
 });
 export type PeerCardMsg = z.infer<typeof PeerCardMsg>;
 

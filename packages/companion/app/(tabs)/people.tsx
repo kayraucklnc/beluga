@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Avatar, Card, Hairline, Press, T } from '../../components/ui';
@@ -11,6 +11,7 @@ import { ChevronRight } from 'lucide-react-native';
 
 const ORDER = { online: 0, away: 1, dnd: 2, offline: 3 } as const;
 const WORD = { online: 'Online', away: 'Away', dnd: 'Busy', offline: 'Offline' } as const;
+const UPDATE_WORD = { them: 'Needs a Beluga update', you: 'Update Beluga to reach them' } as const;
 
 /** People: your friends, their presence and allowance. */
 export default function People() {
@@ -26,7 +27,7 @@ export default function People() {
           {people.map((p, i) => {
             const week = p.usage?.windows.find((w) => /week/i.test(w.label));
             return (
-              <Animated.View key={p.peerId} entering={FadeInDown.delay(i * 40).duration(280)}>
+              <Animated.View key={p.peerId} entering={FadeIn.duration(180)}>
                 {i ? <Hairline style={{ marginLeft: 72 }} /> : null}
                 <Press scaleTo={0.985} onPress={() => router.push(`/person/${encodeURIComponent(p.peerId)}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
                   <Avatar name={p.name} size={44} presence={p.presence} />
@@ -35,8 +36,8 @@ export default function People() {
                       {p.name}
                     </T>
                     <T v="caption" numberOfLines={1}>
-                      {WORD[p.presence]}
-                      {p.note ? ` · ${p.note}` : ''}
+                      {p.update ? UPDATE_WORD[p.update] : WORD[p.presence]}
+                      {p.note && !p.update ? ` · ${p.note}` : ''}
                     </T>
                   </View>
                   {week ? (

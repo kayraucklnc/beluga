@@ -59,7 +59,12 @@ fn is_wav(bytes: &[u8]) -> bool {
         && &bytes[8..12] == b"WAVE"
 }
 
+/// Only macOS plays a notification's sound from a file of the app's: elsewhere the window plays
+/// it (lib/sounds/native.ts falls back to that when this says no).
 fn sounds_dir() -> Result<PathBuf, String> {
+    if !cfg!(target_os = "macos") {
+        return Err("Notification sounds from files are Mac only".to_string());
+    }
     dirs::home_dir()
         .map(|h| h.join("Library").join("Sounds"))
         .ok_or_else(|| "Couldn't find your home folder".to_string())

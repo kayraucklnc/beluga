@@ -7,7 +7,9 @@ import { AgentHost } from '../src/core/agent-host.js';
 import type { Issue } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import { waitFor } from './helpers.js';
-import { type TaskMention, explainTaskMentions, matchTasks, taskByKey } from '../src/shared/task-refs.js';
+import { TASK_LINK_SCHEME, type TaskMention, explainTaskMentions, linkTaskKeys, matchTasks, splitTaskKeys, taskByKey } from '../src/shared/task-refs.js';
+import { readInline } from '../src/shared/render/inline-model.js';
+import { stripCode } from '../src/companion/strip.js';
 import { suggest } from '../src/ui/suggest.js';
 import { gatewayTarget } from '../src/agent/mock.js';
 import { linkMentions, parseMentionHref, resolveMention, splitMentions, tasksIn, type MentionWorld } from '../packages/mac/src/chat/mentions.js';
@@ -35,13 +37,13 @@ describe('which tasks a typed "@…" may mean', () => {
     expect(keys('BLG24')[0]).toBe('BLG-24');
     expect(keys('blg-24')[0]).toBe('BLG-24');
     expect(keys('blg24')[0]).toBe('BLG-24');
-    // The number alone: every project's task with that number, then longer numbers.
-    expect(keys('24')).toEqual(['BLG-24', 'OPS-24', 'BLG-240']);
+    // The number alone: every project's task with that number (Ready ones first), then longer numbers.
+    expect(keys('24')).toEqual(['OPS-24', 'BLG-24', 'BLG-240']);
     expect(keys('bl24')[0]).toBe('BLG-24');
   });
 
-  it('a project prefix lists its tasks, open ones first and newest first', () => {
-    expect(keys('BLG')).toEqual(['BLG-240', 'BLG-24', 'BLG-9', 'BLG-2', 'BLG-20']);
+  it('a project prefix lists its tasks, Ready ones first, each group by number', () => {
+    expect(keys('BLG')).toEqual(['BLG-2', 'BLG-9', 'BLG-240', 'BLG-24', 'BLG-20']);
     expect(keys('ops')).toEqual(['OPS-24']);
   });
 
@@ -50,6 +52,24 @@ describe('which tasks a typed "@…" may mean', () => {
     expect(keys('coffee')).toEqual(['BLG-9']);
     expect(keys('dark-mode')).toEqual(['BLG-20']);
     expect(keys('ogin')).toEqual(['BLG-240', 'BLG-24']);
+  });
+
+  it('Ready tasks first, then those under way, then the Backlog, then closed ones (BLG-575)', () => {
+    const board = [
+      t('BLG-1', 'Old idea', 'backlog'),
+      t('BLG-3', 'Shipped', 'done', false),
+      t('BLG-4', 'Being built', 'in_progress'),
+      t('BLG-5', 'Ready to go'),
+      t('BLG-6', 'Up for review', 'in_review'),
+      t('BLG-7', 'Also ready'),
+      t('BLG-8', 'Dropped', 'canceled', false),
+    ];
+    expect(matchTasks('BLG', board, 10).map((x) => x.key)).toEqual(['BLG-5', 'BLG-7', 'BLG-4', 'BLG-6', 'BLG-1', 'BLG-3', 'BLG-8']);
+    // The very key typed still comes first, whatever its status.
+    expect(matchTasks('BLG-1', [...board, t('BLG-10', 'Ready ten')], 10).map((x) => x.key)).toEqual(['BLG-1', 'BLG-10']);
+    // Only six fit: they are the Ready ones.
+    const many = Array.from({ length: 12 }, (_, i) => t(`BLG-${i + 1}`, `Task ${i + 1}`, i < 6 ? 'backlog' : 'todo'));
+    expect(matchTasks('BLG', many).map((x) => x.key)).toEqual(['BLG-7', 'BLG-8', 'BLG-9', 'BLG-10', 'BLG-11', 'BLG-12']);
   });
 
   it('nothing for nothing, and never too many', () => {
@@ -75,9 +95,9 @@ describe('the "@" list offers tasks', () => {
     const list = suggest('look at @BLG-2', ctx);
     expect(list.map((s) => s.label)).toEqual(['@BLG-2', '@BLG-240', '@BLG-24', '@BLG-20']);
     expect(list[2]).toMatchObject({ value: 'look at @BLG-24 ', hint: 'Fix the login redirect', task: { key: 'BLG-24', status: 'in_progress' } });
-    expect(suggest('@24', ctx)[0]).toMatchObject({ value: '@BLG-24 ' });
+    expect(suggest('@bl24', ctx)[0]).toMatchObject({ value: '@BLG-24 ' });
     const mixed = suggest('@mi', { ...ctx, tasks: [t('BLG-3', 'Mirror the menu')] });
-    expect(mixed.map((s) => [s.label, Boolean(s.task)])).toEqual([['@mia', false], ['@BLG-3', true]]);
+    expect(mixed.map((s) => [s.label, Boolean(s.task)])).toEqual([['@mia', false], ['@claude:mia', false], ['@BLG-3', true]]);
   });
 
   it('the exact key typed is still offered, so Return completes it instead of picking a neighbour', () => {
@@ -87,6 +107,34 @@ describe('the "@" list offers tasks', () => {
 
   it('no tasks without a board', () => {
     expect(suggest('@BLG-2', { peers: [], selfId: 'me' })).toEqual([]);
+  });
+});
+
+describe('another project’s tasks in the "@" list (BLG-397)', () => {
+  const away = (task: TaskMention): TaskMention => ({ ...task, elsewhere: 'Ratel' });
+  const board = [t('BLG-24', 'Fix the login redirect'), t('BLG-25', 'Login page polish'), away(t('RAT-4', 'Login with Google')), away(t('RAT-12', 'Billing page')), away(t('RAT-240', 'Rate limits'))];
+  const ctx = { peers: [], selfId: 'me', tasks: board, projects: [{ name: 'Ratel' }] };
+  const labels = (typed: string): string[] => suggest(typed, ctx).map((s) => s.label);
+
+  it('not for the first couple of letters, nor for a number alone', () => {
+    expect(labels('@ra')).toEqual(['@Ratel']);
+    expect(labels('@lo')).toEqual(['@BLG-24', '@BLG-25']);
+    expect(labels('@log')).toEqual(['@BLG-24', '@BLG-25']);
+    expect(labels('@4')).toEqual([]);
+    expect(labels('@24')).toEqual(['@BLG-24']);
+  });
+
+  it('its whole prefix, or four letters of a word of the title, offers it, always last', () => {
+    expect(labels('@RAT-4')).toEqual(['@RAT-4']);
+    expect(labels('@rat12')).toEqual(['@RAT-12']);
+    expect(labels('@RAT')).toEqual(['@Ratel', '@RAT-4', '@RAT-12', '@RAT-240']);
+    expect(labels('@login')).toEqual(['@BLG-24', '@BLG-25', '@RAT-4']);
+    expect(suggest('@login', ctx).at(-1)).toMatchObject({ task: { key: 'RAT-4', elsewhere: 'Ratel' } });
+  });
+
+  it('only a few of them, below this project’s', () => {
+    const many = Array.from({ length: 10 }, (_, i) => away(t(`RAT-${i + 1}`, `Task ${i + 1}`)));
+    expect(suggest('@RAT', { ...ctx, tasks: many }).filter((s) => s.task)).toHaveLength(3);
   });
 });
 
@@ -166,5 +214,72 @@ describe('your Claude, asked about a task', () => {
     await host.onAgentRequest('me', { kind: 'agent_request', requestId: 'r1', prompt: 'finish @BLG-24 today', viaAgent: false, channel: 'ws:w1', urgent: false, plan: false });
     await waitFor(() => runs.length === 1);
     expect(runs[0]!.prompt).toBe('finish @BLG-24 (task: Fix the login redirect) today');
+  });
+});
+
+describe('bare task keys in an answer', () => {
+  const board = new Set(['BLG-72', 'BLG-73']);
+  const has = (k: string): boolean => board.has(k);
+  const link = (k: string): string => `[${k}](beluga-task:${k})`;
+
+  it('turns a key the board has into a chip, in bold and in a list', () => {
+    expect(linkTaskKeys('**BLG-72: image chips**', has)).toBe(`**${link('BLG-72')}: image chips**`);
+    expect(linkTaskKeys('- fixed (BLG-73), and BLG-72.', has)).toBe(`- fixed (${link('BLG-73')}), and ${link('BLG-72')}.`);
+  });
+
+  it('leaves unknown keys, look-alikes and lower case alone', () => {
+    expect(linkTaskKeys('BLG-99, UTF-8, blg-72, XBLG-72, BLG-720', has)).toBe('BLG-99, UTF-8, blg-72, XBLG-72, BLG-720');
+  });
+
+  it('leaves code, links, paths, URLs and task: alone', () => {
+    const md = ['`BLG-72` and `task:BLG-72`', '[see BLG-72](https://x.dev/BLG-72)', 'docs/BLG-72.md and BLG-72.ts', 'https://x.dev/issues/BLG-72', '```', 'BLG-72', '```', '@BLG-72 and #BLG-72'].join('\n');
+    expect(linkTaskKeys(md, has)).toBe(md);
+  });
+
+  it('links outside the code on a line that has some', () => {
+    expect(linkTaskKeys('BLG-72 fixed in `chat.ts`', has)).toBe(`${link('BLG-72')} fixed in \`chat.ts\``);
+  });
+
+  it('with mentions: "@BLG-72" (any case) is a chip too, but not in an address, code or a link (BLG-109)', () => {
+    const o = { mentions: true };
+    expect(linkTaskKeys('see @BLG-72 and @blg-73.', has, o)).toBe(`see ${link('BLG-72')} and ${link('BLG-73')}.`);
+    expect(linkTaskKeys('@BLG-72, BLG-73', has, o)).toBe(`${link('BLG-72')}, ${link('BLG-73')}`);
+    expect(linkTaskKeys('me@BLG-72.dev `@BLG-72` [@BLG-72](https://x.dev) @BLG-99', has, o)).toBe('me@BLG-72.dev `@BLG-72` [@BLG-72](https://x.dev) @BLG-99');
+    // Without the option "@BLG-72" stays as the Mac's mentions read it.
+    expect(linkTaskKeys('@BLG-72', has)).toBe('@BLG-72');
+  });
+
+  it('leaves fenced code alone', () => {
+    const md = 'BLG-72\n```\nBLG-72\n```\n~~~\n@BLG-73\n~~~';
+    expect(linkTaskKeys(md, has, { mentions: true })).toBe(`${link('BLG-72')}\n\`\`\`\nBLG-72\n\`\`\`\n~~~\n@BLG-73\n~~~`);
+  });
+});
+
+/** The phone's words with chips in them (BLG-109): the same reading, cut into pieces. */
+describe('splitTaskKeys', () => {
+  const has = (k: string): boolean => k === 'BLG-98' || k === 'BLG-12';
+
+  it('cuts words around the keys the board has', () => {
+    expect(splitTaskKeys('BLG-98 is done, @blg-12 next', has, { mentions: true })).toEqual([{ key: 'BLG-98' }, { text: ' is done, ' }, { key: 'BLG-12' }, { text: ' next' }]);
+  });
+
+  it('leaves unknown keys and look-alikes as words', () => {
+    expect(splitTaskKeys('BLG-7, UTF-8 and ISO-8601', has)).toEqual([{ text: 'BLG-7, UTF-8 and ISO-8601' }]);
+    expect(splitTaskKeys('', has)).toEqual([]);
+  });
+
+  it('task: in inline code is the inline element’s, not a bare key (shared readInline)', () => {
+    expect(splitTaskKeys('`task:BLG-98` and src/BLG-98.ts', has)).toEqual([{ text: '`task:BLG-98` and src/BLG-98.ts' }]);
+    expect(readInline('task:BLG-98')).toEqual({ kind: 'task', key: 'BLG-98' });
+  });
+
+  it('stripCode keeps `task:KEY` in a sentence for the phone to draw, and folds keys inside code blocks away', () => {
+    const prose = stripCode('Fixed `task:BLG-98` and BLG-12.\n\n```ts\nconst k = "BLG-12";\n```\n\n```beluga-tasks\nBLG-98\n```');
+    expect(prose.text.split('\n')[0]).toBe('Fixed `task:BLG-98` and BLG-12.');
+    expect(prose.code[0]).toEqual({ lang: 'ts', lines: 1 });
+    expect(prose.code[1]).toEqual({ lang: 'beluga-tasks', lines: 1, block: { kind: 'tasks', text: 'BLG-98' } });
+    // What the phone then links: the bare key, not the code's, not the inline element's.
+    expect(linkTaskKeys(prose.text, has)).toContain(`and [BLG-12](${TASK_LINK_SCHEME}BLG-12).`);
+    expect(linkTaskKeys(prose.text, has)).toContain('`task:BLG-98`');
   });
 });

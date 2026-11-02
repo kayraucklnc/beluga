@@ -14,6 +14,9 @@ import { bars, nextWords, planStatus, plansOf, titleOf } from './plans-model.js'
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 import v from './PlansView.module.css';
+import { SharedPlansList } from '../team/SharedPlans.js';
+import { isShortcut } from '../lib/shortcuts.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * Plans: one project's at a time (the one you're in, like Tasks). Each is a row with how far it
@@ -35,7 +38,7 @@ export function PlansView() {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || currentSheet()) return;
       const typing = (e.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]');
-      if (!typing && e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'n') {
+      if (!typing && isShortcut('page-new', e)) {
         e.preventDefault();
         e.stopPropagation();
         openSheet({ kind: 'new_plan', ...(project ? { projectId: project } : {}) });
@@ -45,7 +48,7 @@ export function PlansView() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [project]);
 
-  if (!state.enabled) return <Empty icon="flag" title="Plans need the Beluga app" detail="Open Beluga for Mac to plan big work with Claude." />;
+  if (!state.enabled) return <Empty icon="flag" title="Plans need the Beluga app" detail="Open Beluga for Mac to plan big work with your agent." />;
   if (!here) return <Empty icon="flag" title="No projects yet" detail="Plans belong to a project. Add one from the sidebar." />;
   return (
     <div className={p.list}>
@@ -64,7 +67,7 @@ export function PlansView() {
         <ActionsDropdown items={[{ label: 'Planning Style…', onSelect: () => openSheet({ kind: 'plan_style' }) }]}>
           <IconButton icon="more" label="Plans Options" />
         </ActionsDropdown>
-        <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })} title="New Plan (⌘N)">
+        <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })} title={`New Plan${shortcutKeys('page-new') ? ` (${shortcutKeys('page-new')})` : ''}`}>
           New Plan
         </Button>
       </div>
@@ -79,7 +82,7 @@ export function PlansView() {
           icon="flag"
           mark={<ProjectIcon id={here.id} name={here.name} size={28} />}
           title={`No plans in ${here.name} yet`}
-          detail="Say what you want built. Claude reads the code and cuts it into milestones and tasks that run side by side, each with what proves it’s done. You talk it through; nothing reaches the board until you approve."
+          detail="Say what you want built. Your agent reads the code and cuts it into milestones and tasks that run side by side, each with what proves it’s done. You talk it through; nothing reaches the board until you approve."
           action={
             <EmptyActions>
               <Button variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })}>
@@ -89,6 +92,7 @@ export function PlansView() {
           }
         />
       )}
+      <SharedPlansList projectId={here.id} />
     </div>
   );
 }

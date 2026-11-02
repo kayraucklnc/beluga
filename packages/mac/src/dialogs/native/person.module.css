@@ -94,9 +94,43 @@
   background: var(--bg-sunken);
   box-shadow: 0 0 0 0.5px var(--hairline);
 }
+/* Each provider's plans (BLG-597): its name, then a line per window. */
+.usageProvider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.usageProvider + .usageProvider {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--hairline);
+}
+.usageHead {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.usagePlan {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-press);
+  color: var(--text-3);
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 15px;
+}
+.resets {
+  grid-column: 2 / -1;
+  margin-top: -3px;
+  color: var(--text-3);
+  font-size: 0.76rem;
+}
 .meter {
   display: grid;
-  grid-template-columns: 50px 1fr 34px;
+  grid-template-columns: 50px 1fr auto;
   align-items: center;
   gap: 8px;
   color: var(--text-2);
@@ -293,4 +327,60 @@
 .tick {
   grid-row: span 2;
   padding-top: 2px;
+}
+/* "Change in their card…": trust is set on a friend's card (BLG-202). */
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.linkButton:hover {
+  text-decoration: underline;
+}
+
+/* A name or avatar that opens someone's profile (network/PersonProfile.tsx): looks as it did. */
+.personButton {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.personButton:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.personButton:has(img, span[aria-hidden]):hover {
+  text-decoration: none;
+  filter: brightness(1.05);
+}
+.personButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Their own words: as they wrote them, in the text colour. */
+.note {
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* An agent's mark before its name, in a tag. */
+.agentOn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }

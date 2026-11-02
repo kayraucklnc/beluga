@@ -6,12 +6,14 @@ import { Button, Empty, EmptyActions, IconButton, cx } from '../../components/ui
 import { CodeLines } from '../../components/markdown/CodeLines.js';
 import { type DocNav, type DocVariant, MarkdownDoc } from '../../components/markdown/MarkdownDoc.js';
 import { useImageUrl } from '../../components/markdown/MdImage.js';
+import { VideoPlayer } from '../../components/VideoPlayer.js';
 import { MAX_FILE_BYTES } from '@beluga/protocol.js';
 import { Bitmap } from '../FilesView.js';
-import { isImageFile } from '../../components/markdown/md-paths.js';
-import { BINARY_TEXT, LARGE_MARKDOWN, prettyJson, type ReaderMode, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
+import { isImageFile, isVideoFile } from '../../components/markdown/md-paths.js';
+import { BINARY_TEXT, HTML_SANDBOX, LARGE_MARKDOWN, prettyJson, type ReaderMode, isHtmlFile, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
 import { PdfView } from './PdfView.js';
 import { usePinchZoom } from '../../components/usePinchZoom.js';
+import { useDecoded } from '../../components/use-decoded.js';
 import { useEditSession } from './edit-store.js';
 import { FileEditor } from './FileEditor.js';
 import { doneRevealing, scrollToLine, useReveal } from './reveal.js';
@@ -42,16 +44,20 @@ const ZOOMS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
  */
 function ImageView({ viewer, controls, version }: { viewer: ViewerState; controls: boolean; version?: string | number }) {
   const { url, error } = useImageUrl({ owner: viewer.owner, share: viewer.share, path: viewer.path }, version);
+  // Written again (a live screenshot): the new picture is decoded first, the old one shown meanwhile.
+  const pic = useDecoded(url);
+  const natural = pic && pic.w > 0 ? { w: pic.w, h: pic.h } : undefined;
   const [zoom, setZoom] = useState<'fit' | number>('fit');
-  const [natural, setNatural] = useState<{ w: number; h: number }>();
   const stage = useRef<HTMLDivElement>(null);
+  const picture = useRef<HTMLImageElement>(null);
   // From "fit", zooming goes to the next step past the size it's fitted at.
   const fitted = (): number => {
     const el = stage.current;
     return el && natural ? Math.min(1, (el.clientWidth - 56) / natural.w) : 1;
   };
-  // Two fingers on the trackpad zoom it too (anywhere it's shown: the reader, the panel, Changes, Scratch).
-  usePinchZoom(stage, zoom === 'fit' ? fitted() : zoom, setZoom);
+  // Two fingers on the trackpad zoom it too (anywhere it's shown: the reader, the panel, Changes,
+  // Scratch): the picture is scaled with a transform while they move, and laid out once they stop.
+  usePinchZoom(stage, zoom === 'fit' ? fitted() : zoom, setZoom, { live: picture });
   const step = (dir: 1 | -1): void => {
     const now = zoom === 'fit' ? fitted() : zoom;
     const next = dir > 0 ? ZOOMS.find((z) => z > now + 0.001) : [...ZOOMS].reverse().find((z) => z < now - 0.001);
@@ -66,8 +72,8 @@ function ImageView({ viewer, controls, version }: { viewer: ViewerState; control
   return (
     <div className={r.imageView}>
       <div ref={stage} className={cx(r.stage, zoom !== 'fit' && r.stageZoom)} onDoubleClick={onDouble}>
-        {url ? (
-          <img className={r.picture} src={url} alt={viewer.path} style={sized} onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} draggable={false} />
+        {pic ? (
+          <img ref={picture} className={r.picture} src={pic.url} alt={viewer.path} style={sized} draggable={false} />
         ) : viewer.image ? (
           <Bitmap image={viewer.image} />
         ) : null}
@@ -84,6 +90,14 @@ function ImageView({ viewer, controls, version }: { viewer: ViewerState; control
       ) : null}
     </div>
   );
+}
+
+/** A video, played from its bytes (read like a picture, up to MAX_DOC_VIDEO_BYTES). */
+function VideoFile({ viewer, version, fallback }: { viewer: ViewerState; version?: string | number; fallback?: ReactNode }) {
+  const { url, error } = useImageUrl({ owner: viewer.owner, share: viewer.share, path: viewer.path }, version);
+  if (error) return <Empty icon="play" title="Can’t play this video here" detail={/too large/i.test(error) ? 'It’s too big to play here (up to 64 MB).' : error} action={fallback ? <EmptyActions>{fallback}</EmptyActions> : undefined} />;
+  if (!url) return <div className={r.opening}>Opening…</div>;
+  return <VideoPlayer url={url} name={viewer.path} fallback={fallback} />;
 }
 
 export interface FileContentProps {
@@ -109,10 +123,11 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
   const reveal = useReveal(viewer);
   const box = useRef<HTMLDivElement>(null);
   const markdown = isMarkdownFile(viewer.path);
+  const html = isHtmlFile(viewer.path);
   // A search result opened it at a line: the source, scrolled there (once it's drawn).
   useEffect(() => {
     if (!reveal || viewer.loading || !viewer.content) return;
-    if (markdown && mode === 'rendered' && !editing) return onMode('source');
+    if ((markdown || html) && mode === 'rendered' && !editing) return onMode('source');
     const frame = requestAnimationFrame(() => {
       if (box.current && scrollToLine(box.current, reveal.line, r.lineFlash!)) doneRevealing(viewer);
     });
@@ -120,6 +135,18 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
   }, [reveal?.seq, viewer.path, viewer.loading, viewer.content.length, mode, Boolean(editing)]);
   // PDFs and pictures are read as themselves (their bytes), whatever the text read made of them.
   if (isPdfFile(viewer.path)) return <PdfView at={{ owner: viewer.owner, share: viewer.share, path: viewer.path }} controls={variant !== 'panel'} version={version} />;
+  if (isVideoFile(viewer.path)) {
+    const out = onOpenInEditor ? (
+      <Button size="small" variant="quiet" icon="external" onClick={onOpenInEditor}>
+        Open in Editor
+      </Button>
+    ) : onSaveCopy ? (
+      <Button size="small" variant="quiet" icon="download" onClick={onSaveCopy}>
+        Save a Copy…
+      </Button>
+    ) : undefined;
+    return <VideoFile viewer={viewer} fallback={out} {...(typeof version === 'string' || typeof version === 'number' ? { version } : {})} />;
+  }
   if (viewer.image || (isImageFile(viewer.path) && !viewer.error)) return <ImageView viewer={viewer} controls={variant !== 'panel'} {...(typeof version === 'string' || typeof version === 'number' ? { version } : {})} />;
   if (viewer.loading && !viewer.content) return <div className={r.opening}>Opening…</div>;
   if (viewer.error) return <Empty icon="alert" title="Can’t open this file" detail={viewer.error} />;
@@ -133,7 +160,7 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
     </Button>
   ) : undefined;
   if (viewer.content === BINARY_TEXT) {
-    return <Empty icon="file" title="No preview for this kind of file" detail="It isn’t text, a picture or a PDF." action={escape ? <EmptyActions>{escape}</EmptyActions> : undefined} />;
+    return <Empty icon="file" title="No preview for this kind of file" detail="It isn’t text, a picture, a PDF or a video. Open it with its app instead." action={escape ? <EmptyActions>{escape}</EmptyActions> : undefined} />;
   }
   const large = markdown && viewer.content.length > LARGE_MARKDOWN;
   const json = mode === 'rendered' ? prettyJson(viewer.path, viewer.content) : undefined;
@@ -155,6 +182,8 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
         <div className={r.codeFile}>
           <FileEditor session={editing} lang={markdown ? 'markdown' : langOf(viewer.path)} variant={variant} />
         </div>
+      ) : html && mode === 'rendered' ? (
+        <iframe className={r.html} title={viewer.path.split('/').pop() ?? viewer.path} sandbox={HTML_SANDBOX} srcDoc={viewer.content} referrerPolicy="no-referrer" />
       ) : markdown && mode === 'rendered' ? (
         <MarkdownDoc text={viewer.content} at={viewer} variant={variant} {...(nav ? { nav } : {})} />
       ) : (

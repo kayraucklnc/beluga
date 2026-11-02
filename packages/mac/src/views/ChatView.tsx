@@ -11,12 +11,16 @@ import { OtherWorktreeBanner, WorktreeInfoPage } from './WorktreeInfo.js';
 import { AgentWorktreePage } from '../claude-code/AgentMonitor.js';
 import { isAgentWorktree } from '../claude-code/subagents-model.js';
 import { LiveStrip } from '../claude-code/Live.js';
+import { SharedStrip } from '../layout/PeopleHere.js';
+import { EnvStrip } from './project/EnvAsks.js';
 import { TaskStrip } from '../tasks/TaskStrip.js';
 import { PrStrip } from '../chat/PrStrip.js';
 import { PlanStrip } from '../plans/PlanStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
 import { ConnectionStatus } from './room/ConnectionStatus.js';
+import { AssistantTabs } from '../chat/AssistantTabs.js';
+import { DrivingBanner } from '../agent-term/DrivingBanner.js';
 
 /** A conversation and the box to add to it: the room, a workspace, a shared workspace, a draft. */
 /** One-click ways to begin, under an empty conversation. */
@@ -61,6 +65,26 @@ function Starters() {
   );
 }
 
+/** First things to ask Your Mac. */
+function AssistantStarters() {
+  const actions = useActions();
+  return (
+    <EmptyActions>
+      {ASSISTANT_STARTERS.map((t) => (
+        <Button key={t.label} icon={t.icon} onClick={() => actions.submit(t.prompt)}>
+          {t.label}
+        </Button>
+      ))}
+    </EmptyActions>
+  );
+}
+
+const ASSISTANT_STARTERS = [
+  { label: 'Take a Screenshot', icon: 'image', prompt: 'Take a screenshot of my screen and send it to me.' },
+  { label: 'What’s Using My CPU', icon: 'gauge', prompt: 'What’s using my CPU and memory right now?' },
+  { label: 'What’s Running', icon: 'pulse', prompt: 'What’s running in Beluga right now, across my projects?' },
+] as const;
+
 const STARTERS = [
   { label: 'Explain This Project', icon: 'eye', prompt: 'Explain how this project is organized: the main parts, how they fit together, and where to start reading.' },
   { label: 'Find a Bug', icon: 'search', prompt: 'Look through the code for a likely bug, explain it, and fix it with a test.' },
@@ -83,24 +107,28 @@ export function ChatView() {
   const empty =
     view.kind === 'draft' ? (
       projectName ? (
-        <Empty icon="eye" title={`Ask about ${projectName}`} detail="Questions only: Claude reads the main folder and changes nothing there. Ask for a change and it continues in a new worktree." />
+        <Empty icon="eye" title={`Ask about ${projectName}`} detail="Questions only: your agent reads the main folder and changes nothing there. Ask for a change and this chat becomes a worktree." />
       ) : (
-        <Empty icon="chat" title="A new chat with Claude" detail="Nothing is created until you send your first message." />
+        <Empty icon="chat" title="A new chat with your agent" detail="Nothing is created until you send your first message." />
       )
     ) : ws?.askOnly ? (
-      <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Claude reads the main folder and answers; it won’t change anything here. Ask for a change and it continues in a new worktree." action={<Starters />} />
+      <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Your agent reads the main folder and answers; it won’t change anything here. Ask for a change and this chat becomes a worktree." action={<Starters />} />
     ) : view.kind === 'draft_worktree' ? (
-      <Empty icon="branch" title="A new worktree" detail="Describe the task below. Beluga makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
+      <Empty icon="branch" title="A new worktree" detail="Describe the task below. Beluga makes a branch and a folder for it from the branch you pick, and your agent starts right away." />
+    ) : view.kind === 'assistant' ? (
+      <Empty icon="laptop" title="Ask your Mac" detail="Your agent for this whole Mac, not one project: screenshots, what’s using the CPU, starting a worktree or a task. Keep several chats as tabs above; the open one is the one on your phone." action={<AssistantStarters />} />
     ) : view.kind === 'room' ? (
-      <Empty icon="claude" title={solo ? 'Talk to your Claude' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give Claude a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your Claude.'} action={<Starters />} />
+      <Empty icon="claude" title={solo ? 'Talk to your agent' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give your agent a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your agent.'} action={<Starters />} />
     ) : (
-      <Empty icon="chat" title="Tell Claude what to do here" detail="It works in this folder and remembers the conversation. Start with one of these, or write your own below." action={<Starters />} />
+      <Empty icon="chat" title="Tell your agent what to do here" detail="It works in this folder and remembers the conversation. Start with one of these, or write your own below." action={<Starters />} />
     );
   // A worktree made outside Beluga: its info page until there's a conversation (or you start one).
   const other = ws?.kind === 'worktree' && ws.external && !ws.archived ? ws : undefined;
   const hasItems = useApp((st) => st.log.some((l) => l.channel === channel));
   // A plan's own conversation plans: it never moves to a worktree.
   const planHome = useApp((st) => Boolean(planForHome(st.plans, channel)));
+  // The agent's own terminal drives this conversation (BLG-534): the chat follows along until you take over.
+  const driving = useApp((st) => (view.kind === 'workspace' ? Boolean(st.agentTerms[view.id]) : false));
   const started = useWorktreeFlag('started', other?.id ?? '');
   const about = useWorktreeFlag('about', other?.id ?? '');
   // A sub-agent's own worktree is the agent, followed live (never a place to start a conversation).
@@ -111,14 +139,18 @@ export function ChatView() {
     <div className={s.chat} data-drop-zone>
       {other ? <OtherWorktreeBanner ws={other} /> : null}
       {view.kind === 'room' ? <ConnectionStatus /> : null}
+      {view.kind === 'assistant' ? <AssistantTabs /> : null}
       {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <PrStrip workspaceId={view.id} /> : null}
-      {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}
+      {view.kind === 'workspace' ? <SharedStrip wsId={view.id} /> : null}
+      {view.kind === 'workspace' ? <EnvStrip workspaceId={view.id} /> : null}
+      {/* Its own terminal driving it: the banner below says so (not a Claude Code session beside it). */}
+      {view.kind === 'workspace' && !driving ? <LiveStrip workspaceId={view.id} /> : null}
       <ChatLog key={channel} channel={channel === 'draft' ? '__draft__' : channel} empty={empty} />
       {ws?.askOnly && !ws.archived && !planHome ? <AskBanner wsId={ws.id} /> : null}
       <Attention />
-      <Composer />
+      {driving && view.kind === 'workspace' ? <DrivingBanner wsId={view.id} /> : <Composer />}
     </div>
   );
   // The terminal is in the right panel or the drawer under the center (layout/panel), not beside the chat.

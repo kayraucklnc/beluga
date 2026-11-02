@@ -12,6 +12,24 @@
 .confirm {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 45%, var(--hairline-strong));
 }
+/* A secret (BLG-209): a soft red card, its own approval each time. */
+.secret {
+  background: color-mix(in srgb, var(--error) 7%, var(--bg-raised));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--error) 32%, transparent);
+}
+.secretLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--error);
+  font-size: 0.86rem;
+}
+/* Picked from the waiting band: a moment of tint, so you see which card it is. */
+.card[data-flash] {
+  transition: background-color 0.6s ease;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+}
 .head {
   display: flex;
   align-items: center;

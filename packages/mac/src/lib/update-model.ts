@@ -31,7 +31,11 @@ export interface UpdateState {
   readonly news?: { readonly version: string; readonly notes?: string | null } | null;
 }
 
-export const INITIAL_UPDATE_STATE: UpdateState = { current: '', mode: 'ask', phase: 'idle', waitingOn: [] };
+/**
+ * Until the app shell answers: a new install's mode (updater.rs › NEW_INSTALL_MODE, BLG-99).
+ * The shell's saved mode replaces it at once, so earlier installs keep theirs.
+ */
+export const INITIAL_UPDATE_STATE: UpdateState = { current: '', mode: 'idle', phase: 'idle', waitingOn: [] };
 
 /** Settings' two switches, as the mode the app shell keeps: "Update automatically" and "Check for updates". */
 export interface UpdateSwitches {
@@ -85,7 +89,7 @@ export function lastCheckedLabel(lastCheck: number | null | undefined, now: numb
 }
 
 const BLOCKER_WORDS: Record<UpdateBlocker, string> = {
-  claude: 'Claude to finish',
+  claude: 'your agent to finish',
   terminal: 'programs in your terminals to finish',
   room: 'friends to leave your room (or you to leave theirs)',
   you: 'you to step away for 10 minutes',

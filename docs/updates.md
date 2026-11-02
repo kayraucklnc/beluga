@@ -12,7 +12,7 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 - **What happens when it finds one.** The update downloads in the background and its signature is verified. Then a small pill appears at the bottom of the sidebar, "Beluga 0.5 is ready". If the sidebar is hidden, the pill sits in the window's corner. Clicking the pill opens a short sheet with the release notes and three choices:
   - **Restart Now** installs the update and reopens Beluga where you were (the same workspace, project or place).
   - **Update When Idle** installs once all of these are true:
-    - No Claude run is working or queued.
+    - No agent run is working or queued.
     - No program is running in Beluga's terminals. A shell sitting at its prompt doesn't count.
     - Nobody is in your room, and you aren't in someone else's.
     - You haven't touched the Mac for 10 minutes.
@@ -20,12 +20,42 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
     Beluga then reopens quietly. If its window wasn't in front, it stays hidden in the menu bar and doesn't take focus.
   - **Later** installs the update the next time you quit Beluga.
 - **The Updates settings** (Settings › General › Updates) are two switches:
-  - **Update automatically** (off by default): a downloaded update installs by itself once you're idle (as with *Update When Idle* above), and Beluga reopens in the background. When it's off, you get the pill and choose.
+  - **Update automatically** (on for a new install; earlier installs keep what they had, which was off unless you turned it on): a downloaded update installs by itself once you're idle (as with *Update When Idle* above), and Beluga reopens in the background. When it's off, you get the pill and choose.
   - **Check for updates** (on by default): when it's off, Beluga checks only when you click **Check Now**. Turning it off turns Update automatically off too, and turning Update automatically on turns it back on.
 
-  Together they are the shell's `mode` in `updates.json`: `idle` (both on), `ask` (only checking) or `off`. The sheet's "Update automatically from now on" box is the first switch.
+  Together they are the shell's `mode` in `updates.json`: `idle` (both on), `ask` (only checking) or `off`. The sheet's "Update automatically from now on" box is the first switch. A new install (no `updates.json`, and nothing else in its Application Support folder yet, such as `.window-state.json`) starts on `idle` and writes it right away; an existing `updates.json` is read as it is (no `mode` in it still means `ask`), and an earlier install that never wrote one stays on `ask`.
 - **Quitting.** A downloaded update always installs when you quit, unless updates are *Off*.
 - **After an update.** The pill says "Updated to 0.5 · What's new" once.
+
+## The phone app
+
+The Android app updates itself from the same releases (BLG-426, `packages/companion/lib/update.ts`, `modules/app-update`).
+
+- **When it looks.** At launch, unless it looked less than an hour ago, and every 4 hours while the app is open (an hour after a failed look). It reads `https://api.github.com/repos/kayraucklnc/beluga/releases/latest` and takes the asset named `Beluga-<version>.apk`. When that version is newer than the installed one, it has found an update.
+- **Downloading.** On Wi-Fi the update downloads by itself, as on the Mac. On mobile data it waits until you tap Update Now, and the sheet says how many MB it is. The file is kept in the app's cache and checked before it's used. Its size and SHA-256 must match the release (GitHub's `digest`), and it must be Beluga (`sh.ratel.beluga`) with a higher `versionCode` than the installed app. A file that fails these checks is deleted.
+- **What you see.** Under Home's greeting, a small pill says "Beluga 1.8.0 is ready" ("is out" while it isn't downloaded yet). Tapping it opens a sheet with the release notes, **Update Now** and **Later**. Settings has the same thing as a row on top while there's an update.
+- **Installing.** Update Now hands the APK to Android's `PackageInstaller`. Beluga closes as the new version goes in, and on the next launch it says "Updated to Beluga X" once.
+  - The first time, Android asks to allow installs from Beluga ("Install unknown apps"), then shows its own Install confirmation.
+  - From Android 12, an app that may install apps can update itself without that confirmation (`USER_ACTION_NOT_REQUIRED`).
+  - When Android still wants a tap and the app isn't in front, a notification carries the confirmation.
+- **Settings › Advanced › Updates** has the Mac's two switches:
+  - **Update automatically** (on by default): a downloaded update installs once you leave the app, as the Mac waits until you're idle. It only does this when it can install without asking (Android 12+, installs allowed). If installs aren't allowed, a row there opens that Android setting. An update that went in while you were away posts "Beluga updated to X" (tap: open it and link again), because updating ends the link and Stay connected with it.
+  - **Check for updates** (on by default): with it off, the app looks only when you tap **Check Now**. Turning it off turns Update automatically off too.
+- **Releasing.** Raise `android.versionCode` in `packages/companion/app.json`, build with `npm run apk` in `packages/companion`, and attach both files from `dist/` as they are named: `Beluga-<version>.apk` (the name the app looks for) and `Beluga-Link.apk`.
+
+## The phone app's signing key
+
+Both phone apps, Beluga (`sh.ratel.beluga`) and Beluga Link (`sh.ratel.beluga.control`), are signed with Beluga's own key (BLG-430). Before that they were signed with the Expo template's public debug key. The key matters three ways:
+
+- Android installs an update only over an app signed with the same key.
+- Link and the app trust each other only when their keys match (`checkSignatures`).
+- Nobody else can make an APK that installs over Beluga.
+
+- **Where it is.** `~/.beluga-release/beluga-android.p12` (alias `beluga`) on the maintainer's Mac. Its password is in the login Keychain as `beluga-android-release`. Neither is ever in the repo. The certificate's SHA-256 is in [packages/companion/signing.json](../packages/companion/signing.json).
+- **Keep a copy.** Back up both the file and the password (a password manager holds both). If the key is lost, no installed phone can be updated again, only uninstalled and installed afresh.
+- **How it's used.** `npm run apk` ([scripts/build-apk.mjs](../packages/companion/scripts/build-apk.mjs)) reads the password from the Keychain, runs a clean prebuild and `assembleRelease` with `BELUGA_ANDROID_KEYSTORE` / `BELUGA_ANDROID_KEY_PASSWORD`, then refuses any APK whose certificate isn't the one in `signing.json`. Two places apply the key: `plugins/release-signing.js` for the app and `modules/phone-control/addon/build.gradle` for Link. A release build without those variables is signed with the debug key and gradle warns about it. Such a build is fine for your own phone, never for a release.
+- **The switch (once).** Phones installed before the switch carry the debug key and can't take the new APK as an update. They uninstall Beluga and Beluga Link, install the new release, and pair again. The release notes for that version must say so. **Set Up Beluga Link** on the Mac replaces a Link whose key doesn't match the app's on its own (it compares `dumpsys package` signers, and uninstalls Link when `install -r` says `INSTALL_FAILED_UPDATE_INCOMPATIBLE`). A plain `adb install -r` of the new app over the old one fails the same way: `adb uninstall sh.ratel.beluga` first.
+
 
 ## What an update restarts
 
@@ -37,22 +67,22 @@ Installing restarts Beluga's engine, the daemon that the Mac app bundles. The ne
 
 - projects, worktrees and workspaces
 - each workspace's conversation
-- each workspace Claude's session, which resumes with its context
+- each workspace agent's session, which resumes with its context
 - settings and trust
 - your identity
 - friends, groups, messages and presence on the Beluga network, which reconnects by itself
 
 **Lost:**
 
-- Claude runs in progress and queued messages.
+- Agent runs in progress and queued messages.
 - Terminals and their scrollback. The shells start again.
 - The room chat (it lives only in memory).
-- The room-level Claude's context.
+- The room-level agent's context.
 - Friends connected to your room. They drop out, and the **invite link changes**: each start makes a new room secret. They need the new link.
 - If you had joined a friend's room, you're back in your own.
 - The first time a workspace is opened after the restart, its history loads again.
 
-That is why *Update When Idle* waits for Claude, the terminals and the room.
+That is why *Update When Idle* waits for the agent, the terminals and the room.
 
 ## Releasing
 
@@ -85,6 +115,15 @@ Updates are signed with a minisign key, separate from Apple's Developer ID.
 
 - **Public key:** `plugins.updater.pubkey` in tauri.conf.json. An update that doesn't verify against it is never installed. `requireSignedVersion` is on, so the version in `latest.json` must also match the version that was signed.
 - **Private key:** `~/.tauri/beluga-updater.key` on the maintainer's Mac (mode 0600, no password; the release script also finds it under its name from before the rename). Never commit it or paste it anywhere. If it is lost, installed copies can't be updated any more, so keep a backup in a password manager.
+
+## The code-signing certificate
+
+macOS keeps Screen Recording and the other privacy permissions for an app's *designated requirement*. An ad-hoc signature's requirement is the hash of that one build (`designated => cdhash H"…"`), so each update would look like a new app and lose them. The release script therefore signs the app with the self-signed **Beluga Self-Signed** certificate in the maintainer's login keychain (`security find-identity -v -p codesigning`). The requirement then names the identifier and that certificate, and both stay the same from release to release. The script refuses to publish a build whose requirement is still a cdhash.
+
+- `$APPLE_SIGNING_IDENTITY` picks another certificate, for example a Developer ID once there is one (BLG-195). Moving to a new certificate makes everyone grant the permissions once more.
+- `--ad-hoc` releases without a certificate, the way releases up to 1.4.1 were signed, and updates lose their permissions again.
+- Keep a backup of the certificate and its private key (Keychain Access › Export, `.p12`) in a password manager. A new certificate means one more grant for everyone.
+- Gatekeeper treats it like an ad-hoc build: the first launch of a downloaded copy still needs Open Anyway. Updates through the app don't.
 
 ## Trying an update locally
 

@@ -15,7 +15,7 @@ import { type UiPrefs, getPrefs, setPrefs } from './prefs.js';
  * (a diff or a file across the whole center for a while, Esc goes back to the chat).
  */
 
-export type FocusKind = 'diff' | 'file' | 'terminal';
+export type FocusKind = 'diff' | 'file' | 'terminal' | 'pr';
 
 interface Runtime {
   /** The center shows this instead of the chat (for this workspace only). */
@@ -29,6 +29,8 @@ interface Runtime {
    * and comes back with Esc. Showing or hiding it yourself meanwhile forgets this (your choice stays).
    */
   readonly panelBack?: boolean;
+  /** An Android phone is paired: the panel has its Phone tab (BLG-186). */
+  readonly phone?: boolean;
 }
 
 let runtime: Runtime = { termFocus: 0 };
@@ -50,10 +52,23 @@ export function usePanelRuntime<T>(pick: (r: Runtime) => T): T {
 
 const workspaceOf = (state: PanelState): Workspace | undefined => (state.view.kind === 'workspace' ? findWorkspace(state.projects, state.view.id) : undefined);
 
+/** The folder the Files tab (and a file opened in full) is about: the workspace on screen, or on a project's page its main folder. */
+export function filesWsOf(state: PanelState): string | undefined {
+  const { view } = state;
+  if (view.kind === 'workspace') return view.id;
+  if (view.kind === 'project') return state.projects.find((p) => p.id === view.id)?.workspaces.find((w) => w.kind === 'main' && !w.archived)?.id;
+  return undefined;
+}
+
 /** Uncommitted files or commits ahead of its base. */
 export const hasChanges = (ws: Workspace | undefined): boolean => (ws?.status?.changed ?? 0) + (ws?.status?.ahead ?? 0) > 0;
 
-export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
+export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind, runtime.phone).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
+
+/** Whether a phone is paired, so the panel offers its Phone tab (set from the shared state as it changes). */
+export const setPhoneTab = (on: boolean): void => {
+  if (Boolean(runtime.phone) !== on) patch({ phone: on });
+};
 
 /** A pane's tabs for what's on screen, in your order. */
 export const paneTabsOf = (state: PanelState, pane: PaneId, prefs: UiPrefs = getPrefs()): PanelTab[] => paneTabs(prefs.panelLayout, pane, tabsOf(state));
@@ -133,7 +148,8 @@ export const forgetChangeAsk = (): void => void (changeAsk = undefined);
 export const PLAN_CHAT_TOGGLE = 'beluga:plan-chat';
 
 export const togglePanel = (view: View): void => {
-  if (!panelFits(view)) return void document.dispatchEvent(new CustomEvent(PLAN_CHAT_TOGGLE));
+  if (view.kind === 'plan') return void document.dispatchEvent(new CustomEvent(PLAN_CHAT_TOGGLE));
+  if (!panelFits(view)) return;
   panelChosen();
   setPrefs({ inspector: !getPrefs().inspector });
 };
@@ -294,8 +310,7 @@ export function useWorkspaceTabBridge(client: SocketClient): void {
   useEffect(
     () =>
       client.store.subscribe(() => {
-        const view = client.store.getState().view;
-        if (runtime.focus && (view.kind !== 'workspace' || view.id !== runtime.focus.wsId)) closeFocus();
+        if (runtime.focus && filesWsOf(client.store.getState()) !== runtime.focus.wsId) closeFocus();
       }),
     [client],
   );

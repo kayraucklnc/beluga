@@ -17,24 +17,34 @@ import s from './mention.module.css';
  */
 
 const ICON: Readonly<Record<MentionKind, IconName>> = { friend: 'person', claude: 'claude', project: 'grid', workspace: 'branch', folder: 'folder', file: 'file', task: 'task', image: 'image' };
-const WHAT: Readonly<Record<MentionKind, string>> = { friend: 'Friend', claude: 'Claude', project: 'Project', workspace: 'Worktree', folder: 'Folder', file: 'File', task: 'Task', image: 'Image' };
+const WHAT: Readonly<Record<MentionKind, string>> = { friend: 'Friend', claude: 'Agent', project: 'Project', workspace: 'Worktree', folder: 'Folder', file: 'File', task: 'Task', image: 'Image' };
 
 /** The worktree a conversation is in ("ws:<id>"), if it is one. */
 export const worktreeOf = (channel: string | undefined): string | undefined => (channel?.startsWith('ws:') ? channel.slice(3) : undefined);
 
-/** The board's tasks as "@BLG-24" can name them (archived ones aren't offered). */
-export function useTaskMentions(): readonly TaskMention[] {
+/**
+ * The board's tasks as "@BLG-24" can name them (archived ones aren't offered). With `here` (the
+ * project you're in), the other projects' tasks say which project they're in.
+ */
+export function useTaskMentions(here?: string): readonly TaskMention[] {
   const issues = useApp((st) => st.board.issues);
-  return useMemo(() => issues.filter((i) => !i.archivedAt).map((i) => ({ key: i.key, title: i.title, status: i.status, open: isOpen(i.status) })), [issues]);
+  const projects = useApp((st) => st.projects);
+  return useMemo(() => {
+    const nameOf = (id: string): string => projects.find((p) => p.id === id)?.name ?? 'another project';
+    return issues
+      .filter((i) => !i.archivedAt)
+      .map((i) => ({ key: i.key, title: i.title, status: i.status, open: isOpen(i.status), ...(here && i.projectId !== here ? { elsewhere: nameOf(i.projectId) } : {}) }));
+  }, [issues, projects, here]);
 }
 
 /**
  * What mentions can name in this conversation (its worktree's files, when it has one). `tasks`:
  * "@BLG-24" names a task on your board (only for your own words: someone else's key may be theirs).
+ * `project`: the one you're in, so the list can keep the others' tasks apart.
  */
-export function useMentionWorld(channel: string | undefined, { tasks: withTasks = false }: { tasks?: boolean } = {}): MentionWorld {
+export function useMentionWorld(channel: string | undefined, { tasks: withTasks = false, project }: { tasks?: boolean; project?: string | undefined } = {}): MentionWorld {
   const friends = useApp((st) => st.network.friends);
-  const taskList = useTaskMentions();
+  const taskList = useTaskMentions(project);
   const tasks = withTasks ? taskList : undefined;
   const peers = useApp((st) => st.peers);
   const projects = useApp((st) => st.projects);
