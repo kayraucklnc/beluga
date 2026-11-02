@@ -201,6 +201,14 @@ test('a tile is resized by dragging its corner', async ({ page }) => {
   await expect(tile).toHaveAttribute('data-w', '3');
   // Wide, the number has its chart beside it; the sparkline steps aside.
   await expect(tile.locator('[data-look="chart"] [data-fits] svg').first()).toBeVisible();
+  // A long value ("TRY 8,226") shows whole beside its chart: it shrinks to its column, never cut off.
+  const clipped = await tile.locator('[data-value]').evaluate(async (el) => {
+    (el as HTMLElement).style.setProperty('--chars', '9');
+    el.firstChild!.textContent = 'TRY 8,226';
+    await new Promise((r) => setTimeout(r, 400));
+    return el.getBoundingClientRect().right - el.parentElement!.parentElement!.getBoundingClientRect().right;
+  });
+  expect(clipped).toBeLessThanOrEqual(0);
   await shoot(page, 'resized');
 });
 
