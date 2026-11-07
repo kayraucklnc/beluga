@@ -15,6 +15,7 @@ import { inSections, isPrStep, toolbarActions } from './toolbar-actions.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { Row } from './sidebar-parts.js';
+import { triageItems } from './row-triage-actions.js';
 import { outsideLocation } from './outside-model.js';
 import { useChatSelection } from './chat-selection-view.js';
 import { isAgentWorktree } from '../claude-code/subagents-model.js';
@@ -25,12 +26,13 @@ import o from './other-worktrees.module.css';
  * What a workspace's right-click menu offers: its toolbar's actions, named and drawn the same
  * (the shortcuts show for the workspace you're in, where they work).
  */
-export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<typeof useActions>['run'], rename?: () => void, regenerate?: { readonly run: () => void; readonly pending: boolean }, remindLater?: (at: number | null) => void): ActionItem[] {
+export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<typeof useActions>['run'], client: ReturnType<typeof useBeluga>['client'], rename?: () => void, regenerate?: { readonly run: () => void; readonly pending: boolean }, remindLater?: (at: number | null) => void): ActionItem[] {
   const { primary, icons, more } = toolbarActions(state, ws);
   const here = state.view.kind === 'workspace' && state.view.id === ws.id;
   const sections = inSections([...(primary ? [primary] : []), ...icons, ...more.flat()]);
   return [
     { label: 'Open', icon: 'chevronRight', onSelect: () => run({ type: 'open_ws', id: ws.id }) },
+    ...triageItems(state, `ws:${ws.id}`, run, client),
     ...(renamable(ws) && rename ? [{ label: 'Rename…', icon: 'pencil' as const, onSelect: rename }] : []),
     ...(ws.kind === 'chat' && regenerate ? [{ label: regenerate.pending ? 'Regenerating title…' : 'Regenerate title', icon: 'refresh' as const, disabled: regenerate.pending, onSelect: regenerate.run }] : []),
     ...(remindLater && ws.kind !== 'main' && !ws.archived ? [laterItem(ws, remindLater)] : []),
@@ -149,7 +151,7 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold }: { w
   // Put off till later: a quiet clock instead (what waits there shows when it reminds you).
   const quiet = signal.remindAt ? <LaterMark /> : st.tone === 'warn' || st.tone === 'info' || st.tone === 'error' ? <DotMark tone={st.tone} /> : null;
   return (
-    <ActionsContext items={() => inSelection && selection ? selection.items() : workspaceItems(client.store.getState(), ws, actions.run, () => setRenaming(true), { run: () => void regenerateTitle(), pending: regenerating }, (at) => remindWorkspaceLater(client, ws, at))}>
+    <ActionsContext items={() => inSelection && selection ? selection.items() : workspaceItems(client.store.getState(), ws, actions.run, client, () => setRenaming(true), { run: () => void regenerateTitle(), pending: regenerating }, (at) => remindWorkspaceLater(client, ws, at))}>
       <Row
         indent={indent}
         selected={inSelection || selected}

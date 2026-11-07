@@ -3,7 +3,8 @@ import { planOfPlace } from '@beluga/core/plans/owner.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { Badge } from '../components/ui.js';
-import { useApp } from '../lib/beluga.js';
+import { useActions } from '../lib/actions.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { ProgressRing } from '../plans/PlansNav.js';
 import { nextWords, planStatus, titleOf } from '../plans/plans-model.js';
@@ -12,6 +13,7 @@ import { planRowSignal } from './attention-model.js';
 import { usePrefs } from '../lib/prefs.js';
 import { taskChatsItem } from './plan-task-chats.js';
 import { DotMark, nameClass, signalClass } from './signal-marks.js';
+import { triageItems } from './row-triage-actions.js';
 import { Row } from './sidebar-parts.js';
 import m from './signal.module.css';
 
@@ -40,8 +42,11 @@ export function PlanRow({ plan, indent }: { plan: Plan; indent: number }) {
   const why = planNeeds ? (next.detail ? `${next.title}: ${next.detail}` : next.title) : inside.level === 'needs' ? inside.tip : status.label;
   const tip = [`${title}: ${why}`, view.total ? `${view.done} of ${view.total} tasks done` : '', unread ? `${unread} new message${unread === 1 ? '' : 's'}` : inside.inside && !needs ? 'New in its tasks' : ''].filter(Boolean).join(' · ');
   const signal = { level: needs ? 'needs' : unread ? 'unread' : working ? 'working' : 'idle', unread, working, tip } as const;
-  const items: ActionItem[] = [
+  const actions = useActions();
+  const { client } = useBeluga();
+  const items = (): ActionItem[] => [
     { label: 'Open Plan', icon: 'chevronRight', onSelect: () => open(plan.id) },
+    ...triageItems(client.store.getState(), `plan:${plan.id}`, actions.run, client),
     ...(plan.status === 'active' ? [taskChatsItem(plan.id, uiPrefs)] : []),
     { label: 'All Plans', separate: true, onSelect: () => openList(plan.projectId) },
   ];

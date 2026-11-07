@@ -84,6 +84,25 @@ describe('matching', () => {
   });
 });
 
+describe('the sidebar categories', () => {
+  it('finds each setting by its label, and by other words people use', () => {
+    for (const label of ['Sidebar categories', 'Settle when a pull request merges', 'Settle idle chats']) {
+      expect(top(label)).toMatchObject({ pane: 'appearance', label, entry: { group: 'Layout' } });
+    }
+    expect(top('inbox snooze')).toMatchObject({ label: 'Sidebar categories' });
+    expect(top('auto settle merge')).toMatchObject({ label: 'Settle when a pull request merges' });
+    expect(top('auto settle inactive')).toMatchObject({ label: 'Settle idle chats' });
+  });
+
+  it('says that a settle row needs Sidebar categories, and falls back to its group while hidden', () => {
+    for (const label of ['Settle when a pull request merges', 'Settle idle chats']) {
+      const hit = top(label)!;
+      expect(hit.entry?.detail).toContain('Sidebar categories');
+      expect(hitAnchors(hit).at(-1)).toEqual({ kind: 'group', anchor: 'layout' });
+    }
+  });
+});
+
 describe('every static setting', () => {
   it('is found by its label, and by its first half', () => {
     for (const e of SETTINGS) {

@@ -217,7 +217,7 @@ export class DemoTransport implements Transport {
     const w = this.world;
     if (topic === 'home') return this.home();
     // Your Mac isn't a project: Home and the Ask sheet have it (1.5).
-    if (topic === 'work') return { projects: w.projects.map((p) => ({ id: p.id, name: p.name, conversations: p.convs.map((t) => this.summary(w.convs.get(t)!)), ...(w.icons[p.id] ? { icon: w.icons[p.id]!.sum } : {}) })) };
+    if (topic === 'work') return { projects: w.projects.map((p) => ({ id: p.id, name: p.name, conversations: p.convs.map((t) => ({ ...this.summary(w.convs.get(t)!), ...this.triageOf(w.convs.get(t)!) })), ...(w.icons[p.id] ? { icon: w.icons[p.id]!.sum } : {}) })), categories: true };
     if (topic === 'tasks') return this.tasks();
     if (topic.startsWith('task:')) return w.tasks.find((t) => t.topic === topic);
     if (topic === 'sentinels') return sentinelsView(this.sentinels);
@@ -314,6 +314,14 @@ export class DemoTransport implements Transport {
     };
   }
 
+  /** A chat's category, as views.ts sends it. */
+  private triageOf(c: ConvView): Pick<ConvSummary, 'category' | 'snoozedUntil' | 'settledWhy' | 'back'> {
+    const t = this.world.triage.get(c.topic);
+    if (t?.snoozedUntil) return { category: 'snoozed', snoozedUntil: t.snoozedUntil };
+    if (t?.settledWhy) return { category: 'settled', settledWhy: t.settledWhy };
+    return { category: c.working ? 'working' : 'active', ...(t?.back ? { back: true } : {}) };
+  }
+
   /** Mark topics changed; the subscribed ones go out coalesced (VIEW_COALESCE_MS). */
   private touch(...topics: Topic[]): void {
     for (const t of topics) this.dirty.add(t);
@@ -369,6 +377,24 @@ export class DemoTransport implements Transport {
     const ok = (value: unknown = null) => this.result(id, value);
     const item = this.needFor(method, args);
     switch (method) {
+      // ---- a chat's category
+      case 'triage.settle':
+        if (w.convs.get(`conv:${str(0)}`)?.working) return this.frames.emit({ t: 'result', id, ok: false, error: 'This chat is working. Settle it when its turn ends, or snooze it now.' });
+        w.triage.set(`conv:${str(0)}`, { settledWhy: 'you' });
+        this.touch('work');
+        return ok();
+      case 'triage.snooze':
+        w.triage.set(`conv:${str(0)}`, { snoozedUntil: args[1] as number });
+        this.touch('work');
+        return ok();
+      case 'triage.wake':
+        w.triage.set(`conv:${str(0)}`, { back: true });
+        this.touch('work');
+        return ok();
+      case 'triage.unsettle':
+        w.triage.delete(`conv:${str(0)}`);
+        this.touch('work');
+        return ok();
       // ---- what needs you (the calls views.ts puts on the buttons)
       case 'needs.dismiss':
         this.resolve(this.world.needs.find((n) => n.id === str(0)));

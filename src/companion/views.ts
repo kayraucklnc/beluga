@@ -22,6 +22,8 @@ import { widgetSnapshot } from '../core/sentinel/widgets.js';
 import { COMPARE, changeText, deltaOf, formatMetric } from '../core/sentinel/metrics.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type MilestoneView, type PlanView as PlanProgress, agentNowWords, liveFrom, planView } from '../core/plans/progress.js';
+import { triageFacts } from '../core/triage/facts.js';
+import { categoryOf, triageKey } from '../core/triage/model.js';
 import { shortVersion } from '../net/mesh/features.js';
 import type { MessageView, PersonView } from '../net/mesh/views.js';
 import { type Reaction, quickReactions } from '../shared/reactions.js';
@@ -640,7 +642,7 @@ export function workView(state: DomainState, ctx?: ViewContext): WorkView {
     if (!s) continue;
     const key = c.projectId ?? (c.channel === 'room' ? 'room' : `shared:${c.project ?? ''}`);
     const entry = byProject.get(key) ?? { id: clip(key, 200), name: clip(c.project ?? c.title, 200), conversations: [], ...(c.projectId ? iconOf(ctx, c.projectId) : {}) };
-    entry.conversations.push(s);
+    entry.conversations.push({ ...s, ...triageFields(state, c.channel) });
     byProject.set(key, entry);
   }
   // Every project of yours, even one with nothing in it yet (one just added on a server): the Ask
@@ -655,6 +657,21 @@ export function workView(state: DomainState, ctx?: ViewContext): WorkView {
       .map((p) => ({ ...p, conversations: p.conversations.sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0)).slice(0, 200) }))
       .sort((a, b) => lastOf(b) - lastOf(a))
       .slice(0, 200),
+    ...(state.prefs.chatCategories ? { categories: true as const } : {}),
+  };
+}
+
+/** A chat's category for Work: nothing while `chatCategories` is off, or for what has no category. */
+function triageFields(state: DomainState, channel: string): Pick<ConvSummary, 'category' | 'snoozedUntil' | 'settledWhy' | 'back'> {
+  const key = state.prefs.chatCategories ? triageKey(state, channel) : undefined;
+  if (!key) return {};
+  const record = state.triage[key];
+  const category = categoryOf(record, triageFacts(state, key));
+  return {
+    category,
+    ...(category === 'snoozed' && record?.snoozed ? { snoozedUntil: record.snoozed.until } : {}),
+    ...(category === 'settled' && record?.settled ? { settledWhy: record.settled.why } : {}),
+    ...(record?.backAt !== undefined ? { back: true as const } : {}),
   };
 }
 

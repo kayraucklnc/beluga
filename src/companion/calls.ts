@@ -67,6 +67,11 @@ export const PhoneCalls = {
   'network.status': entry('network.status', done),
   'network.friends.list': entry('network.friends.list', done),
   'network.friends.answerOffer': entry('network.friends.answerOffer', done),
+  'triage.settle': entry('triage.settle', done),
+  'triage.unsettle': entry('triage.unsettle', done),
+  'triage.snooze': entry('triage.snooze', done),
+  'triage.wake': entry('triage.wake', done),
+  'triage.setAutoSettle': entry('triage.setAutoSettle', done),
   // Team boards: an offer to team up with a friend on the same repository (its card).
   'team.answer': entry('team.answer', done),
   'team.ackAssignment': entry('team.ackAssignment', done),

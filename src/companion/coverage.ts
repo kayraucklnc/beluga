@@ -442,6 +442,12 @@ export const PHONE: Record<Method, Side> = {
   'ci.log': 'mac',
   'ci.rerun': 'mac',
   'ci.cancel': 'mac',
+  // Each chat's category: reading and sorting your own list, as the Mac does.
+  'triage.settle': 'phone',
+  'triage.unsettle': 'phone',
+  'triage.snooze': 'phone',
+  'triage.wake': 'phone',
+  'triage.setAutoSettle': 'phone',
   // Team boards: answering an offer is the phone's (a NeedsYou card); leaving a team is the Mac's.
   'team.answer': 'phone',
   'team.leave': 'mac',

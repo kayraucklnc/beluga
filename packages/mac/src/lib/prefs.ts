@@ -44,6 +44,8 @@ export interface UiPrefs {
   readonly sidebarWidth: number;
   /** Sidebar sections you've folded. */
   readonly folded: readonly string[];
+  /** Your folds from before Sidebar categories went on: turning it off gives them back. */
+  readonly foldedBeforeCategories: readonly string[];
   /** Projects you unfolded in the sidebar (by id): the rest start folded. */
   readonly openProjects: readonly string[];
   /** The sidebar's Unread section: conversations that finished or need you, at the top (only while there are some). */
@@ -165,6 +167,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   sidebar: true,
   sidebarWidth: 248,
   folded: [],
+  foldedBeforeCategories: [],
   openProjects: [],
   unreadSection: true,
   sendWith: 'enter',

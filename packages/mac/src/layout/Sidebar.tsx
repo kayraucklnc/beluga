@@ -14,12 +14,13 @@ import { sameDeep } from '../lib/stable.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { RoomStatus } from '../dialogs/native/RoomPopover.js';
 import { PhoneMark } from '../phone/Phone.js';
-import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
-import { Projects, ProjectsAddMenu, showArchivedOf } from './ProjectTree.js';
+import { ChatsMenu } from './ChatsMenu.js';
+import { Projects, ProjectsAddMenu } from './ProjectTree.js';
 import { SharedProjects } from './SharedProjects.js';
 import { WorkspaceRow } from './workspace-row.js';
 import { ChatSelectionCount, SidebarChatSelection } from './chat-selection-view.js';
 import { UnreadSection } from './UnreadSection.js';
+import { CategorySections } from './CategorySections.js';
 import { Row, Section } from './sidebar-parts.js';
 import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
@@ -94,7 +95,7 @@ export function Sidebar() {
   const actions = useActions();
   const drop = useFolderDrop();
   // Only what the sidebar itself shows: drawn again when that changes, not on every streamed event (KLD-48).
-  const { tabs, liveChats, view, badges } = useApp((state) => {
+  const { tabs, liveChats, view, badges, categories } = useApp((state) => {
     const news = overviewNews(state);
     const fresh = newShares(state);
     const badges: Partial<Record<string, { count: number; urgent?: boolean }>> = {
@@ -107,6 +108,7 @@ export function Sidebar() {
       liveChats: state.projects.find((p) => !p.root)?.workspaces.filter((w) => !w.archived) ?? [],
       view: state.view,
       badges,
+      categories: state.prefs.chatCategories,
     };
   }, sameDeep);
   const files = tabs.find((t) => t.kind === 'files');
@@ -159,25 +161,31 @@ export function Sidebar() {
           <RequestsNav whenAny />
         </section>
 
-        <UnreadSection />
+        {categories ? (
+          <CategorySections />
+        ) : (
+          <>
+            <UnreadSection />
 
-        <Section
-          id="chats"
-          title="Chats"
-          action={
-            <>
-              <ChatsMenu />
-              <IconButton icon="plus" label="New chat (not tied to a project)" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />
-            </>
-          }
-        >
-          {liveChats.filter((w) => notLater(w)).map((w) => (
-            <WorkspaceRow key={w.id} ws={w} indent={0} />
-          ))}
-          {/* Put off till later (Remind Me Later): folded at the bottom. */}
-          <LaterRows list={laterOf(liveChats)} indent={0} foldKey="later:chats" />
-          {liveChats.length ? null : <Row className={s.hintRow} icon={<Icon name="plus" size={13} />} label="Talk to your agent about anything" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />}
-        </Section>
+            <Section
+              id="chats"
+              title="Chats"
+              action={
+                <>
+                  <ChatsMenu />
+                  <IconButton icon="plus" label="New chat (not tied to a project)" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />
+                </>
+              }
+            >
+              {liveChats.filter((w) => notLater(w)).map((w) => (
+                <WorkspaceRow key={w.id} ws={w} indent={0} />
+              ))}
+              {/* Put off till later (Remind Me Later): folded at the bottom. */}
+              <LaterRows list={laterOf(liveChats)} indent={0} foldKey="later:chats" />
+              {liveChats.length ? null : <Row className={s.hintRow} icon={<Icon name="plus" size={13} />} label="Talk to your agent about anything" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />}
+            </Section>
+          </>
+        )}
 
         <Section id="projects" title="Projects" action={<ProjectsAddMenu />}>
           <Projects />
@@ -200,25 +208,6 @@ export function Sidebar() {
       <SelfBar />
     </nav>
     </SidebarChatSelection>
-  );
-}
-
-/**
- * The Chats header's •••: archived chats stay out of the sidebar, so this is the way to them
- * (the Overview's Archived list, narrowed to Chats), as a project's own menu has Show Archived.
- */
-function ChatsMenu() {
-  const actions = useActions();
-  const chats = useApp((st) => {
-    const p = st.projects.find((x) => !x.root);
-    return p ? { id: p.id, archived: p.workspaces.filter((w) => w.archived).length } : undefined;
-  }, sameDeep);
-  if (!chats?.archived) return null;
-  const items: ActionItem[] = [{ label: `Show Archived (${chats.archived})`, icon: 'archive', onSelect: () => showArchivedOf(actions.run, chats.id) }];
-  return (
-    <ActionsDropdown items={items}>
-      <IconButton icon="more" label="Chats Options" />
-    </ActionsDropdown>
   );
 }
 

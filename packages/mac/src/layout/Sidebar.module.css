@@ -68,6 +68,11 @@
 .sectionHead:hover .sectionChevron {
   opacity: 1;
 }
+.sectionCount {
+  margin-left: 5px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
 .sectionAction {
   opacity: 0;
   transition: opacity var(--dur-fast);
@@ -298,6 +303,18 @@
 .hoverTools:has(button[data-state='open']) button {
   width: 22px;
   opacity: 1;
+}
+/* A category row's status gives its room to the tools. */
+.rowStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.row:hover .rowStatus,
+.row:focus-visible .rowStatus,
+.row:has(:focus-visible) .rowStatus,
+.row:has(.hoverTools button[data-state='open']) .rowStatus {
+  display: none;
 }
 /* A status dot in a row's trailing tools: always the last thing, at the right edge. */
 .status {

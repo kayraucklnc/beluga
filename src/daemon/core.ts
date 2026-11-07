@@ -20,6 +20,7 @@ import { leaveNetwork, networkSwitch } from '../core/network.js';
 import { launchBoard } from '../core/board/launch.js';
 import { launchDialogues } from '../core/dialogues/launch.js';
 import { launchSentinel } from '../core/sentinel/launch.js';
+import { launchTriage } from '../core/triage/launch.js';
 import { AutoContinue } from '../core/auto-continue.js';
 import { launchAssistant } from '../core/assistant/launch.js';
 import { launchChat } from '../core/chat/launch.js';
@@ -360,6 +361,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopBoard = (): void => undefined;
   let stopDialogues = (): void => undefined;
   let stopSentinel = (): void => undefined;
+  let stopTriage = (): void => undefined;
   let stopAutoContinue = (): void => undefined;
   let stopAssistant = (): void => undefined;
   let stopCompanion = async (): Promise<void> => undefined;
@@ -383,6 +385,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopFriendShares = launchFriendShares({ session, store, demo: Boolean(demo) });
     // Tasks (the board): opened by worktrees, moved by pull requests, kept true by Claude.
     if (opts.network) stopBoard = launchBoard({ session, store, demo: Boolean(demo) });
+    // Each chat's category for you (core/triage): after the board, because it reads plans and their tasks.
+    if (opts.network) stopTriage = launchTriage({ session, store, demo: Boolean(demo) });
     // Dialogues between your agents, chaired by Beluga (core/dialogues): saved beside plans.
     if (opts.network) stopDialogues = launchDialogues({ session, store, demo: Boolean(demo) });
     // Sentinel: watchers that run on a schedule or by hand, do a few steps and leave a report (docs/sentinel.md).
@@ -436,6 +440,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     stopFriendShares();
     stopAssistant();
     stopSentinel();
+    stopTriage();
     stopAutoContinue();
     stopBoard();
     stopDialogues();

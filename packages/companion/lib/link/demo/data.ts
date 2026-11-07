@@ -1,6 +1,6 @@
 import { dashboardConv } from './render-demo';
 import { JOB_DOCS } from './dashboard';
-import type { AgentRefView, ChatMessageView, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
+import type { AgentRefView, ChatMessageView, ConvSummary, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
 import { DEMO_IMAGES, type DemoImage } from './images.generated';
 import { stripCode } from '../../render';
 import { agentLabel, agentName } from '../../../../../src/shared/agent-label';
@@ -46,6 +46,8 @@ export interface DemoWorld {
   icons: Record<string, { sum: string; svg: string }>;
   /** Merges started from the phone, by conversation. */
   merges: Map<string, MergeView>;
+  /** Chats you settled or snoozed, by conversation; the others are Active, or Working while they work. */
+  triage: Map<string, { snoozedUntil?: number; settledWhy?: NonNullable<ConvSummary['settledWhy']>; back?: true }>;
 }
 
 /** The demo projects' icons: small SVG marks (what companion.icon hands out, by checksum). */
@@ -789,6 +791,10 @@ export function makeWorld(now = Date.now()): DemoWorld {
     tasks: demoTasks(now),
     icons: ICONS,
     merges: new Map(),
+    triage: new Map([
+      ['conv:weather.ci', { settledWhy: 'pr_merged' }],
+      ['conv:shop.dashboard', { snoozedUntil: now + 3 * 60 * MIN }],
+    ]),
   };
 }
 

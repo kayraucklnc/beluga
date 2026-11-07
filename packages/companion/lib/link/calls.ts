@@ -46,6 +46,11 @@ export const calls = {
   deleteMacChat: (topic: Topic): Call => make('assistant.deleteChat', [macChatOf(topic)], 'Delete the chat'),
   /** A chat's id → its topic: the first (`main`) keeps `conv:mac:assistant`. */
   macChatTopic: (id: string): Topic => (id === 'main' ? 'conv:mac:assistant' : `conv:mac:assistant:${id}`) as Topic,
+  /** 1.43 (BLG-74): a chat's category, as its sheet in Work changes it. The setting itself stays the Mac's. */
+  settle: (topic: Topic): Call => make('triage.settle', [channelOf(topic)], 'Settle'),
+  unsettle: (topic: Topic): Call => make('triage.unsettle', [channelOf(topic)], 'Un-settle'),
+  snooze: (topic: Topic, until: number): Call => make('triage.snooze', [channelOf(topic), until], 'Snooze'),
+  wake: (topic: Topic): Call => make('triage.wake', [channelOf(topic)], 'Wake'),
   /** A message in a conversation (yours, or shared with you to work in), with photos. */
   send: (topic: Topic, text: string, files?: Files): Call => make('companion.ask', [{ target: { topic }, text, ...withFiles(files) }], `Send "${short(text)}"`),
   /** Ask your Mac in a project: a new conversation there (its topic comes back). */

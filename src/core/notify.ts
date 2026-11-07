@@ -12,12 +12,13 @@ import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 import { allNeeds, needMatches } from '../companion/needs-you.js';
 import { type AgentRef, defaultAgentOf } from '../protocol.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
+import { triageKey } from './triage/model.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
 
 /** What exactly happened, when the kind alone doesn't say (screens pick an icon by it). */
-export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test' | 'sentinel';
+export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test' | 'sentinel' | 'woke';
 
 export interface NoticeEvent {
   readonly kind: NoticeKind;
@@ -240,6 +241,12 @@ function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
   return out;
 }
 
+function isSnoozed(state: DomainState, channel: string): boolean {
+  if (!state.prefs.chatCategories) return false;
+  const key = triageKey(state, channel);
+  return key !== undefined && state.triage[key]?.snoozed !== undefined;
+}
+
 function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
   if (prev.log === next.log) return [];
   const before = new Map<string, AgentItem>();
@@ -253,6 +260,8 @@ function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
     if (isSentinelChat(item.channel)) continue;
     const old = before.get(item.id);
     if (!old || isFinal(old.status)) continue;
+    // A snoozed chat stays quiet when a turn ends well: its count still goes up.
+    if (item.status === 'done' && isSnoozed(next, item.channel)) continue;
     const mine = item.owner === selfId;
     // A friend's Claude matters when it was working for you.
     if (!mine && item.requesterName !== selfName) continue;
@@ -308,6 +317,9 @@ function finishedSetups(prev: DomainState, next: DomainState): NoticeEvent[] {
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** How a message says your name: "@name", not inside a longer word or handle. */
+export const mentionOf = (name: string): RegExp => new RegExp(`(^|[^\\w@])@${escapeRe(name)}(?![\\w-])`, 'i');
+
 /** Someone mentions you by name, or writes in the room when it's just the two of you. */
 function messagesForYou(prev: DomainState, next: DomainState): NoticeEvent[] {
   const self = next.self;
@@ -315,7 +327,7 @@ function messagesForYou(prev: DomainState, next: DomainState): NoticeEvent[] {
   const seen = new Set(prev.log.slice(-RECENT_LOG).map((l) => l.id));
   const fresh = next.log.slice(-RECENT_LOG).filter((l): l is ChatItem => l.type === 'chat' && !seen.has(l.id));
   if (!fresh.length || fresh.length > MESSAGE_BURST) return [];
-  const mention = new RegExp(`(^|[^\\w@])@${escapeRe(self.name)}(?![\\w-])`, 'i');
+  const mention = mentionOf(self.name);
   const others = next.peers.filter((p) => p.peerId !== self.peerId);
   const out: NoticeEvent[] = [];
   for (const m of fresh) {

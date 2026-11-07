@@ -27,6 +27,10 @@ export const BRANCH_PREFIX_DEFAULT = 'beluga/';
 /** A prefix git accepts in front of a slug: letters, digits, `. _ - /`, no `..`, `//`, or part starting with `.` `-` `/`. */
 export const BRANCH_PREFIX_RE = /^(?![./-])(?!.*\.\.)(?!.*\/\/)(?!.*\/[.-])[\w./-]{0,40}$/;
 
+/** How many days without activity settle a chat (core/triage); 0: never. */
+export const SETTLE_IDLE_DAYS_DEFAULT = 3;
+export const SETTLE_IDLE_DAYS_MAX = 365;
+
 /** Keep the Mac awake for your phone: never, only on power, or always (the display may still sleep). */
 export const KEEP_AWAKE = ['off', 'power', 'always'] as const;
 export type KeepAwake = (typeof KEEP_AWAKE)[number];
@@ -123,6 +127,12 @@ export const Settings = z.object({
   parallelRuns: z.number().int().min(PARALLEL_RUNS_MIN).max(PARALLEL_RUNS_MAX).catch(PARALLEL_RUNS_DEFAULT),
   /** How many chats Your Mac and Sentinel each keep open (shared/chat-limit.ts); 0: no limit. */
   chatLimit: z.number().int().min(0).max(CHAT_LIMIT_MAX).catch(CHAT_LIMIT_DEFAULT),
+  /** Sort chats into Inbox, Working, Snoozed and Settled (core/triage). Off: no automatic change and no triage file. */
+  chatCategories: z.boolean().catch(false),
+  /** A merged PR settles its chat. */
+  settleOnMerge: z.boolean().catch(true),
+  /** Days without activity before a chat settles; 0: never. */
+  settleIdleDays: z.number().int().min(0).max(SETTLE_IDLE_DAYS_MAX).catch(SETTLE_IDLE_DAYS_DEFAULT),
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder. */
   scratchFolder: z.boolean().default(true),
   /** How much of Claude's sub-agent work the chat shows. */
