@@ -1,4 +1,4 @@
-import type { ScheduleTrigger, Trigger } from './model.js';
+import type { ScheduleTrigger } from './trigger.js';
 
 /**
  * When a schedule runs (docs/sentinel.md §4, "Clock"): pure, in the Mac's local time (or `tz`,
@@ -6,6 +6,9 @@ import type { ScheduleTrigger, Trigger } from './model.js';
  * the clocks skip in spring) runs at the moment after the gap; one that happens twice (autumn)
  * runs the first time only.
  */
+
+/** Any trigger: only a schedule has a clock, the other kinds never come due here. */
+export type ClockTrigger = ScheduleTrigger | { readonly kind: string };
 
 const DAY = 24 * 60 * 60 * 1000;
 /** How far ahead (or back) a slot is looked for: a monthly schedule's is never further. */
@@ -101,8 +104,8 @@ function slotsOn(t: ScheduleTrigger, y: number, m: number, d: number): Array<rea
  * The next time a schedule runs after `after` (its last slot that ran, or when it was turned on);
  * without it, the next after `now`. Not a schedule: undefined. A result at or before `now` is due.
  */
-export function nextRunAt(trigger: Trigger, after: number | undefined, now: number, tz?: string): number | undefined {
-  if (trigger.kind !== 'schedule') return undefined;
+export function nextRunAt(trigger: ClockTrigger, after: number | undefined, now: number, tz?: string): number | undefined {
+  if (!isSchedule(trigger)) return undefined;
   const from = after ?? now;
   const start = wallOf(from, tz);
   for (let i = 0; i < MAX_DAYS; i++) {
@@ -116,8 +119,8 @@ export function nextRunAt(trigger: Trigger, after: number | undefined, now: numb
 }
 
 /** The latest slot at or before `now`. */
-export function lastSlotAt(trigger: Trigger, now: number, tz?: string): number | undefined {
-  if (trigger.kind !== 'schedule') return undefined;
+export function lastSlotAt(trigger: ClockTrigger, now: number, tz?: string): number | undefined {
+  if (!isSchedule(trigger)) return undefined;
   const start = wallOf(now, tz);
   for (let i = 0; i < MAX_DAYS; i++) {
     const day = addDays(start.y, start.m, start.d, -i);
@@ -143,8 +146,8 @@ export type Due =
  * was asleep or Beluga closed, it runs at most once (catch-up) or not at all (skip); a slot that
  * only just passed always runs.
  */
-export function dueNow(trigger: Trigger, last: number | undefined, now: number, opts: { readonly lateMs?: number; readonly tz?: string } = {}): Due {
-  if (trigger.kind !== 'schedule') return { kind: 'wait' };
+export function dueNow(trigger: ClockTrigger, last: number | undefined, now: number, opts: { readonly lateMs?: number; readonly tz?: string } = {}): Due {
+  if (!isSchedule(trigger)) return { kind: 'wait' };
   const next = nextRunAt(trigger, last, now, opts.tz);
   if (next === undefined) return { kind: 'wait' };
   if (next > now) return { kind: 'wait', at: next };
@@ -156,8 +159,12 @@ export function dueNow(trigger: Trigger, last: number | undefined, now: number, 
 }
 
 /** How many slots from `first` to `last`, both counted (capped: it's only said in words). */
-function countSlots(trigger: Trigger, first: number, last: number, tz?: string): number {
+function countSlots(trigger: ScheduleTrigger, first: number, last: number, tz?: string): number {
   let n = 0;
   for (let t: number | undefined = first; t !== undefined && t <= last && n < 1000; t = nextRunAt(trigger, t, t, tz)) n++;
   return n;
+}
+
+function isSchedule(trigger: ClockTrigger): trigger is ScheduleTrigger {
+  return trigger.kind === 'schedule';
 }

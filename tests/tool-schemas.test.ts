@@ -6,6 +6,7 @@ import { createGatewayToolDefs } from '../src/agent/gateway-tools.js';
 import { createMacToolDefs } from '../src/agent/mac-tools.js';
 import { createPhoneToolDefs } from '../src/agent/phone-tools.js';
 import { createPlanToolDefs } from '../src/agent/plan-tools.js';
+import { createScheduleToolDefs } from '../src/agent/schedule-tools.js';
 import { createSentinelToolDefs } from '../src/agent/sentinel-tools.js';
 import { createTaskToolDefs } from '../src/agent/task-tools.js';
 import { createRoomToolDefs } from '../src/agent/tools.js';
@@ -26,6 +27,7 @@ const SERVERS = {
   beluga_mac: createMacToolDefs(any),
   beluga_phone: createPhoneToolDefs(any),
   beluga_plan: createPlanToolDefs(any),
+  beluga_schedule: createScheduleToolDefs(any),
   beluga_sentinel: createSentinelToolDefs(any),
   beluga_task: createTaskToolDefs(any),
 };

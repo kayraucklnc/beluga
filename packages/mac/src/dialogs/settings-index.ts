@@ -92,6 +92,8 @@ export const SETTINGS: readonly Entry[] = [
   group('claude', 'MCP servers', 'The servers your agent uses.', 'mcp tools servers connectors'),
   ...rows('claude', 'Local models', [['Run on your own models', 'Ollama or another server on your computer.', 'ollama lm studio local llm offline']]),
   ...rows('claude', 'In the chat', [['Sub-agents', 'Every step, one line each, or just a count.', 'subagents task tool agents']]),
+  group('claude', 'Schedules', 'Recurring runs in one chat, on this computer.', 'schedule cron recurring timer every'),
+  ...rows('claude', 'Schedules', [['Schedules in chats', 'Your agent runs a prompt in a chat, on its own.', 'chatSchedules schedule cron recurring']]),
   ...rows('claude', 'Context', [
     ['Context meter', 'How full each conversation is, beside the send button.', 'context window tokens usage'],
     ['Auto-compact when the context is nearly full', 'Your agent summarizes and carries on.', 'compact compaction summarize context'],

@@ -22,6 +22,8 @@ import { LocalEndpoints } from './local-endpoints.js';
 import { LOCAL_RUNTIME, localModels, localWhy } from '../shared/local-endpoints.js';
 import { useViewEnv } from './views/sources.js';
 import { boardOf } from './board/registry.js';
+import { schedulesOf } from './schedule/registry.js';
+import { scheduleCard, scheduleToolsFor } from './schedule/tools.js';
 import { sentinelOf } from './sentinel/registry.js';
 import { plansOf } from './plans/registry.js';
 import { assistantOf } from './assistant/registry.js';
@@ -223,8 +225,16 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       isGuest: (peerId) => invites.isRestricted(peerId),
       board: (channel, from, o) => boardOf(session)?.forRun(channel, from, o),
       sentinel: (channel, from) => sentinelOf(session)?.forRun(channel, from),
+      schedule: (channel, requestId) => schedulesOf(session)?.briefFor(channel, requestId),
       sentinelChat: (channel, from) => sentinelOf(session)?.chatPlace(channel, from),
-      confirmTool: (toolName, input) => sentinelOf(session)?.confirmWords(toolName, input),
+      scheduleTools: (channel, requestId) => {
+        const schedules = schedulesOf(session);
+        return schedules && scheduleToolsFor(schedules, channel, requestId);
+      },
+      confirmTool: (toolName, input, channel) => {
+        const schedules = schedulesOf(session);
+        return (schedules && scheduleCard(schedules, toolName, input, channel)) ?? sentinelOf(session)?.confirmWords(toolName, input);
+      },
       plans: (channel, from) => plansOf(session)?.forRun(channel, from),
       // "Your Mac"'s chats, and your own asks in friends' chats (BLG-207): both work in its folder.
       assistant: (channel, from) => assistantOf(session)?.forRun(channel, from) ?? assistantOf(session)?.forChat(channel, from),

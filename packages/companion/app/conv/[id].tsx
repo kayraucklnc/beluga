@@ -5,6 +5,7 @@ import { Activity, Bot, Camera, ChevronRight, Map as MapIcon, CircleCheck, Circl
 import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
 import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
+import { ScheduleRunLine, SchedulesSheet } from '../../components/Schedules';
 import { openOnMac } from '../../lib/mac';
 import { useRef, useState } from 'react';
 import { Platform, ScrollView, useWindowDimensions, View } from 'react-native';
@@ -88,6 +89,7 @@ export default function Conversation() {
   /** Your message, long-pressed to edit it (1.28): Rewind Here or New Fork. */
   const [editing, setEditing] = useState<TurnView | undefined>();
   const [picking, setPicking] = useState(false);
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
   const canEdit = useSupports('editPrompt');
   // 1.41 (BLG-702): a person's message in the room's or a workspace's chat takes emoji reactions.
   const reacts = useSupports('reactions');
@@ -215,6 +217,8 @@ export default function Conversation() {
               <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeIn.duration(180) : undefined}>
                 {t.dialogue ? (
                   <DialogueTurn d={t.dialogue} />
+                ) : t.scheduled ? (
+                  <ScheduleRunLine run={t.scheduled} />
                 ) : t.who === 'you' ? (
                   <YourTurn t={t} chips={chipsOf(t)} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : reactPress(t)} />
                 ) : t.who === 'friend' && reactPress(t) ? (
@@ -319,6 +323,7 @@ export default function Conversation() {
           options={[]}
         />
         <AgentPickerSheet topic={topic} picker={c?.agent} visible={picking} onClose={() => setPicking(false)} />
+        <SchedulesSheet schedules={c?.schedules} visible={schedulesOpen} onClose={() => setSchedulesOpen(false)} />
         <Options
           visible={Boolean(unread)}
           onClose={() => setUnread(undefined)}
@@ -344,6 +349,7 @@ export default function Conversation() {
             { Icon: c?.agent ? markIcon(runtimeMark(c.agent.runtime)) : Bot, label: `Agent · ${c?.agent?.label ?? ''}`, sub: 'Pick the agent and model for this conversation', tone: 'lavender', hidden: !c?.agent || !store.supports('agentPicker'), onPress: () => setPicking(true) },
             { Icon: Plus, label: 'New chat', sub: 'A fresh chat with your Mac, a new tab there too', tone: 'sky', hidden: !macChats, onPress: () => newMacChat((h) => router.replace(h as never)) },
             { Icon: Square, label: askedTask ? 'Stop asking' : 'Stop the agent', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic)) },
+            { Icon: Clock, label: c?.schedules && c.schedules.items.length > 1 ? `Schedules · ${c.schedules.items.length}` : 'Schedules', sub: c?.schedules?.owner ? `Runs on ${c.schedules.owner}’s computer` : 'What wakes this chat by itself', tone: 'mint', hidden: !c?.schedules, onPress: () => setSchedulesOpen(true) },
             { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
             { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
             { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },

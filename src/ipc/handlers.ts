@@ -25,6 +25,7 @@ import { STEPS_HANDLERS } from './steps-handlers.js';
 import { GATEWAY_HANDLERS } from './gateway-handlers.js';
 import { BOARD_HANDLERS } from './board-handlers.js';
 import { DASHBOARD_HANDLERS } from './dashboard-handlers.js';
+import { SCHEDULE_HANDLERS } from './schedule-handlers.js';
 import { SENTINEL_HANDLERS } from './sentinel-handlers.js';
 import { PLANS_HANDLERS } from './plans-handlers.js';
 import { plansOf } from '../core/plans/registry.js';
@@ -394,6 +395,7 @@ export const HANDLERS = {
   ...GATEWAY_HANDLERS,
   ...BOARD_HANDLERS,
   ...SENTINEL_HANDLERS,
+  ...SCHEDULE_HANDLERS,
   ...DASHBOARD_HANDLERS,
   ...PLANS_HANDLERS,
   ...DIALOGUES_HANDLERS,

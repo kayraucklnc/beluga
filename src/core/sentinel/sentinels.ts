@@ -9,7 +9,7 @@ import type { Action, Store } from '../store.js';
 import { filterIssues, isOpen } from '../board/model.js';
 import { describeList } from '../board/prompt.js';
 import { planTitle } from '../plans/model.js';
-import { dueNow, nextRunAt } from './clock.js';
+import { dueNow, nextRunAt } from '../../shared/schedule/clock.js';
 import type { AgentPlace } from '../../agent/types.js';
 import { SentinelChats } from './chat.js';
 import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_INFO, dashboardSentinels, layoutTiles, outputFormat, outputSteps } from './dashboard-model.js';

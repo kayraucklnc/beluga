@@ -21,11 +21,9 @@ import {
   sharedModel,
   sidebarLine,
   stepChoices,
-  toggleDay,
   triggerChoices,
   triggerOfKind,
   whenText,
-  withEvery,
   withModel,
   anyRunning,
   accessSentence,
@@ -42,6 +40,7 @@ import {
   looksLikeUrl,
   troubleOf,
 } from '../packages/mac/src/sentinel/sentinel-model.js';
+import { toggleDay, withEvery } from '../packages/mac/src/components/schedule-model.js';
 import { panelFits } from '../packages/mac/src/lib/panel-model.js';
 import { dockCount, isSentinelOwned, projectTally, unreadEntries } from '../packages/mac/src/layout/attention-model.js';
 import { initialAppState, reduceApp } from '../src/client/screen.js';

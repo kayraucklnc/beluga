@@ -4,6 +4,7 @@ import { createDashboardTools } from './dashboard-tools.js';
 import { createMacTools } from './mac-tools.js';
 import { createPhoneTools } from './phone-tools.js';
 import { createPlanTools } from './plan-tools.js';
+import { createScheduleTools } from './schedule-tools.js';
 import { createSentinelTools } from './sentinel-tools.js';
 import { createTaskTools } from './task-tools.js';
 import type { ToolSuite } from './tool-kit.js';
@@ -28,6 +29,8 @@ export function runToolSuites(input: AgentRunInput, bridge: RoomBridge, shelf: V
     // Your own runs get sentinels (core/sentinel): list, set up, run, pause; inside a run, stop it.
     ...(input.sentinelTools ? { beluga_sentinel: createSentinelTools(input.sentinelTools) } : {}),
     ...(input.dashboardTools ? { beluga_dashboard: createDashboardTools(input.dashboardTools) } : {}),
+    // Your own runs get the schedules of their chat (core/schedule): create, update and remove ask you.
+    ...(input.scheduleTools ? { beluga_schedule: createScheduleTools(input.scheduleTools) } : {}),
     // A plan's home conversation gets the plan's tools (core/plans).
     ...(input.planTools ? { beluga_plan: createPlanTools(input.planTools) } : {}),
     // "Your Mac" gets its own tools (core/assistant).

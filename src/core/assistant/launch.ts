@@ -5,6 +5,7 @@ import { pretendSystem } from '../gateway/demo-system.js';
 import { belugaHome } from '../home.js';
 import { boardOf } from '../board/registry.js';
 import { plansOf } from '../plans/registry.js';
+import { schedulesOf } from '../schedule/registry.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import { MacAssistant } from './assistant.js';
@@ -21,6 +22,7 @@ export function launchAssistant(host: { readonly session: Session; readonly stor
     store,
     dir,
     selfId: () => session.selfId,
+    onChatDeleted: (channel) => schedulesOf(session)?.chatGone(channel),
     ...(host.demo ? { system: pretendSystem() } : {}),
     startWorktree: async (projectId, message, opts) => session.workspaces?.startWorktree(projectId, message, (p) => session.nameTask(p), { ...opts, quiet: true }),
     startTask: async (key) => {

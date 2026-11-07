@@ -442,7 +442,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       };
       input.onSteer?.(Object.assign(steerIn, { status, interrupt, force }) satisfies Steer);
 
-      const ends = () => ({ stderr, ...(rejectedUntil !== undefined ? { rejectedUntil } : {}), ...(apiError ? { apiError } : {}) });
+      const ends = () => ({ stderr, ...(place?.resume ? { resumed: true } : {}), ...(rejectedUntil !== undefined ? { rejectedUntil } : {}), ...(apiError ? { apiError } : {}) });
       const q = query({ prompt: prompts, options });
       showThinking(q);
       let failed = true;

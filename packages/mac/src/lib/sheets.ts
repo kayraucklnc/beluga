@@ -16,6 +16,8 @@ export type NativeSheet =
   | { readonly kind: 'fork_to_mac'; readonly owner: string; readonly wsId: string }
   /** A command to run on a friend's computer (`peerId` unset: pick who). */
   | { readonly kind: 'peer_run'; readonly peerId?: string }
+  /** A schedule of one chat: a new one, or `id` to change it. */
+  | { readonly kind: 'schedule'; readonly channel: string; readonly id?: string }
   /** A new template (Name, Prompt, Plan first). */
   | { readonly kind: 'template' }
   /** A worktree on a friend's computer, with the project already picked. */

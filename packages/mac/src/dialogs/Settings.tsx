@@ -22,6 +22,7 @@ import { ThemeGroups } from './ThemePicker.js';
 import { EnvironmentSettings } from './EnvironmentSettings.js';
 import { ReportProblemRow } from './ReportProblemRow.js';
 import { ContextSettings } from './ContextSettings.js';
+import { ScheduleSettings } from '../schedule/ScheduleSettings.js';
 import { UsageLimitSettings } from './UsageLimitSettings.js';
 import { ParallelSettings } from './ParallelSettings.js';
 import { ChatLimitSettings } from './ChatLimitSettings.js';
@@ -402,6 +403,7 @@ function AgentPane() {
         </Row>
       </Group>
       <ContextSettings />
+      <ScheduleSettings />
       <UsageLimitSettings />
       <ParallelSettings />
       <ChatLimitSettings />

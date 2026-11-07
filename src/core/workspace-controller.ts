@@ -146,7 +146,11 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
  */
 export type WorktreeEvent =
   | { readonly kind: 'created'; readonly ws: Workspace; readonly from?: string; readonly about?: string }
-  | { readonly kind: 'merged' | 'archived' | 'removed' | 'restored'; readonly id: string };
+  | { readonly kind: 'merged' | 'archived' | 'removed' | 'restored'; readonly id: string }
+  /** About to archive or delete it, before anything stops: what acts in its conversation stops now. */
+  | { readonly kind: 'leaving'; readonly id: string; readonly how: 'archive' | 'delete' }
+  /** A project left Beluga, with every workspace it had. */
+  | { readonly kind: 'project_removed'; readonly ids: readonly string[] };
 
 /**
  * Connects projects and workspaces to the room: views, conversations (one Claude
@@ -1220,6 +1224,7 @@ export class WorkspaceController {
   private async archiveNow(id: string, opts: { readonly quiet?: boolean }): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
     const ws = this.deps.manager.find(id);
+    this.emit({ kind: 'leaving', id, how: 'archive' });
     // Out of the sidebar now (it can't be archived: the manager says why); saving and removing the folder follow.
     this.going(id);
     const settle = ws && !ws.archived && ws.kind !== 'main' ? this.leaveNow(id, 'archive') : () => undefined;
@@ -1377,6 +1382,7 @@ export class WorkspaceController {
   async remove(id: string, opts: { readonly quiet?: boolean } = {}): Promise<void> {
     const agents = this.agentWorktreesOf(id);
     const ws = this.deps.manager.find(id);
+    this.emit({ kind: 'leaving', id, how: 'delete' });
     // Gone from the sidebar now; the folder, its branch and the conversation follow.
     this.going(id);
     const settle = ws && ws.kind !== 'main' ? this.leaveNow(id, 'delete') : () => undefined;
@@ -1542,6 +1548,7 @@ export class WorkspaceController {
     this.ahead.projects.delete(projectId);
     this.publish();
     if (!res) return false;
+    this.emit({ kind: 'project_removed', ids: project?.workspaces.map((w) => w.id) ?? [] });
     const kept = res.archived ? ` ${res.archived} worktree${res.archived === 1 ? '' : 's'} archived (nothing lost).` : '';
     this.deps.toast(`Removed ${project?.name ?? 'the project'} from Beluga.${res.trashed ? ' Its folder is in the Trash.' : ''}${kept}`, 'success');
     return true;

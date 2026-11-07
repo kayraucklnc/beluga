@@ -205,6 +205,14 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
       .map((f) => ({ label: friendMention(f.name), hint: `add ${f.name} here`, value: `/invite ${friendMention(f.name)}`, enter: 'submit' as const }));
   }
   if (cmd === 'open' || cmd === 'e' || cmd === 'get') return openSuggestions(partial, ctx).map((s) => ({ ...s, value: s.value.replace(/^\/open /, `/${cmd} `) }));
+  if (cmd === 'schedule') {
+    const opts = { pause: 'stop running it until you resume', resume: 'run it again', run: 'run it now', remove: 'delete it' } as const;
+    const forms = (Object.keys(opts) as Array<keyof typeof opts>)
+      .filter((k) => k.startsWith(lower))
+      .map((k) => ({ label: k, hint: opts[k], value: `/schedule ${k} `, enter: 'complete' as const, kind: 'option' as const }));
+    // First, so Return on the bare command does the bare command: the Mac's editor.
+    return lower ? forms : [{ label: 'new', hint: 'make one in this chat', value: '/schedule', enter: 'submit' as const, kind: 'option' as const }, ...forms];
+  }
   if (cmd === 'policy') {
     const opts = { ask: 'approve each request', auto: 'run without asking', deny: 'refuse all requests' } as const;
     return (Object.keys(opts) as Array<keyof typeof opts>)

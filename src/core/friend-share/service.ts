@@ -82,7 +82,7 @@ interface FolderGrant {
 }
 
 /** Room messages that may travel over a friend's link, and only about what you share. */
-const KINDS = new Set<Body['kind']>(['chat', 'chat_react', 'agent_request', 'agent_event', 'agent_question', 'agent_answer', 'fs_list', 'fs_read', 'fs_fetch', 'fs_search', 'ws_diff', 'fs_list_result', 'fs_read_result', 'fs_chunk', 'fs_search_result', 'ws_diff_result', 'fs_changed', 'ws_roster', 'ws_leave', 'ws_handoff', 'ws_handoff_result', 'ws_handoff_check', 'ws_handoff_check_result']);
+const KINDS = new Set<Body['kind']>(['chat', 'chat_react', 'agent_request', 'agent_event', 'agent_question', 'agent_answer', 'fs_list', 'fs_read', 'fs_fetch', 'fs_search', 'ws_diff', 'fs_list_result', 'fs_read_result', 'fs_chunk', 'fs_search_result', 'ws_diff_result', 'fs_changed', 'ws_roster', 'ws_schedules', 'ws_leave', 'ws_handoff', 'ws_handoff_result', 'ws_handoff_check', 'ws_handoff_check_result']);
 const RESULTS = new Set<Body['kind']>(['fs_list_result', 'fs_read_result', 'fs_chunk', 'fs_search_result', 'ws_diff_result']);
 /** A Claude's steps as they stream only go to who's linked now; these wait for an offline Mac. */
 const KEPT_EVENTS = new Set(['queued', 'awaiting_approval', 'started', 'done', 'error', 'denied', 'answered']);
@@ -156,7 +156,11 @@ export class FriendShares implements FriendSharing {
     this.load();
     const { mesh, session, store } = this.opts;
     const onShare = (from: string, payload: unknown): void => this.onFrame(from, payload);
-    const onLink = (peerId: string): void => this.courier.flush(peerId, true);
+    const onLink = (peerId: string): void => {
+      this.courier.flush(peerId, true);
+      // Their Mac keeps no list across a restart, and yours may have changed meanwhile.
+      session.sharing.peersBack([peerId]);
+    };
     mesh.on('share', onShare);
     mesh.on('link', onLink);
     this.offs.push(() => {
@@ -320,6 +324,7 @@ export class FriendShares implements FriendSharing {
         if (had?.sig !== sig) this.courier.send(peerId, msg, { reliable: true, key: `project:${projectId}` });
         for (const w of fresh) this.courier.send(peerId, { k: 'history', ws: w.id, ...this.historyPage(w.id, peerId) }, { reliable: true });
         this.sent = { ...this.sent, [peerId]: { ...this.sent[peerId], [projectId]: { sig, ws: worktrees.map((w) => w.id) } } };
+        for (const w of fresh) this.opts.session.sharing.sendSchedules(w.id, peerId);
       }
     }
     if (changed) this.saveOwn();
@@ -430,6 +435,11 @@ export class FriendShares implements FriendSharing {
     if (!this.about(to, body)) return undefined;
     // Who's in a shared worktree goes with the project's own message.
     if (body.kind === 'ws_roster' || body.kind === 'ws_leave') return true;
+    // Only the latest list matters: it replaces what still waits for them.
+    if (body.kind === 'ws_schedules') {
+      this.courier.send(to, { k: 'body', b: body }, { reliable: true, key: `schedules:${body.id}` });
+      return true;
+    }
     const ws = 'channel' in body ? wsOf(body.channel) : undefined;
     const theirs = ws ? this.receivedWs(ws) : undefined;
     // In a friend's worktree, its owner passes what you say on to the others.
@@ -501,6 +511,7 @@ export class FriendShares implements FriendSharing {
       return Boolean(ws && (this.grantedTo(ws, peerId) || this.receivedWs(ws)?.owner === peerId));
     }
     if (body.kind === 'ws_diff') return this.grantedTo(body.id, peerId) || this.receivedWs(body.id)?.owner === peerId;
+    if (body.kind === 'ws_schedules') return this.grantedTo(body.id, peerId);
     if (RESULTS.has(body.kind)) return 'reqId' in body && this.inbound.has(`${peerId}:${body.reqId}`);
     if ('share' in body && typeof body.share === 'string') return this.shareBetween(body.share, peerId);
     if (body.kind === 'agent_answer') return !this.state.peers.some((p) => p.peerId === peerId) && this.related(peerId);
@@ -594,6 +605,7 @@ export class FriendShares implements FriendSharing {
     const theirs = ws !== undefined && this.receivedWs(ws)?.owner === from;
     if ('channel' in body && body.channel !== undefined && !mine && !theirs) return;
     if (body.kind === 'ws_roster' || body.kind === 'ws_leave') return;
+    if (body.kind === 'ws_schedules' && this.receivedWs(body.id)?.owner !== from) return;
     if (body.kind === 'ws_handoff' && !this.tookHandoff(from, body)) return;
     if (body.kind === 'ws_handoff_check') {
       if (this.checksIn.has(body.reqId)) return;

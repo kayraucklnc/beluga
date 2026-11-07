@@ -1,3 +1,5 @@
+import { ChatScheduleMark } from '../schedule/ChatScheduleMark.js';
+import { MAC_CHATS } from '../schedule/schedule-model.js';
 import { ASSISTANT_CHANNEL, ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
 import { Icon } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
@@ -32,7 +34,12 @@ export function AssistantNav() {
       detail={signal.tip || `Ask ${yourComputer()} anything: screenshots, what’s running, start a worktree or a task. Several chats as tabs; the open one is on your phone too`}
       selected={selected}
       onClick={() => actions.run({ type: 'view', view: { kind: 'assistant' } })}
-      trailing={<SignalMark signal={signal} />}
+      trailing={
+        <>
+          <ChatScheduleMark channel={MAC_CHATS} />
+          <SignalMark signal={signal} />
+        </>
+      }
     />
   );
 }

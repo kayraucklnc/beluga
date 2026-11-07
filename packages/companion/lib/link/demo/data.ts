@@ -280,6 +280,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
 
   const radar: ConvView = {
     topic: 'conv:weather.radar',
+    schedules: { owner: 'Mia', items: [{ id: 'sch-radar', title: 'Radar tiles check', prompt: 'Load the radar tiles for three cities and say if one is stale.', sentence: 'Every 2 hours', status: 'running', enabled: true }] },
     title: 'Radar tiles flicker on zoom',
     project: 'pixel-weather',
     more: false,
@@ -326,7 +327,14 @@ export function makeWorld(now = Date.now()): DemoWorld {
     canSend: true,
     working: true,
     needsYou: [],
+    schedules: {
+      items: [
+        { id: 'sch-tests', title: 'Morning test run', prompt: 'Run the tests. If one fails, say which and why.', sentence: 'Every day at 09:00', status: 'ok', enabled: true, next: now + 3 * 60 * MIN },
+        { id: 'sch-deps', title: 'Check dependencies', prompt: 'Look for new versions of our dependencies and list what changed.', sentence: 'Every Monday at 10:00', status: 'paused', enabled: false, problem: 'It failed 3 times in a row, so it is paused' },
+      ],
+    },
     turns: [
+      { id: 'lb0', who: 'system', name: 'Schedule', ts: now - 3 * MIN, prose: { text: 'Schedule · Morning test run · due 09:00 · merged 3 slots · missed 1 run while this computer was off', code: [] }, scheduled: { title: 'Morning test run', prompt: 'Run the tests. If one fails, say which and why.', due: now - 3 * MIN, extras: ['merged 3 slots', 'missed 1 run while this computer was off'] } },
       { id: 'lb1', who: 'you', name: 'You', ts: now - 2 * MIN, prose: { text: 'Signing in from the widget lands on a blank page instead of the forecast. Find out why the redirect drops the deep link, fix it, and add a test.', code: [] } },
       { id: 'lb2', who: 'claude', name: MY_AGENT_NAME, ts: now - 2 * MIN, status: 'working', step: 'Reading src/auth/redirect.ts', steps: 3, live: { phase: 'step', words: 'Reading src/auth/redirect.ts', tool: 'read', since: now - 20_000 }, trail: [{ tool: 'search', text: 'Searched for "returnTo"' }, { tool: 'read', text: 'Read src/widget/open.ts' }], prose: { text: '', code: [] } },
     ],

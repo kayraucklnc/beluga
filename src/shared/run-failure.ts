@@ -21,6 +21,11 @@ export interface RunFailure {
   readonly detail: string;
   /** The runtime that failed ('codex'); unset: Claude Code. */
   readonly runtime?: string;
+  /**
+   * The session this run resumed is gone. A mark and not a kind of its own: a chat treats this
+   * failure as the crash or API failure it is, and only a scheduled run acts on the mark.
+   */
+  readonly staleSession?: true;
 }
 
 /** Who a failure's words name: the agent, its app, and whose API it calls. */
@@ -164,6 +169,8 @@ const EXPIRED = /expired|could not be refreshed|revoked|log in again/i;
 
 const NETWORK = /\b(ECONNRESET|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|fetch failed|network error|connection error|getaddrinfo)\b/i;
 const EXIT = /exited with code (-?\d+)|terminated by signal (\w+)/i;
+// Claude Code can't find the session it was told to resume ("No conversation found with session ID: …").
+const STALE_SESSION = /no conversation found with session id/i;
 const API_ERRORS = new Set(['authentication_failed', 'oauth_org_not_allowed', 'account_on_hold', 'verification_required', 'billing_error', 'overloaded', 'invalid_request', 'model_not_found', 'server_error', 'cloud_credential_error']);
 
 /** What the runner saw before a run ended. */
@@ -182,6 +189,8 @@ export interface RunEnd {
   readonly stopped?: boolean;
   /** Codex's error kind on a failed turn (its app-server's `codexErrorInfo`: 'usageLimitExceeded'…). */
   readonly errorInfo?: unknown;
+  /** The run resumed a saved session. */
+  readonly resumed?: boolean;
 }
 
 /** How a run ended, in one of six kinds; never a bare "exit code 1". */
@@ -198,10 +207,11 @@ export function classifyRun(end: RunEnd, now = Date.now()): RunFailure {
   }
   if (SIGNED_OUT.test(all)) return { kind: 'signed_out', detail };
   if (NETWORK.test(all)) return { kind: 'network', detail };
-  if (end.apiError && API_ERRORS.has(end.apiError)) return { kind: 'api', detail };
+  const stale = end.resumed && STALE_SESSION.test(all) ? ({ staleSession: true } as const) : {};
+  if (end.apiError && API_ERRORS.has(end.apiError)) return { kind: 'api', ...stale, detail };
   const exit = EXIT.exec(end.error ?? '');
-  if (exit || end.error) return { kind: 'crash', ...(exit?.[1] !== undefined ? { exitCode: Number(exit[1]) } : {}), detail };
-  return { kind: 'api', detail };
+  if (exit || end.error) return { kind: 'crash', ...stale, ...(exit?.[1] !== undefined ? { exitCode: Number(exit[1]) } : {}), detail };
+  return { kind: 'api', ...stale, detail };
 }
 
 /** An error that carries how the run ended (its message is the card's words). */

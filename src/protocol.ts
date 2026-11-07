@@ -365,6 +365,25 @@ export const WsRosterBody = z.object({
   id: z.string().regex(/^[\w:.-]{1,80}$/),
   members: z.array(z.object({ peerId: shortStr, role: WsRole })).max(32),
 });
+/** What someone who follows a shared chat sees of one schedule. The owner's computer runs it. */
+export const GuestSchedule = z.object({
+  id: shortStr,
+  title: z.string().max(80),
+  prompt: z.string().max(8000),
+  /** When it runs, in the owner's words and time. */
+  sentence: z.string().max(200),
+  status: z.enum(['never', 'waiting', 'running', 'ok', 'failed', 'interrupted', 'paused']),
+  enabled: z.boolean(),
+  next: z.number().optional(),
+  pausedReason: z.string().max(500).optional(),
+});
+export type GuestSchedule = z.infer<typeof GuestSchedule>;
+/** Owner → everyone in the workspace: the schedules of its chat, all of them, on each change. Added later: an older peer drops it. */
+export const WsSchedulesBody = z.object({
+  kind: z.literal('ws_schedules'),
+  id: z.string().regex(/^[\w:.-]{1,80}$/),
+  items: z.array(GuestSchedule).max(10),
+});
 /** Either way: the owner removed you, or you left. */
 export const WsLeaveBody = z.object({ kind: z.literal('ws_leave'), id: z.string().regex(/^[\w:.-]{1,80}$/) });
 
@@ -540,6 +559,7 @@ export const Body = z.discriminatedUnion('kind', [
   AgentAnswerBody,
   WsInviteBody,
   WsRosterBody,
+  WsSchedulesBody,
   WsLeaveBody,
   ChatBody,
   ChatReactBody,

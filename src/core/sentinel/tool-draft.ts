@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { ACCESS, BELUGA_EVENTS, GITHUB_EVENTS, KEEP_CHATS, NOTIFY_WHERE, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 import { SOURCE_KINDS } from '../../shared/view-spec.js';
-import { LimitsSchema, MetricSpecSchema, ScheduleTriggerSchema } from './schema.js';
+import { ScheduleTriggerSchema } from '../../shared/schedule/schema.js';
+import { LimitsSchema, MetricSpecSchema } from './schema.js';
 import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 
 /**

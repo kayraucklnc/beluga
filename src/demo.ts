@@ -197,6 +197,18 @@ function shareDemoWorkspace(session: Session, shares: ShareService, folder: stri
     { from: "bob's Claude", text: 'The handler is not idempotent: it charges again on every retry. I added an idempotency key check.', ts: Date.now() - 60_000, byAgent: true },
   ];
   session.send({ kind: 'ws_invite', ws: { id: DEMO_WS, name: 'payments', project: 'bob-api', branch: 'fix-webhooks' }, role: 'view', can: 'watch', share, history }, { to: host.peerId });
+  // What wakes his chat: it runs on his computer, so you only read it.
+  session.send(
+    {
+      kind: 'ws_schedules',
+      id: DEMO_WS,
+      items: [
+        { id: 'bob-retries', title: 'Check webhook retries', prompt: 'Look at the webhook log and say if a retry charged twice.', sentence: 'Every day at 09:00', status: 'ok', enabled: true, next: Date.now() + 3 * 3_600_000 },
+        { id: 'bob-refunds', title: 'Refund report', prompt: 'List the refunds of the last week.', sentence: 'Every Monday at 10:00', status: 'paused', enabled: false, pausedReason: 'It failed 3 times in a row' },
+      ],
+    },
+    { to: host.peerId },
+  );
 }
 
 /** bob sends the room a screenshot (the way a pasted image goes out), so the demo shows images in the chat. */

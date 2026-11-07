@@ -1,4 +1,4 @@
-import type { AgentRef, ClaudeQuestion, GuestCan, WsRole } from '../protocol.js';
+import type { AgentRef, ClaudeQuestion, GuestCan, GuestSchedule, WsRole } from '../protocol.js';
 
 /** Claude (yours or a friend's) is waiting for an answer from you. */
 export interface PendingQuestion {
@@ -123,6 +123,8 @@ export interface CollabState {
   readonly members: Readonly<Record<string, Readonly<Record<string, WsRole>>>>;
   /** Who's in a workspace shared with you (as told by its owner). */
   readonly roster: Readonly<Record<string, readonly RosterEntry[]>>;
+  /** The schedules of each chat shared with you, as its owner last said (their computer runs them). */
+  readonly sharedSchedules: Readonly<Record<string, readonly GuestSchedule[]>>;
   /** Channels where the next request to Claude plans first. */
   readonly planMode: Readonly<Record<string, boolean>>;
   /** New people you haven't picked a trust level for yet (shown as a one-click card). */
@@ -140,6 +142,7 @@ export type CollabAction =
   | { type: 'shared_remove'; owner: string; id: string }
   | { type: 'member_set'; id: string; peerId: string; role?: WsRole }
   | { type: 'roster'; id: string; members: readonly RosterEntry[] }
+  | { type: 'shared_schedules'; id: string; items: readonly GuestSchedule[] }
   | { type: 'plan_mode'; channel: string; on: boolean }
   | { type: 'peer_gone'; peerIds: readonly string[] }
   /** You left the room: everything shared with you in it goes (what friends shared over the network stays). */
@@ -153,7 +156,7 @@ export type CollabAction =
   | { type: 'knock'; knock: Knock; show: boolean }
   | { type: 'guest_shell'; id: string; shell?: ShellState };
 
-export const initialCollab: CollabState = { links: [], guests: {}, knocks: [], shells: {}, offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {}, trustPrompts: [], granted: {} };
+export const initialCollab: CollabState = { links: [], guests: {}, knocks: [], shells: {}, offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, sharedSchedules: {}, planMode: {}, trustPrompts: [], granted: {} };
 
 const MAX_QUESTIONS = 20;
 
@@ -176,7 +179,7 @@ export function reduceCollab(state: CollabState, action: CollabAction): CollabSt
     case 'shared_add':
       return { ...state, shared: [...state.shared.filter((w) => !(w.owner === action.ws.owner && w.id === action.ws.id)), action.ws] };
     case 'shared_remove':
-      return { ...state, shared: state.shared.filter((w) => !(w.owner === action.owner && w.id === action.id)), roster: without(state.roster, action.id) };
+      return { ...state, shared: state.shared.filter((w) => !(w.owner === action.owner && w.id === action.id)), roster: without(state.roster, action.id), sharedSchedules: without(state.sharedSchedules, action.id) };
     case 'member_set': {
       const current = state.members[action.id] ?? {};
       const next = action.role ? { ...current, [action.peerId]: action.role } : without(current, action.peerId);
@@ -184,12 +187,15 @@ export function reduceCollab(state: CollabState, action: CollabAction): CollabSt
     }
     case 'roster':
       return { ...state, roster: { ...state.roster, [action.id]: action.members } };
+    case 'shared_schedules':
+      return { ...state, sharedSchedules: action.items.length ? { ...state.sharedSchedules, [action.id]: action.items } : without(state.sharedSchedules, action.id) };
     case 'plan_mode':
       return { ...state, planMode: action.on ? { ...state.planMode, [action.channel]: true } : without(state.planMode, action.channel) };
     case 'shared_clear': {
       const kept = state.shared.filter((w) => w.via === 'mesh');
       const roster = Object.fromEntries(Object.entries(state.roster).filter(([id]) => kept.some((w) => w.id === id)));
-      return { ...state, shared: kept, roster, questions: [], offers: [], shells: {} };
+      const sharedSchedules = Object.fromEntries(Object.entries(state.sharedSchedules).filter(([id]) => kept.some((w) => w.id === id)));
+      return { ...state, shared: kept, roster, sharedSchedules, questions: [], offers: [], shells: {} };
     }
     case 'offer': {
       const rest = state.offers.filter((o) => !(o.owner === action.offer.owner && o.name === action.offer.name));

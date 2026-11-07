@@ -1,7 +1,7 @@
 import { dialogueHeader } from '../core/dialogues/view.js';
 import { agentPicker, pickedAgent } from '../shared/agent-picker.js';
 import { roomAgentTags } from '../shared/agent-tags.js';
-import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
+import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning, peerName } from '../core/store.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
@@ -14,6 +14,7 @@ import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
+import { guestSchedule, runExtras, scheduleProblem } from '../core/schedule/model.js';
 import { type RunSummary, type Sentinel, type SentinelState, activeSentinelChat, firstLine, isLive, isSentinelChat, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById, sentinelChatTitle } from '../core/sentinel/model.js';
 import { type Dashboard, type Tile, metricOf, outputLook, tileColumns, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
 import { documentMime, isDocumentKind, storageName, storageSources } from '../core/sentinel/columns.js';
@@ -460,6 +461,7 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
         dialogue: { id: clip(d.id, 200), topic: clip(h.topic, 500), mode: h.mode, who: clip(h.who, 200), progress: h.progress, ...(h.budget ? { budget: h.budget } : {}), status: clip(h.status, 300), tone: h.tone, canStop: h.actions.includes('stop') || h.actions.includes('cancel'), canContinue: h.actions.includes('continue') },
       };
     }
+    if (item.schedule) return { id: item.id, who: 'system', name: 'Schedule', prose: proseOf(clip(item.text, 500)), ts: item.ts, scheduled: { title: clip(item.schedule.title, 80), prompt: clip(item.schedule.prompt, 500), due: item.schedule.due, extras: runExtras(item.schedule), ...(item.schedule.paused ? { paused: true } : {}) } };
     if (item.said) return { id: item.id, who: item.said.byAgent ? 'claude' : item.said.from === me ? 'you' : 'friend', name: clip(item.said.name, 100), prose: proseOf(item.said.text), ts: item.said.ts };
     if (item.level === 'info') return undefined;
     return { id: item.id, who: 'system', name: 'Beluga', prose: proseOf(item.text), ts: item.ts };
@@ -719,6 +721,28 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...tagsOf(state, channel),
     ...terminalOf(state, channel),
     ...(reactableChannel(channel) ? { quick: quickRow(state) } : {}),
+    ...schedulesOf(state, channel),
+  };
+}
+
+/** What wakes this chat by itself. A chat shared with you shows its owner's list, whatever your own setting says. */
+function schedulesOf(state: DomainState, channel: string): Pick<ConvView, 'schedules'> {
+  const shared = channel.startsWith('ws:') ? state.shared.find((w) => w.id === channel.slice(3)) : undefined;
+  if (shared) {
+    const items = state.sharedSchedules[shared.id] ?? [];
+    if (!items.length) return {};
+    return { schedules: { owner: clip(peerName(state, shared.owner), 100), items: items.map(({ pausedReason, ...s }) => ({ ...s, prompt: clip(s.prompt, 500), ...(pausedReason ? { problem: clip(pausedReason, 600) } : {}) })) } };
+  }
+  const own = state.prefs.chatSchedules ? state.schedules.filter((s) => s.channel === channel) : [];
+  if (!own.length) return {};
+  return {
+    schedules: {
+      items: own.slice(0, 10).map((s) => {
+        const { pausedReason: _reason, ...row } = guestSchedule(s);
+        const problem = scheduleProblem(s);
+        return { ...row, prompt: clip(row.prompt, 500), ...(problem ? { problem: clip(problem, 600) } : {}) };
+      }),
+    },
   };
 }
 

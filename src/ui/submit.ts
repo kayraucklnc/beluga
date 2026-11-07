@@ -53,7 +53,7 @@ export function submitTyped(c: SubmitContext, typed: string, urgent = false): vo
     };
     const command = text.startsWith('/') ? parseInput(text, latest.selfId, latest.peers) : undefined;
     if (!command || command.kind === 'chat') return start(command?.kind === 'chat' ? command.text : text);
-    if (command.kind === 'command' && !isBelugaCommand(command.name)) {
+    if (command.kind === 'command' && (!isBelugaCommand(command.name) || (command.name === 'schedule' && !latest.prefs.chatSchedules))) {
       if (!builtInInstead(command.name)) return start(text);
       const dir = view.projectId === 'chats' ? view.dir : latest.projects.find((p) => p.id === view.projectId)?.root;
       const explain = (): void => {

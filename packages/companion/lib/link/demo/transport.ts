@@ -887,6 +887,33 @@ export class DemoTransport implements Transport {
         const report = a.status === 'running' ? undefined : a.status === 'failed' ? 'It stopped before it finished: the emulator went away.' : `**Done.** ${a.steps.at(-1) ?? 'Finished'}.\n\n- ${a.steps.slice(0, 3).join('\n- ')}\n\n[[code:0]]`;
         return ok({ id: a.id, timeline, count: a.count ?? timeline.length, ...(report ? { result: { text: report, code: report.includes('[[code:0]]') ? [{ lang: 'ts', lines: 4 }] : [] } } : {}) });
       }
+      // 1.43 (BLG-97): a chat's schedules.
+      case 'schedule.list':
+        return ok([...w.convs.values()].flatMap((c) => c.schedules?.items ?? []));
+      case 'schedule.runNow':
+      case 'schedule.setEnabled': {
+        for (const c of w.convs.values()) {
+          if (!c.schedules?.items.some((s) => s.id === str(0))) continue;
+          const on = args[1] === true;
+          const items = c.schedules.items.map((s) => {
+            if (s.id !== str(0)) return s;
+            if (method === 'schedule.runNow') return { ...s, status: 'running' as const };
+            const { next: _next, problem: _problem, ...rest } = s;
+            return on ? { ...rest, status: 'never' as const, enabled: true, next: Date.now() + 60 * 60_000 } : { ...rest, status: 'paused' as const, enabled: false };
+          });
+          w.convs.set(c.topic, { ...c, schedules: { ...c.schedules, items } });
+          this.touch(c.topic);
+          // A run ends a moment later, as a quick one does.
+          if (method === 'schedule.runNow') {
+            this.later(2500, () => {
+              const now = w.convs.get(c.topic);
+              if (now?.schedules) w.convs.set(c.topic, { ...now, schedules: { ...now.schedules, items: now.schedules.items.map((s) => (s.id === str(0) && s.status === 'running' ? { ...s, status: 'ok' as const } : s)) } });
+              this.touch(c.topic);
+            });
+          }
+        }
+        return ok(null);
+      }
       // ---- Sentinel (1.21): Run Now, Pause / Turn On, a run's report, Merge / Not Now
       case 'sentinel.run': {
         const s = sentinelOf(this.sentinels, str(0));

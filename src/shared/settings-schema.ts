@@ -107,6 +107,8 @@ export const Settings = z.object({
   autoSetup: z.boolean().default(true),
   /** Show how full each conversation's context is. */
   contextMeter: z.boolean().default(true),
+  /** Schedules in a chat (core/schedule): the daemon's tick and the API. */
+  chatSchedules: z.boolean().default(true),
   /** Compact a conversation on its own when its context is nearly full (the chat stays on screen). Off until you turn it on. */
   autoCompact: z.boolean().default(false),
   /** You chose auto-compact yourself. Older files saved `autoCompact: true` as a default nobody picked, so without this it reads as off. */

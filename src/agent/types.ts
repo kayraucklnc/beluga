@@ -126,6 +126,11 @@ export interface AgentRunInput {
   /** Your own runs: sentinels (core/sentinel), and what Claude is told (a sentinel run's brief, or a short note). */
   readonly sentinelTools?: SentinelTools;
   readonly sentinelBrief?: string;
+  /** A schedule started this turn (core/schedule): what Claude is told about that. */
+  readonly scheduleBrief?: string;
+  /** Your own runs in a chat that can have schedules: its schedules (core/schedule), and what Claude is told about them. */
+  readonly scheduleTools?: ScheduleTools;
+  readonly scheduleToolsBrief?: string;
   /** Your own runs: dashboards and the numbers sentinels keep (server `beluga_dashboard`; sentinel_measure inside a run). */
   readonly dashboardTools?: DashboardTools;
   /** Your own runs: the notes of calls you were in (core/calls, BLG-715), to look up, never pasted in. */
@@ -217,6 +222,18 @@ export interface DashboardTools {
   metricRead(sentinel: string, name: string, since?: string): string;
   /** This conversation builds that dashboard (Describe it): its id. */
   readonly building?: string;
+}
+
+/** One chat's schedules as the agent's tools (agent/schedule-tools.ts, server `beluga_schedule`): each answers in words, and none can name another chat. */
+export interface ScheduleTools {
+  /** Only these tools (their short names): a scheduled run gets schedule_list and schedule_pause. */
+  readonly only?: readonly string[];
+  list(): string;
+  create(input: unknown): string;
+  /** `resume`: turn it on too, after the change. */
+  update(id: string, patch: unknown, resume: boolean): string;
+  pause(id: string): string;
+  remove(id: string): string;
 }
 
 /** A plan as Claude's tools (agent/plan-tools.ts, server `beluga_plan`): each answers in words. */

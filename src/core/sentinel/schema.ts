@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { SourceSchema } from '../../shared/view-spec.js';
+import { ScheduleTriggerSchema } from '../../shared/schedule/schema.js';
 import { CHART_TILE_KINDS, LEGACY_TILE_KINDS, OUTPUT_SHOWS, TILE_KINDS } from './dashboard-model.js';
 import { COLUMN_ENCODINGS, COLUMN_KINDS, FILES_KEEP_MAX } from './columns.js';
 import { COMPARE } from './metrics.js';
-import { ACCESS, BELUGA_EVENTS, KEEP_CHATS, BETTER, SCRIPT_CODE_MAX, SCRIPT_LANGUAGES, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
+import { ACCESS, BELUGA_EVENTS, KEEP_CHATS, BETTER, SCRIPT_CODE_MAX, SCRIPT_LANGUAGES, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 
 /**
  * Sentinels as zod checks: what the API takes (sentinel-api.ts), what sentinel.json holds, and
@@ -12,18 +13,6 @@ import { ACCESS, BELUGA_EVENTS, KEEP_CHATS, BETTER, SCRIPT_CODE_MAX, SCRIPT_LANG
 
 const id = z.string().min(1).max(80);
 const text = (max: number) => z.string().max(max);
-export const HHMM = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'A time like 07:00');
-
-export const ScheduleTriggerSchema = z.object({
-  kind: z.literal('schedule'),
-  every: z.enum(SCHEDULE_EVERY),
-  at: HHMM.default('07:00'),
-  hours: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(6), z.literal(12)]).optional(),
-  days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
-  day: z.number().int().min(1).max(28).optional(),
-  missed: z.enum(['catch-up', 'skip']).default('catch-up'),
-});
-
 export const TriggerSchema = z.discriminatedUnion('kind', [
   ScheduleTriggerSchema,
   z.object({ kind: z.literal('manual') }),

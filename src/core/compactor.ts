@@ -65,6 +65,13 @@ export class Compactor {
     return autoCompactDue({ on: prefs.autoCompact, at: prefs.autoCompactAt, ...(info ? { info } : {}), triedSinceRun: this.tried.has(channel) });
   }
 
+  /** How full this conversation is against the threshold, whatever the setting says. `unknown`: its runtime reported no numbers. */
+  fill(channel: string): 'past' | 'under' | 'unknown' {
+    const info = this.seen.get(channel) ?? this.deps.store.getState().context[channel];
+    if (!info) return 'unknown';
+    return autoCompactDue({ on: true, at: this.deps.store.getState().prefs.autoCompactAt, info }) ? 'past' : 'under';
+  }
+
   /** For a run: the threshold Claude Code's own auto-compact should use (nothing when it's off). */
   threshold(): { autoCompactAt?: number } {
     const prefs = this.deps.store.getState().prefs;
@@ -73,15 +80,15 @@ export class Compactor {
 
   /**
    * Compact one conversation now. The chat shows "Compacting…" until it's done, then the divider
-   * (with the summary Claude kept). Resolves when Claude is done, whatever happened.
+   * (with the summary Claude kept). Resolves when Claude is done, whatever happened: true when it compacted.
    */
-  async run(channel: string, trigger: Trigger, signal: AbortSignal, instructions = ''): Promise<void> {
+  async run(channel: string, trigger: Trigger, signal: AbortSignal, instructions = ''): Promise<boolean> {
     const agent = this.deps.agent();
-    if (!agent) return;
+    if (!agent) return false;
     if (trigger === 'auto') this.tried.add(channel);
     const requestId = `compact-${randomUUID()}`;
     const place = channel === 'room' ? undefined : this.deps.place(channel);
-    if (channel !== 'room' && !place) return;
+    if (channel !== 'room' && !place) return false;
     const info = this.seen.get(channel) ?? this.deps.store.getState().context[channel];
     const emit = (kind: 'context' | 'compact' | 'usage', text: string): void => this.deps.emit(requestId, kind, text, channel);
     emit('context', JSON.stringify({ compacting: true, trigger, ...(info ? { used: info.used, window: info.window } : {}) }));
@@ -112,6 +119,7 @@ export class Compactor {
     } finally {
       if (!landed) emit('context', JSON.stringify({ compacting: false, ...(info ? { used: info.used, window: info.window } : {}) }));
     }
+    return landed;
   }
 }
 

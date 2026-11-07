@@ -22,20 +22,11 @@ import { teammatesOf } from '@beluga/core/team/model.js';
 import { shownState } from '../network/net-model.js';
 import { openDm } from '../network/use-net.js';
 import { sameDeep, sameFields } from '../lib/stable.js';
+import { ScheduleSection, SharedScheduleSection } from '../schedule/ScheduleSection.js';
+import { scheduleChannel } from '../schedule/schedule-model.js';
+import { Panel } from './InspectorPanel.js';
 import s from './Inspector.module.css';
 import { fileManager } from '../lib/os-words.js';
-
-function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
-  return (
-    <section className={s.panel}>
-      <div className={s.panelHead}>
-        <h3>{title}</h3>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -227,6 +218,7 @@ function WorkspaceDetails({ id }: { id: string }) {
         </div>
       </Panel>
       {project?.root ? <WorkspaceTasks id={ws.id} projectId={ws.projectId} /> : null}
+      <ScheduleSection channel={`ws:${ws.id}`} />
       {pr ? (
         <Panel title={`Pull request #${pr.number}`} action={<Button size="small" variant="quiet" icon="refresh" onClick={() => void api.workbench.refreshPrs(ws.id)} />}>
           <div className={s.prTitle}>{pr.title}</div>
@@ -352,6 +344,7 @@ function Inbox() {
 
 export function Inspector() {
   const view = useApp((st) => st.view);
+  const macChat = useApp((st) => (st.view.kind === 'assistant' ? scheduleChannel(st) : undefined));
   return (
     <aside className={s.inspector} aria-label="Inspector">
       <div className={s.titlebar} data-tauri-drag-region />
@@ -365,6 +358,8 @@ export function Inspector() {
         ) : (
           <>
             {view.kind === 'project' ? <ProjectTeam projectId={view.id} /> : null}
+            {macChat ? <ScheduleSection channel={macChat} /> : null}
+            {view.kind === 'shared' ? <SharedScheduleSection owner={view.owner} id={view.id} /> : null}
             <Room />
           </>
         )}

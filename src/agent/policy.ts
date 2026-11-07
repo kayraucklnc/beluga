@@ -49,6 +49,9 @@ const ALWAYS_OK = new Set([
   // dashboards' tiles and read the numbers (a tile removed takes nothing kept with it).
   // dashboard_remove isn't here: deleting a dashboard asks you.
   ...['sentinel_measure', 'dashboard_list', 'dashboard_create', 'dashboard_update', 'dashboard_add_tile', 'dashboard_update_tile', 'dashboard_move_tile', 'dashboard_remove_tile', 'metric_list', 'metric_read'].map((n) => `mcp__beluga_dashboard__${n}`),
+  // Schedules (core/schedule): only your own runs have them, bound to their chat. Looking and pausing
+  // never ask; schedule_create, schedule_update and schedule_remove aren't here: see ALWAYS_ASK_YOU.
+  ...['schedule_list', 'schedule_pause'].map((n) => `mcp__beluga_schedule__${n}`),
   // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
   ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
@@ -67,11 +70,19 @@ const BOARD_LOOKS = new Set(['mcp__beluga_board__task_get', 'mcp__beluga_board__
 const asksForBoard = (toolName: string, asks: 'writes' | 'all'): boolean => toolName.startsWith('mcp__beluga_board__') && (asks === 'all' || !BOARD_LOOKS.has(toolName));
 
 /**
- * Tools that delete something of yours for good (a sentinel, a dashboard, docs/sentinel.md §12):
+ * Tools that delete something of yours for good (a sentinel, a dashboard, docs/sentinel.md §12), or
+ * that make a schedule run later with your full access (core/schedule, a card with what it will run):
  * your own Claude asks you first even when it otherwise never asks (Approvals › Never), once, with
  * no Always. The card reaches the phone as any approval does.
  */
-export const ALWAYS_ASK_YOU: ReadonlySet<string> = new Set(['mcp__beluga_sentinel__sentinel_remove', 'mcp__beluga_sentinel__sentinel_delete_runs', 'mcp__beluga_dashboard__dashboard_remove']);
+export const ALWAYS_ASK_YOU: ReadonlySet<string> = new Set([
+  'mcp__beluga_sentinel__sentinel_remove',
+  'mcp__beluga_sentinel__sentinel_delete_runs',
+  'mcp__beluga_dashboard__dashboard_remove',
+  'mcp__beluga_schedule__schedule_create',
+  'mcp__beluga_schedule__schedule_update',
+  'mcp__beluga_schedule__schedule_remove',
+]);
 
 /**
  * Shell commands that mention credential stores are refused outright. A name counts when it isn't

@@ -17,6 +17,7 @@ import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceC
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
 import { type FriendShareAction, type FriendShareSlice, initialFriendShare, reduceFriendShare } from './friend-share-store.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
+import type { ScheduleView } from './schedule/model.js';
 import { FIRST_SENTINEL_CHAT, type SentinelAction, type SentinelSlice, initialSentinel, reduceSentinel, sentinelChatChannel } from './sentinel/model.js';
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type DialoguesAction, type DialoguesSlice, initialDialogues, reduceDialogues } from './dialogues/model.js';
@@ -84,7 +85,7 @@ export type LogItem =
       /** Emoji reactions on it (BLG-702): each person's latest change per emoji (core/chat-reactions.ts draws the chips). */
       readonly reacts?: readonly ReactionEvent[];
     }
-  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark; readonly shipped?: ShippedMark; readonly dialogue?: DialogueMark }
+  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark; readonly shipped?: ShippedMark; readonly dialogue?: DialogueMark; readonly schedule?: ScheduleMark }
   | {
       readonly id: string;
       readonly type: 'agent';
@@ -141,6 +142,19 @@ export interface ShippedMark {
 export const shippedText = (number: number, into: string): string => `Above this line went to PR #${number}, merged into ${into}. New work starts here, for a new pull request.`;
 
 /** Where a dialogue shows in a conversation: its header card (a system line) and its turns (chat lines). */
+/** The system line of a schedule's run (core/schedule): which one, and its prompt, folded on screen. */
+export interface ScheduleMark {
+  readonly id: string;
+  readonly title: string;
+  readonly prompt: string;
+  readonly due: number;
+  /** How many slots this run stands for, and how many passed while the computer was off. Older saved lines have neither. */
+  readonly slots?: number;
+  readonly missed?: number;
+  /** Not a run: the line that says failures paused it, which offers Resume. */
+  readonly paused?: boolean;
+}
+
 export interface DialogueMark {
   readonly id: string;
   readonly turn?: number;
@@ -290,6 +304,8 @@ export interface Prefs {
   /** What new worktrees' branches start with (`beluga/`; empty: none). */
   readonly branchPrefix: string;
   readonly contextMeter: boolean;
+  /** Schedules in a chat (core/schedule): the daemon's tick, the API and what the window shows of them. */
+  readonly chatSchedules: boolean;
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
   readonly autoCompact: boolean;
   readonly autoCompactAt: number;
@@ -541,6 +557,8 @@ export interface DomainState extends CollabState, WorkState, NetworkSlice, Earni
   readonly powerSaving: boolean;
   /** Your Mac's chats, as tabs (BLG-102, core/assistant): which there are and the one open. */
   readonly assistant: AssistantChats;
+  /** Every schedule on this computer (core/schedule), as screens see it. */
+  readonly schedules: readonly ScheduleView[];
 }
 
 /** What one screen shows: where it is, its tabs and dialogs, and its own cursors and scroll positions. */
@@ -595,7 +613,7 @@ export type Action =
   | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string; request?: string; steer?: true; queued?: true; agent?: AgentRef; dialogue?: DialogueMark }
   | ChatReactAction
   /** `id`/`ts` are stamped before reducing (see stampAction). */
-  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy; shipped?: ShippedMark; dialogue?: DialogueMark }
+  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy; shipped?: ShippedMark; dialogue?: DialogueMark; schedule?: ScheduleMark }
   | { type: 'shell'; item: ShellItem }
   /** `itemId` (stamped before reducing) names the chat item a new run creates. */
   | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string; slotWait?: SlotWait; agent?: AgentRef }
@@ -645,6 +663,8 @@ export type Action =
   | { type: 'identity'; selfId: string; isHost: boolean; home?: string }
   /** Your paired phones (never keys) and the pairing open now (src/companion/host.ts). */
   | { type: 'companion'; companion: CompanionSlice['companion'] }
+  /** Schedules changed (core/schedule): all of them, as the service keeps them. */
+  | { type: 'schedules'; items: readonly ScheduleView[] }
   /** Your Mac's chats changed (one made, opened or deleted; core/assistant). */
   | { type: 'assistant_chats'; assistant: AssistantChats }
   /** The needs-you items you dismissed (all of them: on start, and after a Dismiss). */
@@ -683,6 +703,7 @@ export const DEFAULT_PREFS: Prefs = {
   autoSetup: true,
   branchPrefix: BRANCH_PREFIX_DEFAULT,
   contextMeter: true,
+  chatSchedules: true,
   autoCompact: false,
   autoCompactAt: AUTO_COMPACT_DEFAULT,
   autoContinue: true,
@@ -758,6 +779,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialTeam,
     companion: { devices: [] },
     assistant: NO_ASSISTANT_CHATS,
+    schedules: [],
   };
 }
 
@@ -1032,7 +1054,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'system':
       return {
         ...state,
-        log: appendLog(state.log, { id: action.id ?? '', type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: action.ts ?? 0, level: action.level ?? 'info', ...(action.said ? { said: action.said } : {}), ...(action.shipped ? { shipped: action.shipped } : {}), ...(action.dialogue ? { dialogue: action.dialogue } : {}) }),
+        log: appendLog(state.log, { id: action.id ?? '', type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: action.ts ?? 0, level: action.level ?? 'info', ...(action.said ? { said: action.said } : {}), ...(action.shipped ? { shipped: action.shipped } : {}), ...(action.dialogue ? { dialogue: action.dialogue } : {}), ...(action.schedule ? { schedule: action.schedule } : {}) }),
       };
     case 'conflicts': {
       const { [action.id]: _old, ...rest } = state.conflicts;
@@ -1174,6 +1196,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'shared_remove':
     case 'member_set':
     case 'roster':
+    case 'shared_schedules':
     case 'plan_mode':
     case 'peer_gone':
     case 'shared_clear':
@@ -1275,6 +1298,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'board_sync':
     case 'board_off':
       return { ...state, ...reduceBoard(state, action) };
+    case 'schedules':
+      return { ...state, schedules: action.items };
     case 'sentinel_init':
     case 'sentinel_put':
     case 'sentinel_remove':

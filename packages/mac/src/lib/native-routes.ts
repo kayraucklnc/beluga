@@ -4,6 +4,7 @@ import type { UiAction } from '@beluga/ui/workspace-models.js';
 import type { SettingsPane, UiStore } from './beluga.js';
 import { inApp } from './boot.js';
 import { pickFolders } from './projects.js';
+import { scheduleChannel } from '../schedule/schedule-model.js';
 import { openSheet } from './sheets.js';
 
 /**
@@ -98,6 +99,12 @@ export function routeTyped(ctx: RouteContext, text: string): boolean {
     case 'run':
       openSheet({ kind: 'peer_run' });
       return true;
+    case 'schedule': {
+      // Words after it (/schedule pause…) and a chat that can't have one are the daemon's to answer.
+      const channel = rest.length ? undefined : scheduleChannel(client.store.getState());
+      if (channel) openSheet({ kind: 'schedule', channel });
+      return Boolean(channel);
+    }
     default:
       return false;
   }

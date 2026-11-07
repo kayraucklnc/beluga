@@ -1,3 +1,4 @@
+import { ScheduleEditor } from '../../schedule/ScheduleEditor.js';
 import { NewLabelSheet } from '../../tasks/NewLabelSheet.js';
 import { ProjectContextSheet } from '../../tasks/ProjectContextSheet.js';
 import { EnvironmentSheet } from '../EnvironmentSheet.js';
@@ -176,6 +177,8 @@ export function NativeSheets() {
       return <ForkToMacSheet key={sheet.wsId} owner={sheet.owner} wsId={sheet.wsId} close={close} />;
     case 'peer_run':
       return <PeerRunSheet key={sheet.peerId ?? ''} {...(sheet.peerId ? { peerId: sheet.peerId } : {})} close={close} />;
+    case 'schedule':
+      return <ScheduleEditor key={sheet.id ?? sheet.channel} channel={sheet.channel} {...(sheet.id ? { id: sheet.id } : {})} close={close} />;
     case 'template':
       return <TemplateEditorSheet close={close} />;
     case 'remote':

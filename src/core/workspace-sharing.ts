@@ -1,6 +1,6 @@
 import { defaultAgentOf, wsWireName } from '../protocol.js';
 import { placeAgent } from '../shared/agent-picker.js';
-import type { BodyInput, BodyOf, GuestCan, WsRole } from '../protocol.js';
+import type { BodyInput, BodyOf, GuestCan, GuestSchedule, WsRole } from '../protocol.js';
 import { agentLabel } from '../shared/agent-label.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { ShareService } from './shares.js';
@@ -67,6 +67,9 @@ export function saidBy(state: DomainState, owner: string, h: BodyOf<'ws_invite'>
  * "view" lets them follow along and browse the files. You can remove anyone, any time.
  */
 export class WorkspaceSharing {
+  /** The last list each shared chat's people got, to send only what changed. */
+  private readonly sentSchedules = new Map<string, string>();
+
   constructor(private readonly deps: SharingDeps) {}
 
   /** People in your workspace (owner side). */
@@ -123,6 +126,7 @@ export class WorkspaceSharing {
     const history = historyFor(state.log, `ws:${wsId}`, (id) => peerName(state, id));
     this.deps.send({ kind: 'ws_invite', ws: { id: wsId, name: wsWireName(ws.name), project, ...(ws.branch ? { branch: ws.branch } : {}), agent: placeAgent(ws, defaultAgentOf(state.self)) }, role, ...(opts.can ? { can: opts.can } : {}), share: shareNameOf(wsId), history }, { to: peerId });
     this.broadcastRoster(wsId);
+    this.sendSchedules(wsId, peerId);
     this.onChange?.();
     if (!opts.quiet) this.deps.toast(`${peer.name} ${role === 'contribute' ? 'can now work with you' : 'can now follow along'} in ${ws.name}`, 'success');
     return true;
@@ -171,6 +175,36 @@ export class WorkspaceSharing {
     if (share) this.deps.shares.upsert({ ...share, allowed: Object.keys(this.members(wsId)) });
   }
 
+  /** What a chat's guests may see of its schedules (core/schedule, while it runs). */
+  guestSchedules?: (channel: string) => readonly GuestSchedule[];
+
+  /** Each shared chat whose list changed goes to its members, and to nobody else. */
+  schedulesChanged(): void {
+    for (const wsId of Object.keys(this.deps.store.getState().members)) {
+      const items = this.guestSchedules?.(`ws:${wsId}`);
+      if (!items) return;
+      const sig = JSON.stringify(items);
+      if ((this.sentSchedules.get(wsId) ?? '[]') === sig) continue;
+      this.sentSchedules.set(wsId, sig);
+      for (const peerId of Object.keys(this.members(wsId))) this.deps.send({ kind: 'ws_schedules', id: wsId, items: [...items] }, { to: peerId });
+    }
+  }
+
+  /** The list of one chat to one member: they just joined, or came back. */
+  sendSchedules(wsId: string, peerId: string): void {
+    const items = this.guestSchedules?.(`ws:${wsId}`);
+    if (!items || !this.canSee(peerId, `ws:${wsId}`)) return;
+    this.sentSchedules.set(wsId, JSON.stringify(items));
+    this.deps.send({ kind: 'ws_schedules', id: wsId, items: [...items] }, { to: peerId });
+  }
+
+  /** People who came back to the room may have missed a change. */
+  peersBack(peerIds: readonly string[]): void {
+    for (const [wsId, members] of Object.entries(this.deps.store.getState().members)) {
+      for (const peerId of peerIds) if (members[peerId]) this.sendSchedules(wsId, peerId);
+    }
+  }
+
   private broadcastRoster(wsId: string): void {
     const members = Object.entries(this.members(wsId)).map(([peerId, role]) => ({ peerId, role }));
     for (const m of members) this.deps.send({ kind: 'ws_roster', id: wsId, members }, { to: m.peerId });
@@ -204,6 +238,12 @@ export class WorkspaceSharing {
     this.deps.store.dispatch({ type: 'roster', id: body.id, members: body.members });
     const me = body.members.find((m) => m.peerId === this.deps.selfId());
     if (me && me.role !== shared.role) this.deps.store.dispatch({ type: 'shared_add', ws: { ...shared, role: me.role } });
+  }
+
+  /** Only the owner says what wakes their chat, so a list from anyone else is dropped. */
+  onSchedules(from: string, body: BodyOf<'ws_schedules'>): void {
+    if (!this.deps.store.getState().shared.some((w) => w.id === body.id && w.owner === from)) return;
+    this.deps.store.dispatch({ type: 'shared_schedules', id: body.id, items: body.items });
   }
 
   onLeave(from: string, body: BodyOf<'ws_leave'>): void {

@@ -12,6 +12,7 @@ import { openSupport } from '../lib/support.js';
 import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
 import { previewRequestPopup } from '../gateway/request-native.js';
 import { revealLabel } from '../lib/os-words.js';
+import { scheduleChannel } from '../schedule/schedule-model.js';
 
 export interface PaletteCommand {
   readonly id: string;
@@ -59,6 +60,16 @@ function workspaceCommands({ ui, actions, state }: Ctx): PaletteCommand[] {
   ];
 }
 
+/** A new schedule for the chat on screen, and a change to each one it has. */
+function scheduleCommands(state: AppState): PaletteCommand[] {
+  const channel = scheduleChannel(state);
+  if (!channel) return [];
+  return [
+    cmd('schedule', 'schedule-new', 'New Schedule…', 'clock', () => openSheet({ kind: 'schedule', channel }), 'Your agent runs a prompt in this chat, on its own'),
+    ...state.schedules.filter((s) => s.channel === channel).map((s) => cmd('schedule', `schedule-edit:${s.id}`, `Edit Schedule “${s.title}”…`, 'clock', () => openSheet({ kind: 'schedule', channel, id: s.id }))),
+  ];
+}
+
 /**
  * The /commands as things to do: a name you'd look for, no `<arg>` syntax. The ones that need
  * more (a name, a command, a note for Claude) open their sheet; nothing is typed for you.
@@ -72,6 +83,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
   const canRun = state.peers.some((p) => canRunOn(state.granted[p.peerId]?.level));
   return [
     ...workspaceCommands(ctx),
+    ...scheduleCommands(state),
     ...(talking
       ? [
           cmd('clear', 'clear', state.view.kind === 'room' ? 'Clear the Group Chat…' : 'Clear This Conversation…', 'x', () => ui.openMenu({ kind: 'clear', channel, host: state.isHost })),

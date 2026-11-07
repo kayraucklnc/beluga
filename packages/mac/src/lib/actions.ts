@@ -142,7 +142,7 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
       if (id && routeOption(route, menu, id)) return;
       runSharedMenu(menuCtx, menu, index);
     },
-    submit: (text, urgent) => submitTyped({ client, ui: () => ui.get(), patchUi, runUiAction: (a) => actions.run(a), toTerminal: (channel) => sendsToTerminal(client.store.getState(), getPrefs(), channel) }, text, urgent),
+    submit: (text, urgent) => text.trim() === '/schedule' && routeTyped(route, '/schedule') ? undefined : submitTyped({ client, ui: () => ui.get(), patchUi, runUiAction: (a) => actions.run(a), toTerminal: (channel) => sendsToTerminal(client.store.getState(), getPrefs(), channel) }, text, urgent),
     typeInto,
     openLink,
   };

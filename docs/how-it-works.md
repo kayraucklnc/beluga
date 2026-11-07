@@ -23,3 +23,18 @@ Beluga is a core and the Mac app on top of it. The core (rooms, projects, agents
   - Messages up to 1 MB. Files are sent in 256 KB encrypted chunks, up to 200 MB.
   - Cloudflare quick tunnels have no uptime guarantee. Use ngrok or your own network if you need one.
 - **Images** are decoded in a background thread and shrunk before they're drawn, so big photos never freeze the screen.
+
+## Schedules
+
+A schedule runs a prompt again and again in one chat. Each run continues the conversation of that chat, on the agent of that chat, and writes in that chat. Use a [Sentinel](sentinel.md) for a watcher with its own steps or triggers.
+
+- **Where you make one.** Type `/schedule` in a chat, or use the Info panel's Schedules section. Your agent can also make one with its `mcp__beluga_schedule__*` tools. Each create, update and remove from an agent asks your approval, and those tools reach only their own chat. A scheduled run can only list and pause.
+- **When it runs.** The daemon on your computer runs it, on your subscription. Choose an interval, a time of day or one time only. A run has a limit of one hour.
+- **A busy chat.** The next slot waits for the chat, and slots that pass while it waits merge into one run. You can choose to skip them instead.
+- **A computer that was off.** Missed slots catch up as one run, or you can choose to skip them. The line of the run gives the merged and missed counts: `Scheduled run · Check · due 21:00 · merged 2 slots · missed 3 runs while this computer was off`.
+- **Failures.** After 3 failed runs in a row the schedule pauses. Its line in the chat has a Resume button. A usage limit does not count as a failure, and the next slot tries again.
+- **Long chats.** A chat that is nearly full compacts before the run, and the compaction keeps the purpose of the schedule and the result of its last run. A schedule can also start a new session for each run.
+- **Phone and friends.** The phone lists the schedules of a chat under its •••. It can run one now, pause it and resume it. Friends who follow a shared chat see a read-only list.
+- **Turn it off.** Settings › Agent › Schedules. While the setting is off, nothing runs and the API refuses. The saved schedules stay.
+
+The code is in `src/core/schedule` (the rules are pure functions in `model.ts`). Schedules are saved in `~/.beluga/schedules.json`.

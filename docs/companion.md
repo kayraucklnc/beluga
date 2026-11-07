@@ -281,6 +281,8 @@ chats do the same on a person's turn (`TurnView.reactions`, `reactable`, `ConvVi
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your agent do.
 
+1.43 (BLG-97) brought a conversation's `schedules` (`SINCE.schedules`), what wakes that chat by itself: under its ••• the phone lists them, runs one now, pauses and resumes it (`schedule.runNow`, `schedule.setEnabled`). Making, editing and removing stay on the Mac. A chat someone shared with you has `owner` set: the list only reads, because it runs on their computer. A run's start is a quiet line in the chat (`TurnView.scheduled`), with the same merged and missed counts as the Mac (`runExtras`).
+
 A view is sent whole when it changes (by a hash), at most every 500 ms per topic: whole views are
 simpler than patches and can't drift. A conversation view carries its last 40 turns; older ones come
 with `call companion.older`.

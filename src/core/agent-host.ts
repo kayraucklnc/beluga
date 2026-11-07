@@ -74,10 +74,14 @@ export interface AgentHostDeps {
   readonly board?: (channel: string, from: string, opts: { readonly plan: boolean; readonly friend?: import('./board/work.js').BoardFriend }) => import('./board/work.js').RunBoard | undefined;
   /** The Sentinel chat (core/sentinel/chat.ts, your own runs): where its Claude runs, its own folder and session. */
   readonly sentinelChat?: (channel: string, from: string) => AgentPlace | undefined;
-  /** What a tool that always asks you (policy ALWAYS_ASK_YOU: deleting a sentinel or a dashboard) says on its card, in words. */
-  readonly confirmTool?: (toolName: string, input: Record<string, unknown>) => { readonly title: string; readonly detail: string } | undefined;
+  /** What a tool that always asks you (policy ALWAYS_ASK_YOU: deleting a sentinel or a dashboard, changing a schedule) says on its card, in words. */
+  readonly confirmTool?: (toolName: string, input: Record<string, unknown>, channel: string) => { readonly title: string; readonly detail: string } | undefined;
   /** Sentinels (your own runs): their tools, and a sentinel run's brief in its Claude step's conversation (core/sentinel). */
   readonly sentinel?: (channel: string, from: string) => { readonly tools: import('../agent/types.js').SentinelTools; readonly dashboard?: import('../agent/types.js').DashboardTools; readonly brief: string; readonly inRun: boolean } | undefined;
+  /** A schedule's run (core/schedule, your own runs): what Claude is told, for this one request. */
+  readonly schedule?: (channel: string, requestId: string) => string | undefined;
+  /** The schedules of a chat as tools (core/schedule, your own runs). `requestId`: a schedule's own run gets fewer. */
+  readonly scheduleTools?: (channel: string, requestId?: string) => { readonly tools: import('../agent/types.js').ScheduleTools; readonly brief: string } | undefined;
   /** A plan's home conversation (your own runs): its plan tools and what Claude is told about the plan (core/plans). */
   readonly plans?: (channel: string, from: string) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string } | undefined;
   /** "Your Mac" (core/assistant), your own runs in its conversation: where it runs, its tools, what Claude is told. */
@@ -148,6 +152,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Requests one person may have waiting for your Claude at once. */
 const MAX_QUEUED_PER_PERSON = 10;
 
+/** How a compaction someone waits for ended. `refused`: it did not run to its end, and nothing is wrong with the conversation. */
+export type CompactOutcome = 'done' | 'refused' | 'failed';
+
 /** A message waiting in a conversation. `askTo`: who gets Claude's questions. `compact`: not a message but compacting the conversation (Compact now, /compact). */
 interface Waiting {
   from: string;
@@ -155,6 +162,8 @@ interface Waiting {
   urgent?: boolean;
   askTo?: string;
   compact?: boolean;
+  /** Someone waits for this compaction's outcome (see compactNow). */
+  settle?: (outcome: CompactOutcome) => void;
 }
 
 /** The queue for one conversation (the room, or a workspace). */
@@ -295,7 +304,7 @@ export class AgentHost {
     this.compactor = new Compactor({
       store: deps.store,
       agent: () => this.agent,
-      place: (channel) => this.deps.workspaces?.place(channel),
+      place: (channel) => (isAssistant(channel) ? this.deps.assistant?.(channel, this.selfId)?.place : this.deps.workspaces?.place(channel)),
       emit: (requestId, kind, text, channel) => this.emitAgent(requestId, this.selfId, kind, text, channel),
       requesterName: () => peerName(this.store.getState(), this.selfId),
       modelFor: (place) => this.modelFor(place?.model, place?.agent, place?.effort),
@@ -328,6 +337,25 @@ export class AgentHost {
     void this.pump(lane);
   }
 
+  /**
+   * Compact a conversation for Beluga itself (a scheduled run), in its queue, and say how it ended.
+   * No toast: the caller decides what a refusal means. A held queue would never run it.
+   */
+  compactNow(channel: string, instructions = ''): Promise<CompactOutcome> {
+    if (!this.agent || this.noCompact(channel) || this.lanes.get(channel)?.held) return Promise.resolve('refused');
+    const lane = this.lane(channel);
+    const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: `compact-${randomUUID()}`, prompt: instructions.slice(0, 2000), viaAgent: false, channel, urgent: false, plan: false };
+    return new Promise((settle) => {
+      lane.waiting.push({ from: this.selfId, body, compact: true, settle });
+      void this.pump(lane);
+    });
+  }
+
+  /** How full a conversation is against the threshold, whatever the setting says. */
+  contextFill(channel: string): 'past' | 'under' | 'unknown' {
+    return this.compactor.fill(channel);
+  }
+
   /** Why this conversation's runtime can't be compacted by Beluga (Codex compacts itself); undefined when it can. */
   private noCompact(channel: string): string | undefined {
     if (this.deps.terminalDriving?.(channel)) return TERMINAL_DRIVING;
@@ -340,12 +368,13 @@ export class AgentHost {
   }
 
   /** Compact in the conversation's queue, as its current run (so a new message waits for it). */
-  private async runCompaction(lane: Lane, auto: boolean, instructions = ''): Promise<void> {
+  private async runCompaction(lane: Lane, auto: boolean, instructions = ''): Promise<CompactOutcome> {
     const controller = new AbortController();
     lane.current = controller;
     lane.runFrom = this.selfId;
     try {
-      await this.compactor.run(lane.channel, auto ? 'auto' : 'manual', controller.signal, instructions);
+      const landed = await this.compactor.run(lane.channel, auto ? 'auto' : 'manual', controller.signal, instructions);
+      return landed ? 'done' : controller.signal.aborted ? 'refused' : 'failed';
     } finally {
       if (lane.current === controller) {
         lane.current = undefined;
@@ -439,6 +468,12 @@ export class AgentHost {
   /** Whether a run of your Claude is under way in this conversation: its Claude Code process is there. */
   runningIn(channel: string): boolean {
     return Boolean(this.lanes.get(channel)?.current);
+  }
+
+  /** Whether this conversation has anything to do first: a run, a queue, or a queue held after a failure. */
+  busyIn(channel: string): boolean {
+    const lane = this.lanes.get(channel);
+    return Boolean(lane && (lane.current || lane.waiting.length || lane.held));
   }
 
   /**
@@ -576,7 +611,10 @@ export class AgentHost {
       const cancelled = lane.waiting;
       lane.waiting = [];
       lane.current?.abort();
-      for (const { from, body, compact } of cancelled) if (!compact) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
+      for (const { from, body, compact, settle } of cancelled) {
+        settle?.('refused');
+        if (!compact) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
+      }
     }
     this.toast('Stopping your agent everywhere (queued requests cancelled)', 'warn');
   }
@@ -594,7 +632,10 @@ export class AgentHost {
     this.deps.questions.cancelChannel(channel);
     const dropped = lane.waiting;
     lane.waiting = [];
-    for (const { from, body, compact } of dropped) if (!compact) this.emitAgent(body.requestId, from, 'error', why, body.channel);
+    for (const { from, body, compact, settle } of dropped) {
+      settle?.('refused');
+      if (!compact) this.emitAgent(body.requestId, from, 'error', why, body.channel);
+    }
     if (lane.current) {
       lane.interruptedBy = 'beluga';
       lane.interruptNote = why;
@@ -621,7 +662,10 @@ export class AgentHost {
     for (const [id, at] of [...this.toolApprovals]) if (at === channel) this.answerApproval('no', id);
     this.deps.questions.cancelChannel(channel);
     lane.waiting = lane.waiting.filter((w) => w.from !== this.selfId);
-    for (const { from, body, compact } of mine) if (!compact) this.emitAgent(body.requestId, from, 'error', 'Taken out of the queue when you stopped your agent', body.channel);
+    for (const { from, body, compact, settle } of mine) {
+      settle?.('refused');
+      if (!compact) this.emitAgent(body.requestId, from, 'error', 'Taken out of the queue when you stopped your agent', body.channel);
+    }
     if (lane.current) {
       lane.stopping = true;
       lane.current.abort();
@@ -1043,7 +1087,13 @@ export class AgentHost {
           holds = false;
         };
         try {
-          if (!next || next.compact) await this.runCompaction(lane, auto, next?.body.prompt);
+          if (!next || next.compact) {
+            const outcome = await this.runCompaction(lane, auto || Boolean(next?.settle), next?.body.prompt);
+            // That one compaction also answers whoever waits for one behind it.
+            const waiters = lane.waiting.filter((w) => w.settle);
+            lane.waiting = lane.waiting.filter((w) => !w.settle);
+            for (const w of [...(next ? [next] : []), ...waiters]) w.settle?.(outcome);
+          }
           else await this.runAgent(next.from, next.body, lane, next.askTo, release).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
         } finally {
           release();
@@ -1202,6 +1252,9 @@ export class AgentHost {
       const planFirst = body.plan && !plans?.tools;
       // Sentinels (your own runs): a sentinel run's Claude step gets its brief, and the task tools (it makes tasks).
       const sentinel = from === this.selfId && !place?.syncMain ? this.deps.sentinel?.(body.channel, from) : undefined;
+      const scheduleBrief = from === this.selfId ? this.deps.schedule?.(body.channel, body.requestId) : undefined;
+      // A friend's or a guest's request never gets them, whoever's chat it runs in.
+      const scheduling = from === this.selfId && !place?.syncMain ? this.deps.scheduleTools?.(body.channel, body.requestId) : undefined;
       const noBoard = place?.syncMain || (place?.askOnly && plans?.tools && !sentinel?.inRun);
       // A friend's run gets its repo's board too, as their trust allows (BLG-701; see boardAccess).
       const friendBoard = from === this.selfId ? undefined : this.boardAccess(from);
@@ -1251,6 +1304,8 @@ export class AgentHost {
         ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
         ...(callNotes ? { callNotesTools: callNotes } : {}),
         ...(sentinel ? { sentinelTools: sentinel.tools, sentinelBrief: sentinel.brief, ...(sentinel.dashboard ? { dashboardTools: sentinel.dashboard } : {}) } : {}),
+        ...(scheduleBrief ? { scheduleBrief } : {}),
+        ...(scheduling ? { scheduleTools: scheduling.tools, scheduleToolsBrief: scheduling.brief } : {}),
         prompt: this.promptOf(body),
         ...this.promptIdOf(body),
         requesterName,
@@ -1368,6 +1423,8 @@ export class AgentHost {
     const phone = this.deps.phone?.(scratch ? path.join(place.cwd, scratch) : undefined);
     const board = this.deps.board?.(channel, this.selfId, { plan: false });
     const setup = worktree && channel.startsWith('ws:') ? this.deps.setup?.(channel) : undefined;
+    // The tool host mounts them for the terminal too, under the same approvals. A terminal is never a scheduled run.
+    const scheduling = this.deps.scheduleTools?.(channel);
     const requestId = `term-${randomUUID()}`;
     this.deps.questions.track(requestId, this.selfId, channel);
     return agent.terminal(
@@ -1390,6 +1447,7 @@ export class AgentHost {
         ...(board?.tools ? { board: board.tools } : {}),
         ...(board?.brief ? { taskBrief: board.brief } : {}),
         ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
+        ...(scheduling ? { scheduleTools: scheduling.tools, scheduleToolsBrief: scheduling.brief } : {}),
         ...(setup ? { setup } : {}),
         ...this.modelFor(place.model, place.agent, place.effort),
         ownerMcp: true,
@@ -1466,9 +1524,9 @@ export class AgentHost {
       const answer = await this.ask('tool', `Your agent wants to use your phone (${toolName.replace('mcp__beluga_phone__', '')})`, JSON.stringify(input).slice(0, 2000), requester, channel);
       return answer !== 'no';
     }
-    // Deleting a sentinel or a dashboard asks you first, even when your Claude never asks otherwise: once, no Always.
+    // Deleting a sentinel or a dashboard, or changing a schedule, asks you first, even when your Claude never asks otherwise: once, no Always.
     if (requester === this.selfId && ALWAYS_ASK_YOU.has(toolName)) {
-      const words = this.deps.confirmTool?.(toolName, input);
+      const words = this.deps.confirmTool?.(toolName, input, channel);
       const answer = await this.ask('tool', words?.title ?? `Your agent wants to use ${toolName}`, words?.detail ?? JSON.stringify(input), requester, channel, { once: true });
       return answer !== 'no';
     }

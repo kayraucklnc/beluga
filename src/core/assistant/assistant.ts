@@ -42,6 +42,8 @@ export interface AssistantDeps {
   /** ~/.beluga/assistant (a temporary folder in the demo and the tests). */
   readonly dir: string;
   readonly selfId: () => string;
+  /** A chat is being deleted for good: what's kept for it elsewhere goes too. */
+  readonly onChatDeleted?: (channel: string) => void;
   /** The screen and the device (a pretend Mac in the demo and the tests). */
   readonly system?: SystemPort;
   /** Starting work: a worktree with its Claude on a message (workspace-controller's startWorktree). */
@@ -290,6 +292,7 @@ export class MacAssistant {
     const at = this.list.chats.findIndex((c) => c.id === id);
     if (at < 0) return;
     const channel = assistantChannel(id);
+    this.deps.onChatDeleted?.(channel);
     const { sessionId, runtime } = this.saved.get(id) ?? {};
     const rest = this.list.chats.filter((c) => c.id !== id);
     // The last one: a fresh first chat in its place (its channel is the phone's Ask your Mac).

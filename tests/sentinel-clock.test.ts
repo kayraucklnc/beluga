@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dueNow, lastSlotAt, nextRunAt } from '../src/core/sentinel/clock.js';
+import { dueNow, lastSlotAt, nextRunAt } from '../src/shared/schedule/clock.js';
 import type { ScheduleTrigger } from '../src/core/sentinel/model.js';
 
 /** When schedules run (docs/sentinel.md §4, "Clock"), in a named zone so the tests read the same anywhere. */

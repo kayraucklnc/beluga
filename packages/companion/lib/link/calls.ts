@@ -155,6 +155,8 @@ export const calls = {
   askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s agent`),
   screenshot: (peerId: string, name: string): Call => make('companion.askPerson', [{ peerId, text: 'Take a screenshot of your desktop and send it to me.', needs: ['screen'] }], `Screenshot of ${name}'s desktop`),
   // Sentinel (1.21, docs/sentinel.md): Run Now, Pause / Turn On, one run with its report's text.
+  scheduleRun: (id: string, name: string): Call => make('schedule.runNow', [id], `Run ${short(name)}`),
+  scheduleSetOn: (id: string, on: boolean, name: string): Call => make('schedule.setEnabled', [id, on], `${on ? 'Resume' : 'Pause'} ${short(name)}`),
   sentinelRun: (id: string, name: string): Call => make('sentinel.run', [id], `Run ${short(name)}`),
   sentinelPause: (id: string, paused: boolean, name: string): Call => make('sentinel.pause', [id, paused], `${paused ? 'Pause' : 'Turn on'} ${short(name)}`),
   sentinelRunGet: (runId: string): Call => make('sentinel.runGet', [runId], 'Read the report'),
