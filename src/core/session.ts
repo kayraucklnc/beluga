@@ -1270,6 +1270,9 @@ export class Session {
       case 'chat': {
         // Workspace chats only reach people in that workspace, and only contributors may post.
         if (body.channel !== 'room' && !this.sharing.canPost(from, body.channel)) return;
+        // A worktree deleted here: a message that comes back late (the hub's echo of yours, its run's
+        // last words) would bring its conversation back; its log was cleared, so no repeat is noticed.
+        if (body.channel && this.workspaces?.deletedChannel(body.channel)) return;
         if (body.channel?.startsWith('ws:')) this.workspaces?.ensureLoaded(body.channel.slice(3));
         const chatId = chatMessageId(from, body.mid, id);
         // The same message again (sent once more after a lost acknowledgement): it's here already.

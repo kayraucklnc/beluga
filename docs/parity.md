@@ -250,7 +250,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.mergeCheck` | – the phone only: the Merge sheet's checks (the Mac's own: `git.mergePreview` and its review) |
 | `companion.merge` | – the phone only: Merge from a worktree's •••, the Mac's own merge (`workspaces.merge`), its progress in the conversation |
 | `companion.resolve` | – the phone only: Ask Your Agent to resolve, as the Mac's Solve merge conflict (`workspaces.askClaudeToMerge`) |
-| `companion.branchStep` | – the phone only: the branch band's steps in a worktree's conversation (Archive, Continue After Merge, Squash and Merge, Fix with Your Agent…), as the Mac's toolbar branch control does them |
+| `companion.branchStep` | – the phone only: the branch band's steps in a worktree's conversation (Archive, Continue After Merge, Squash and Merge, Fix Checks…, Push, Re-run Failed Checks…), as the Mac's toolbar branch control does them |
 | `companion.viewFetch` | – the phone only: a live view's rows in a conversation, run here as `view.fetch` runs them for the window |
 | `companion.draftTask` | – the phone only: New task by describing it, the agent's draft shown before it's added (the Mac's describe-to-create is `board.create`) |
 | `companion.addTask` | – the phone only: the draft added as a task |
@@ -344,13 +344,15 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.mergeToBase` | ✓ the branch control's chevron › Merge into main… (no PR yet, on GitHub): asks first, then lands the branch on origin's base and pushes |
 | `workbench.gitFix` | ✓ the GitHub trouble card that a failed Create PR, Merge or Update Branch opens (Push over HTTPS, Log In to GitHub, Install GitHub CLI, the SSH steps under •••) |
 | `workbench.signInClaude` | ✓ Sign In on a failed Claude card that says Claude Code isn’t signed in or its sign-in expired: a menu of a Claude subscription, an Anthropic Console account (runs `claude auth login --claudeai` or `--console` in a shell, then Claude continues) or a 3rd-party platform (opens its setup page) |
-| `workbench.fixChecks` | ✓ |
-| `workbench.resolvePrConflicts` | ✓ Resolve Merge Conflicts… (toolbar, PR sheet, the PR strip above the chat) when GitHub says the PR conflicts |
+| `workbench.fixChecks` | ✓ the toolbar's branch state › Fix Checks… (the PR's checks failed and nothing still runs); while they run it says Checks running, calm, with Fix Checks… under its chevron |
+| `workbench.resolvePrConflicts` | ✓ Resolve Conflicts… (the toolbar's branch state "Conflicts with main", folded "Resolve Conflicts"; PR sheet, the PR strip above the chat) when GitHub says the PR conflicts (never while GitHub is still working it out) |
 | `workbench.continueAfterMerge` | ✓ Continue After Merge… (⋯, PR sheet, the PR strip) once the PR merged; the chat then shows a divider where that PR ends (the phone shows its words) |
 | `workbench.openPr` | ✓ |
 | `workbench.refreshPrs` | ✓ |
 | `workbench.mergePr` | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass; Merge Now, Skipping Checks), also in the PR strip above the chat |
 | `workbench.prStep` | ✓ the toolbar's branch state › Update Branch (the PR is behind its base), Mark Ready for Review (a draft) |
+| `workbench.pushPr` | ✓ the toolbar's branch state "Not pushed" › Push N Commits: the worktree has commits its open PR doesn't, so GitHub's checks and conflicts are for an older commit (phone: the branch band's Push) |
+| `workbench.rerunChecks` | ✓ the toolbar's branch state "Checks failed" › its chevron › Re-run Failed Checks (`gh run rerun --failed`, for a flaky test; phone: the branch band's ••• too) |
 | `workbench.prConversation` | ✓ the PR page (the PR strip's comments count, or the PR sheet's Comments): comments, reviews and threads on lines with their code; a `beluga-pr-comments` block in chat shows them read-only (phone: not yet) |
 | `workbench.prPost` | ✓ the PR page: Reply in a thread, Resolve / Reopen, and a comment on the PR |
 | `workbench.addressPrComments` | ✓ the PR page: Ask Claude (one thread) and Address All With Claude |

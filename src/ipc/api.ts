@@ -364,6 +364,10 @@ export const API = {
   'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool), admin: opt(bool) }).strict()),
   // A PR's one-click step on GitHub: bring its base in ('update_branch') or mark a draft ready ('ready') → { ok, message }.
   'workbench.prStep': args(id, z.enum(['update_branch', 'ready'])),
+  // Push a worktree's commits to its open PR (GitHub's checks and conflicts were for an older commit) → { ok, message, trouble? }.
+  'workbench.pushPr': args(id),
+  // Re-run a PR's failed GitHub Actions jobs on the same commit (gh run rerun --failed) → { ok, message, trouble? }.
+  'workbench.rerunChecks': args(id),
   // A worktree's PR conversation: comments, reviews and threads on lines (BLG-514).
   'workbench.prConversation': args(id),
   'workbench.prPost': args(id, z.discriminatedUnion('kind', [z.object({ kind: z.literal('comment'), body: z.string().min(1).max(60_000) }).strict(), z.object({ kind: z.literal('reply'), thread: z.string().min(1).max(200), body: z.string().min(1).max(60_000) }).strict(), z.object({ kind: z.enum(['resolve', 'unresolve']), thread: z.string().min(1).max(200) }).strict()])),

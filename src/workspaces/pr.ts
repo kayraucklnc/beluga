@@ -564,6 +564,11 @@ export async function disableAutoMerge(dir: string, number: number): Promise<voi
 }
 
 /** A PR's one-click steps on GitHub: merge its base in (`gh pr update-branch`), or mark a draft ready for review. */
+/** Run a workflow run's failed jobs again on the same commit (`gh run rerun <id> --failed`, see branch-state's failedRunIds). Throws gh's error. */
+export async function rerunFailed(dir: string, runId: number): Promise<void> {
+  await runGh(['run', 'rerun', String(runId), '--failed'], dir, 30_000);
+}
+
 export type PrStepKind = 'update_branch' | 'ready';
 
 /** Take one of those steps. Throws gh's error. */
