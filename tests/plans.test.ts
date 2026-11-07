@@ -430,6 +430,7 @@ describe('running a plan', () => {
     expect(planView(t.plans.need(t.plan.id), t.store.getState().board).next.kind).toBe('checking');
     // The checker reads the plan and records its verdict: nothing else.
     const run = t.work.forRun(`ws:${checker}`, 'p-me')!;
+    expect(run.checker).toBe(true);
     expect(run.tools!.only).toEqual(['plan_get', 'plan_gate']);
     expect(createPlanToolDefs(run.tools!).map((d) => d.name)).toEqual(['plan_get', 'plan_gate']);
     expect(() => run.tools!.update([], 'no')).toThrow(/only plan_get and plan_gate/);
