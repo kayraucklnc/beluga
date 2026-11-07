@@ -56,6 +56,9 @@ export const PHONE: Record<Method, Side> = {
   // Your steered message Claude hasn't read yet, answered now: like Stop, phone-sized.
   'host.steerNow': 'phone',
   'host.stopRun': 'phone',
+  // Stop one child thread: like Stop, phone-sized.
+  'threads.stop': 'phone',
+  'threads.stopAll': 'phone',
   'host.cancelQueued': 'phone',
   'host.reorderQueued': 'mac',
 

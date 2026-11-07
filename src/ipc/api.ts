@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AgentRef, ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EmojiSchema } from '../shared/reactions.js';
-import { BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, LOW_POWER, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
+import { BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, LOW_POWER, NotifySettings, THEMES, ThreadLimitsSchema, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
 import { CHAT_LIMIT_MAX } from '../shared/chat-limit.js';
@@ -97,6 +97,8 @@ export const PrefsPatch = z
     autoContinueSkip: z.number().int().min(0),
     parallelRuns: z.number().int().min(PARALLEL_RUNS_MIN).max(PARALLEL_RUNS_MAX),
     chatLimit: z.number().int().min(0).max(CHAT_LIMIT_MAX),
+    agentThreads: bool,
+    threadLimits: ThreadLimitsSchema,
     scratchFolder: bool,
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),
@@ -170,6 +172,10 @@ export const API = {
   'host.steerNow': args(id),
   // Stop your Claude in one conversation: → { stopped, returned: your queued prompts, in order }.
   'host.stopRun': args(channel),
+  // A person's Stop on one child thread, from the parent's panel.
+  'threads.stop': args(id),
+  // A person's Stop All Running on a chat's threads: its own turn goes on → { stopped: how many }.
+  'threads.stopAll': args(id),
   'host.cancelQueued': args(id),
   'host.reorderQueued': args(id, z.number().int().min(0).max(100)),
 
@@ -277,7 +283,7 @@ export const API = {
   // `agent` (BLG-506): who goes on there; unset: the conversation's own. One that can't resume the conversation starts fresh, handed it.
   'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), agent: opt(AgentRef) }).strict())),
   // `quiet`: no success toast; a batch says it once for all its chats (the sidebar's chat selection).
-  'workspaces.archive': args(id, opt(bool), opt(z.object({ quiet: opt(bool) }).strict())),
+  'workspaces.archive': args(id, opt(bool), opt(z.object({ children: opt(z.enum(['with', 'keep'])), quiet: opt(bool) }).strict())),
   'workspaces.restore': args(id),
   // What archiving (or freeing space) would throw away and keep → ArchivePreview (none: not a worktree that's there).
   'workspaces.archivePlan': args(id),
@@ -286,7 +292,7 @@ export const API = {
   // Throw away a worktree's dependencies, builds and caches → bytes freed.
   'workspaces.freeSpace': args(id),
   // `quiet`: as for archive.
-  'workspaces.remove': args(id, opt(z.object({ quiet: opt(bool) }).strict())),
+  'workspaces.remove': args(id, opt(z.object({ children: opt(z.enum(['with', 'keep'])), quiet: opt(bool) }).strict())),
   'workspaces.commit': args(id, opt(z.string().max(2000))),
   'workspaces.merge': args(id),
   'workspaces.prepareRemoval': args(id),

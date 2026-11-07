@@ -93,6 +93,13 @@ const branches = (): string => sh(repo, 'branch', '--list', 'worktree-agent-*');
 const projectId = () => store.getState().projects.find((p) => p.root)!.id;
 
 describe('WorkspaceController', () => {
+  it('a thread record reaches every screen at once, without a refresh', () => {
+    const ws = store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.kind === 'main')!;
+    const thread = { parent: 'ws:top', parentTitle: 'top', root: 'ws:top', depth: 1, task: 't', startedAt: 1, owed: [] };
+    ctl.setThread(ws.id, thread);
+    expect(store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === ws.id)?.thread).toEqual(thread);
+  });
+
   it('publishes projects and makes every workspace a private share', () => {
     const app = store.getState().projects.find((p) => p.root)!;
     const main = app.workspaces[0]!;

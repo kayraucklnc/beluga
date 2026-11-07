@@ -80,6 +80,8 @@ export interface AgentHostDeps {
   readonly sentinel?: (channel: string, from: string) => { readonly tools: import('../agent/types.js').SentinelTools; readonly dashboard?: import('../agent/types.js').DashboardTools; readonly brief: string; readonly inRun: boolean } | undefined;
   /** A plan's home conversation (your own runs): its plan tools and what Claude is told about the plan (core/plans). */
   readonly plans?: (channel: string, from: string) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string } | undefined;
+  /** Child threads (core/threads): their tools, bound to this chat. Your own runs only, with the flag on (see runAgent). */
+  readonly threads?: (channel: string) => import('../agent/types.js').ThreadTools | undefined;
   /** "Your Mac" (core/assistant), your own runs in its conversation: where it runs, its tools, what Claude is told. */
   readonly assistant?: (channel: string, from: string) => { readonly place: AgentPlace; readonly tools: MacTools; readonly brief: string } | undefined;
   /** Your phone (core/phone, BLG-150), your own runs: tools to act on it, saving screenshots in `scratchDir`. `env` lets Bash use adb/scrcpy (BLG-174). */
@@ -522,8 +524,8 @@ export class AgentHost {
   }
 
   /** Run your Claude for someone else in one of your workspaces (they were invited to work there). */
-  runFor(from: string, channel: string, prompt: string, plan = false): void {
-    const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: randomUUID(), prompt: prompt.slice(0, MAX_TEXT), viaAgent: false, channel, urgent: false, plan };
+  runFor(from: string, channel: string, prompt: string, plan = false, requestId: string = randomUUID()): void {
+    const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent: false, channel, urgent: false, plan };
     this.deps.questions.track(body.requestId, this.selfId, channel);
     void this.onAgentRequest(from, body);
   }
@@ -609,14 +611,17 @@ export class AgentHost {
    * messages still waiting there come out of the queue: their prompts are returned in queue order
    * so the screen can put them back in the message box (Claude goes quiet, nothing typed is lost).
    * Other people's requests there keep their places and run next; other conversations carry on.
+   * `threads`: how many child threads this Stop also stopped (see stopChat), so the toast says so.
+   * `quiet`: no toast (an agent stopped its thread; nobody pressed anything).
    */
-  stopRun(channel: string): { stopped: boolean; returned: string[] } {
+  stopRun(channel: string, opts: { readonly quiet?: boolean; readonly threads?: number } = {}): { stopped: boolean; returned: string[] } {
     const lane = this.lanes.get(channel);
     const mine = lane?.waiting.filter((w) => w.from === this.selfId) ?? [];
+    const threads = opts.threads ? `${opts.threads} thread${opts.threads === 1 ? '' : 's'}` : '';
     if (!lane || (!lane.current && !mine.length)) {
-      const busy = [...this.lanes.values()].some((l) => l.current || l.waiting.length);
-      this.toast(busy ? "Your agent isn't working here" : 'Your agent is not running anything');
-      return { stopped: false, returned: [] };
+      if (threads) this.toast(`Stopped ${threads}`, 'success');
+      else if (!opts.quiet) this.toast([...this.lanes.values()].some((l) => l.current || l.waiting.length) ? "Your agent isn't working here" : 'Your agent is not running anything');
+      return { stopped: Boolean(threads), returned: [] };
     }
     for (const [id, at] of [...this.toolApprovals]) if (at === channel) this.answerApproval('no', id);
     this.deps.questions.cancelChannel(channel);
@@ -628,7 +633,7 @@ export class AgentHost {
     }
     const n = mine.filter((w) => !w.compact).length;
     const back = n ? ` · ${n} queued message${n === 1 ? '' : 's'} back in the box` : '';
-    this.toast(`Stopped your agent here${back}`, 'success');
+    if (!opts.quiet) this.toast(`Stopped your agent here${threads ? ` and ${threads}` : ''}${back}`, 'success');
     return { stopped: true, returned: mine.filter((w) => !w.compact).map((w) => w.body.prompt) };
   }
 
@@ -1167,7 +1172,7 @@ export class AgentHost {
     let ended = false;
     const finished = new Promise<void>((resolve) => (markFinished = resolve));
     // In a main folder, a change request carries the conversation into a new worktree.
-    const move = place?.askOnly && !place.syncMain && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
+    const move = place?.askOnly && !place.syncMain && !place.askOnly.stays && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
     if (body.channel !== 'room' && !place) {
       const why = isAssistant(body.channel)
         ? `${ASSISTANT_TITLE}’s assistant needs the Beluga app.`
@@ -1206,6 +1211,8 @@ export class AgentHost {
       // A friend's run gets its repo's board too, as their trust allows (BLG-701; see boardAccess).
       const friendBoard = from === this.selfId ? undefined : this.boardAccess(from);
       const board = noBoard || (from !== this.selfId && !friendBoard) ? undefined : this.deps.board?.(body.channel, from, { plan: planFirst && from === this.selfId, ...(friendBoard ? { friend: { id: from, name: requesterName } } : {}) });
+      // Child threads: your own runs in your own chats, with the flag on. A dialogue's turn comes through runDialogueTurn and never gets them.
+      const threads = from === this.selfId && this.store.getState().prefs.agentThreads && !root && !place?.syncMain && !sentinelChat && !sentinel?.inRun ? this.deps.threads?.(body.channel) : undefined;
       // A run stopped but not ending (wedged, or never started: no Claude Code yet) has its Claude
       // Code killed after a moment (at once when it's gone already), then is left behind so what
       // comes next in the conversation starts (BLG-402): never while its Claude Code could still
@@ -1247,6 +1254,7 @@ export class AgentHost {
         ...(board?.needsDefinition && board.planApproved ? { planTask: { needsDefinition: board.needsDefinition, approved: board.planApproved } } : {}),
         ...(plans?.tools ? { planTools: plans.tools } : {}),
         ...(plans?.brief ? { planBrief: plans.brief } : {}),
+        ...(threads ? { threadTools: threads } : {}),
         ...(mac ? { macTools: mac.tools, macBrief: mac.brief } : {}),
         ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
         ...(callNotes ? { callNotesTools: callNotes } : {}),

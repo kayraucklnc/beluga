@@ -32,6 +32,7 @@ import { type ProjectScripts, type ResolvedScripts, resolveScripts, saveProjectF
 import { PROJECT_DIR } from '../shared/scratch-dir.js';
 import { BRANCH_PREFIX_DEFAULT } from '../shared/settings-schema.js';
 import { envRecord, parseEnvText } from '../shared/env-vars.js';
+import type { ThreadRecord } from '../shared/threads.js';
 
 export const slug = (s: string): string =>
   s
@@ -519,7 +520,7 @@ export class WorkspaceManager {
     const workspaces = this.records
       .filter((r) => r.projectRoot === '')
       // A chat started in a project's main folder is questions only, like any run there.
-      .map((r): Workspace => ({ ...r, projectId: CHATS_PROJECT, external: false, ...(roots.has(real(r.path)) ? { askOnly: true } : {}) }))
+      .map((r): Workspace => ({ ...r, projectId: CHATS_PROJECT, external: false, ...(roots.has(real(r.path)) || r.thread?.readOnly ? { askOnly: true } : {}) }))
       .sort(order);
     return { id: CHATS_PROJECT, name: 'Chats', root: '', base: '', workspaces };
   }
@@ -550,7 +551,7 @@ export class WorkspaceManager {
       }
       for (const rec of records) {
         // Chats in the main folder (every project chat, so far) are questions only: work happens in worktrees.
-        if (rec.kind === 'chat') workspaces.push({ ...rec, projectId: id, external: false, ...(real(rec.path) === real(root) ? { askOnly: true } : {}) });
+        if (rec.kind === 'chat') workspaces.push({ ...rec, projectId: id, external: false, ...(real(rec.path) === real(root) || rec.thread?.readOnly ? { askOnly: true } : {}) });
         else if (rec.archived && rec.kind === 'worktree') workspaces.push({ ...rec, projectId: id, external: false });
       }
       const withStatus = await Promise.all(
@@ -826,7 +827,7 @@ export class WorkspaceManager {
 
   /** `opts.id`: the id it gets (from newWorktreeId), else a fresh one. */
   /** `opts.agent`: the agent it runs (unset: your default). */
-  async createWorktree(projectIdOrRoot: string, name: string, base?: string, opts: { readonly id?: string; readonly agent?: AgentRef } = {}): Promise<Workspace> {
+  async createWorktree(projectIdOrRoot: string, name: string, base?: string, opts: { readonly id?: string; readonly agent?: AgentRef; readonly thread?: ThreadRecord } = {}): Promise<Workspace> {
     const project = this.projects.find((p) => p.id === projectIdOrRoot || p.root === projectIdOrRoot);
     if (!project) throw new WorkspaceError('Project not found');
     if (base !== undefined && !(await g.isCommit(project.root, base))) throw new WorkspaceError(`There's no branch called ${base}`);
@@ -837,7 +838,7 @@ export class WorkspaceManager {
     await g.addWorktree(project.root, dir, branch, from);
     await g.excludeProjectDir(dir);
     await copyEnvFiles(project.root, dir);
-    const record: WorkspaceRecord = { id: opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...agentFields(opts.agent) };
+    const record: WorkspaceRecord = { id: opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...agentFields(opts.agent), ...(opts.thread ? { thread: opts.thread } : {}) };
     this.saveRecord(record);
     const status = await g.status(dir, from).catch(() => undefined);
     return this.adopt(project, { ...record, projectId: project.id, external: false, ...(status ? { status } : {}) });
@@ -958,23 +959,24 @@ export class WorkspaceManager {
     return path.join(this.store.workspacesDir, '..', 'chats');
   }
 
-  async createChat(projectIdOrRoot: string, title: string, inDir?: string): Promise<Workspace> {
-    if (projectIdOrRoot === CHATS_PROJECT) return this.createStandaloneChat(title, inDir);
+  /** `opts`: a thread's chat (core/threads): its record, and the folder it reads (a project chat's own: the main folder). */
+  async createChat(projectIdOrRoot: string, title: string, inDir?: string, opts: { readonly dir?: string; readonly thread?: ThreadRecord } = {}): Promise<Workspace> {
+    if (projectIdOrRoot === CHATS_PROJECT) return this.createStandaloneChat(title, opts.dir ?? inDir, opts.thread);
     const project = this.projects.find((p) => p.id === projectIdOrRoot || (p.root !== '' && p.root === projectIdOrRoot));
     if (!project) throw new WorkspaceError('Project not found');
-    const record: WorkspaceRecord = { id: `chat-${randomUUID().slice(0, 8)}`, projectRoot: project.root, name: title.trim().slice(0, 40) || 'chat', path: project.root, kind: 'chat', createdAt: Date.now() };
+    const record: WorkspaceRecord = { id: `chat-${randomUUID().slice(0, 8)}`, projectRoot: project.root, name: title.trim().slice(0, 40) || 'chat', path: opts.dir ?? project.root, kind: 'chat', createdAt: Date.now(), ...(opts.thread ? { thread: opts.thread } : {}) };
     this.saveRecord(record);
     // Questions only, like every chat in a project's main folder (see loadProject).
     return this.adopt(project, { ...record, projectId: project.id, external: false, askOnly: true });
   }
 
   /** A Claude chat with no project: its own scratch folder for anything Claude makes. */
-  async createStandaloneChat(title: string, inDir?: string): Promise<Workspace> {
+  async createStandaloneChat(title: string, inDir?: string, thread?: ThreadRecord): Promise<Workspace> {
     const id = `chat-${randomUUID().slice(0, 8)}`;
     // Runs in the folder you give it (e.g. where you started Beluga), or its own scratch folder.
     const dir = inDir || path.join(this.chatsDir, id);
     mkdirSync(dir, { recursive: true });
-    const record: WorkspaceRecord = { id, projectRoot: '', name: title.trim().slice(0, 40) || 'chat', path: real(dir), kind: 'chat', createdAt: Date.now() };
+    const record: WorkspaceRecord = { id, projectRoot: '', name: title.trim().slice(0, 40) || 'chat', path: real(dir), kind: 'chat', createdAt: Date.now(), ...(thread ? { thread } : {}) };
     this.saveRecord(record);
     const chats = this.projects.find((p) => p.id === CHATS_PROJECT);
     if (!chats) {
@@ -982,7 +984,7 @@ export class WorkspaceManager {
       return this.require(record.id);
     }
     // Started in a project's main folder: questions only (see chatsProject).
-    const askOnly = this.projects.some((p) => p.root && real(p.root) === record.path);
+    const askOnly = thread?.readOnly || this.projects.some((p) => p.root && real(p.root) === record.path);
     return this.adopt(chats, { ...record, projectId: CHATS_PROJECT, external: false, ...(askOnly ? { askOnly: true } : {}) });
   }
 
@@ -1287,6 +1289,12 @@ export class WorkspaceManager {
   setCarry(id: string, from: string | undefined): void {
     this.require(id);
     this.patchRecord(id, { carryFrom: from });
+  }
+
+  /** A chat's thread record (core/threads), saved at once: a result must survive a restart. */
+  setThread(id: string, thread: ThreadRecord): void {
+    this.require(id);
+    this.patchRecord(id, { thread });
   }
 
   /** Pick the thinking effort for one workspace's conversation (undefined: Settings'). */

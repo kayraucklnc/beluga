@@ -5,6 +5,7 @@ import { PARALLEL_RUNS_DEFAULT, PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from './r
 import { CHAT_LIMIT_DEFAULT, CHAT_LIMIT_MAX } from './chat-limit.js';
 import { AUTO_CONTINUE_OFF_MAX } from './auto-continue.js';
 import { MAX_AGENT_ARGS, MAX_AGENT_ARG_LENGTH } from './agent-args.js';
+import { THREAD_LIMITS_DEFAULT, THREAD_LIMITS_MAX } from './threads.js';
 import { coercePerKind, coerceSound, DEFAULT_SOUND, DEFAULT_VOLUME, PerKindSounds, SoundChoice } from './notify-sound.js';
 
 // Settings as data (no file access), so the reducer and the clients can use them anywhere.
@@ -77,6 +78,15 @@ export type NotifySettings = z.infer<typeof NotifySettings>;
 
 const peerKey = z.string().regex(/^[\w-]{8,64}$/);
 
+const threadLimit = (max: number) => z.number().int().min(1).max(max);
+/** How far your agents' threads go (shared/threads.ts). */
+export const ThreadLimitsSchema = z.object({
+  depth: threadLimit(THREAD_LIMITS_MAX.depth),
+  treeRunning: threadLimit(THREAD_LIMITS_MAX.treeRunning),
+  treeLive: threadLimit(THREAD_LIMITS_MAX.treeLive),
+  macRunning: threadLimit(THREAD_LIMITS_MAX.macRunning),
+});
+
 /** Choices that persist between runs in ~/.beluga/settings.json. */
 export const Settings = z.object({
   name: z.string().regex(/^[\w.-]{1,32}$/).optional(),
@@ -123,6 +133,10 @@ export const Settings = z.object({
   parallelRuns: z.number().int().min(PARALLEL_RUNS_MIN).max(PARALLEL_RUNS_MAX).catch(PARALLEL_RUNS_DEFAULT),
   /** How many chats Your Mac and Sentinel each keep open (shared/chat-limit.ts); 0: no limit. */
   chatLimit: z.number().int().min(0).max(CHAT_LIMIT_MAX).catch(CHAT_LIMIT_DEFAULT),
+  /** Your agents may start child threads (core/threads). Off until you turn it on. */
+  agentThreads: z.boolean().default(false),
+  /** How far those threads go (shared/threads.ts). */
+  threadLimits: ThreadLimitsSchema.catch(THREAD_LIMITS_DEFAULT),
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder. */
   scratchFolder: z.boolean().default(true),
   /** How much of Claude's sub-agent work the chat shows. */

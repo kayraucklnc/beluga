@@ -17,7 +17,8 @@ import { PhoneMark } from '../phone/Phone.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { Projects, ProjectsAddMenu, showArchivedOf } from './ProjectTree.js';
 import { SharedProjects } from './SharedProjects.js';
-import { WorkspaceRow } from './workspace-row.js';
+import { WorkspaceWithAgents } from './SubAgents.js';
+import { threadNesting } from '../threads/threads-model.js';
 import { ChatSelectionCount, SidebarChatSelection } from './chat-selection-view.js';
 import { UnreadSection } from './UnreadSection.js';
 import { Row, Section } from './sidebar-parts.js';
@@ -104,7 +105,7 @@ export function Sidebar() {
     };
     return {
       tabs: macTabs(state),
-      liveChats: state.projects.find((p) => !p.root)?.workspaces.filter((w) => !w.archived) ?? [],
+      liveChats: state.projects.find((p) => !p.root)?.workspaces.filter((w) => !w.archived && !threadNesting(state).nested.has(w.id)) ?? [],
       view: state.view,
       badges,
     };
@@ -172,7 +173,7 @@ export function Sidebar() {
           }
         >
           {liveChats.filter((w) => notLater(w)).map((w) => (
-            <WorkspaceRow key={w.id} ws={w} indent={0} />
+            <WorkspaceWithAgents key={w.id} ws={w} indent={0} threadsOnly />
           ))}
           {/* Put off till later (Remind Me Later): folded at the bottom. */}
           <LaterRows list={laterOf(liveChats)} indent={0} foldKey="later:chats" />

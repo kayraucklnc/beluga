@@ -19,11 +19,14 @@ export const PANES: ReadonlyArray<PaneInfo<SettingsPane> & { icon: IconName; key
   { id: 'phone', label: 'Phone', icon: 'phone', keywords: 'android iphone mobile companion' },
   { id: 'voice', label: 'Voice', icon: 'mic', keywords: 'dictation speech microphone talk transcribe' },
   { id: 'keyboard', label: 'Keyboard', icon: 'command', keywords: 'shortcuts keys hotkeys bindings' },
-  { id: 'advanced', label: 'Advanced', icon: 'wrench', keywords: 'web access browser' },
+  { id: 'advanced', label: 'Advanced', icon: 'wrench', keywords: 'web access browser agent threads' },
   { id: 'about', label: 'About', icon: 'globe', keywords: 'version logs support' },
 ];
 
 type Entry = SettingEntry<SettingsPane>;
+
+/** Shown with agent threads on (see SettingsSearch). */
+export const THREAD_LIMITS_GROUP = 'Thread limits';
 
 /** The rows of one group of a pane: `[label, detail?, keywords?]`. */
 const rows = (pane: SettingsPane, group: string | undefined, list: ReadonlyArray<readonly [string, string?, string?]>): Entry[] =>
@@ -104,6 +107,12 @@ export const SETTINGS: readonly Entry[] = [
   ]),
   ...rows('claude', 'Working at once', [['Conversations your agent works in at once', 'Past it, a message waits its turn.', 'parallel concurrency limit queue simultaneous runs']]),
   ...rows('claude', 'Open chats', [['Chats kept at once', 'How many chats Your Mac and Sentinel keep as tabs.', 'chat limit tabs sentinel']]),
+  ...rows('claude', THREAD_LIMITS_GROUP, [
+    ['Levels of threads', 'How deep a chat’s threads go.', 'thread depth child sub-agent limit'],
+    ['Working at once in one chat’s tree', 'Threads working under one chat.', 'thread running tree limit'],
+    ['Kept in one chat’s tree', 'Threads under one chat that are not archived.', 'thread archived tree limit'],
+    ['Working at once on this computer', 'Threads working in all your chats.', 'thread running mac computer limit'],
+  ]),
   ...rows('claude', 'Scratch folder', [
     ['Give your agent a scratch folder', 'Screenshots, logs and notes go to .beluga/scratch/.', 'scratch screenshots logs notes'],
     ['Show the Scratch tab', 'Watch that folder live in the right panel.', 'scratch tab panel'],
@@ -270,6 +279,7 @@ export const SETTINGS: readonly Entry[] = [
     ['Address', 'Where the browser opens Beluga.', 'url address link'],
     ['Let a browser in', 'A link that works once, for 10 minutes.', 'link browser login'],
   ]),
+  ...rows('advanced', 'Agent threads', [['Let your agents start threads', 'Child chats, each with its own agent.', 'threads child sub-agent family orchestrate']]),
 
   // About
   ...rows('about', undefined, [

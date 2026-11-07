@@ -16,6 +16,7 @@ const ENTRIES = [
   'src/ipc/protocol.ts',
   'src/ipc/socket-client.ts',
   'src/shared/codec.ts',
+  'src/shared/threads.ts',
   // The same dialogs, menus and actions as the terminal UI.
   'src/ui/menus.ts',
   'src/ui/menu-actions.ts',

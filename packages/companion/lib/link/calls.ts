@@ -1,4 +1,5 @@
 import type { PhoneArgs, PhoneMethod } from '../../../../src/companion/calls';
+import type { ThreadChildren } from '../../../../src/shared/threads';
 import type { NeedsYou, PhoneBranchStep, Topic, VoiceModelId } from './protocol';
 
 /**
@@ -110,7 +111,10 @@ export const calls = {
   merge: (topic: Topic): Call => make('companion.merge', [topic], 'Merge'),
   resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask your agent to resolve'),
   /** 1.8: one of a worktree's branch steps (Archive, Squash and Merge, Fix with Claude…), as the Mac's toolbar does it. */
-  branchStep: (topic: Topic, step: PhoneBranchStep, label: string): Call => make('companion.branchStep', [topic, step], label),
+  branchStep: (topic: Topic, step: PhoneBranchStep, label: string, children?: ThreadChildren): Call => make('companion.branchStep', children ? [topic, step, children] : [topic, step], label),
+  /** 1.43: one child thread and those under it stop, as the Mac's Threads panel does it. */
+  stopThread: (id: string): Call => make('threads.stop', [id], 'Stop the thread'),
+  stopThreads: (id: string): Call => make('threads.stopAll', [id], 'Stop the threads'),
   /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
   steerNow: (request: string): Call => make('host.steerNow', [request], 'Send now'),
   /** 1.28 (BLG-387): a message you sent, edited: the conversation rewinds to it ('here') or goes on in a new fork → where it went on. */

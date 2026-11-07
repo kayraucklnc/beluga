@@ -9,7 +9,7 @@ import { type PlanView as PlanProgress, planView } from '../core/plans/progress.
 import { type NeedsYou, Topic } from './protocol.js';
 import { plainLine, stripCode } from './strip.js';
 import { agentLabel } from '../shared/agent-label.js';
-import { defaultAgentOf } from '../protocol.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
 
 /**
  * Everything waiting for you, each with the API calls its buttons make: the phone's Needs You
@@ -18,6 +18,7 @@ import { defaultAgentOf } from '../protocol.js';
  */
 
 export const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
+export const agentRefView = (a: AgentRef): AgentRef => ({ runtime: clip(a.runtime, 32), label: clip(a.label, 64), ...(a.model ? { model: clip(a.model, 64) } : {}) });
 const valid = (t: string): Topic | undefined => (Topic.safeParse(t).success ? (t as Topic) : undefined);
 
 /** A conversation's topic (`room` → `conv:room`, `ws:<id>` → `conv:ws:<id>`). */
@@ -39,12 +40,19 @@ const agentOf = (state: DomainState, peerId: string | undefined, owner: string, 
     ? agentLabel(defaultAgentOf(state.self), undefined, true, { capital })
     : agentLabel(defaultAgentOf(state.peers.find((p) => p.peerId === peerId)), owner, false, { capital });
 
+/** The child thread a need holds up, by title: without it "your Claude" could be any of a tree's chats. */
+function threadPlace(state: DomainState, channel: string | undefined): Pick<NeedsYou, 'thread'> {
+  const ws = channel?.startsWith('ws:') ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(3)) : undefined;
+  return ws?.thread ? { thread: clip(ws.name, 300) } : {};
+}
+
 function approvalItem(state: DomainState, a: Approval): NeedsYou {
   const from = a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : agentOf(state, undefined, '');
   // A friends' chat opens that chat (a request from there, your Claude working there: BLG-207).
   const topic = a.channel ? (/^(dm|group):/.test(a.channel) ? chatTopic(a.channel) : convTopic(a.channel)) : undefined;
   return {
     id: `approval:${a.id}`,
+    ...threadPlace(state, a.channel),
     kind: a.kind === 'request' ? 'request' : 'approval',
     title: clip(a.title, 500),
     ...(a.detail ? { detail: clip(plainLine(a.detail, 64_000), 64_000) } : {}),
@@ -65,7 +73,7 @@ function approvalItem(state: DomainState, a: Approval): NeedsYou {
 function questionItem(state: DomainState, q: PendingQuestion): NeedsYou {
   const topic = convTopic(q.channel);
   const owner = agentOf(state, q.owner, nameOf(state, q.owner) ?? 'a friend');
-  const base = { id: `question:${q.qid}`, from: owner, ...(topic ? { topic } : {}) };
+  const base = { id: `question:${q.qid}`, from: owner, ...(topic ? { topic } : {}), ...threadPlace(state, q.channel) };
   if (q.question.kind === 'plan') {
     return {
       ...base,

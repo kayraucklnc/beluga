@@ -22,6 +22,7 @@ import { launchDialogues } from '../core/dialogues/launch.js';
 import { launchSentinel } from '../core/sentinel/launch.js';
 import { AutoContinue } from '../core/auto-continue.js';
 import { launchAssistant } from '../core/assistant/launch.js';
+import { launchThreads } from '../core/threads/launch.js';
 import { launchChat } from '../core/chat/launch.js';
 import { launchCalls } from '../core/calls/launch.js';
 import { launchGateway } from '../core/gateway/launch.js';
@@ -362,6 +363,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopSentinel = (): void => undefined;
   let stopAutoContinue = (): void => undefined;
   let stopAssistant = (): void => undefined;
+  let stopThreads = (): void => undefined;
   let stopCompanion = async (): Promise<void> => undefined;
   const start = (): void => {
     session.start();
@@ -394,6 +396,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     }
     // "Your Mac": one conversation with your Claude for the whole Mac, from the phone and the sidebar (core/assistant).
     if (opts.network) stopAssistant = launchAssistant({ session, store, demo: Boolean(demo) });
+    // Child threads your agents start (core/threads): the tools show only with prefs.agentThreads on.
+    if (opts.network) stopThreads = launchThreads(session);
     if (opts.network) stopClaudeCode = launchClaudeCode({ session, store, demo: Boolean(demo), notify: (e) => session.notifier.notify(e) });
     // Your phone (docs/companion.md): pairing it, and its link. Its DHT node runs only while a phone is paired or a pairing is open.
     if (opts.network) stopCompanion = launchCompanion({ session, store, identity, terminals, demo: Boolean(demo), log: (line) => console.warn(line) });
@@ -435,6 +439,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     stopChat();
     stopFriendShares();
     stopAssistant();
+    stopThreads();
     stopSentinel();
     stopAutoContinue();
     stopBoard();

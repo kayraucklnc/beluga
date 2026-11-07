@@ -1,5 +1,6 @@
 import type { AgentRef } from '../protocol.js';
 import type { Effort } from '../shared/settings-schema.js';
+import type { ThreadRecord } from '../shared/threads.js';
 import type { Status } from './git.js';
 import type { ForkOf } from './github.js';
 import type { DefaultBranch, FetchProblem } from './sync.js';
@@ -94,6 +95,8 @@ export interface WorkspaceRecord {
   readonly handedTo?: string;
   /** Came from a friend's handoff (their name). */
   readonly handedFrom?: string;
+  /** Another agent started this chat through the thread tools (core/threads). Its harness stays in `agent`. */
+  readonly thread?: ThreadRecord;
   /** A conversation started for one job: 'sync_main' is Claude bringing the main folder up to date. */
   readonly purpose?: 'sync_main';
   /** You carried on after this PR merged (Continue After Merge): it and older ones are done, so the branch can have a new one. */

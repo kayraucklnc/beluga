@@ -19,6 +19,9 @@ import { useClaudeStarting } from './flight.js';
 import { withLiveTails } from './live-tail.js';
 import { asSent, steeredMessages } from '@beluga/shared/claude-notices.js';
 import { inYourQueue } from '@beluga/ui/compose.js';
+import { type ThreadStart, threadStarts } from '../threads/threads-model.js';
+import { StartedByLine, ThreadStartLine } from '../threads/ThreadLines.js';
+import { sameDeep } from '../lib/stable.js';
 import s from './chat.module.css';
 import f from './flight.module.css';
 
@@ -26,7 +29,9 @@ const GROUP_GAP_MS = 3 * 60_000;
 
 /** A task your Claude sent from this conversation (to another person's Claude), drawn where it was asked. */
 type TaskRow = { readonly type: 'task'; readonly id: string; readonly ts: number; readonly task: TaskView };
-type Row = LogItem | TaskRow;
+/** A thread this conversation started, drawn when it started. */
+type ThreadRow = { readonly type: 'thread_start'; readonly id: string; readonly ts: number; readonly thread: ThreadStart };
+type Row = LogItem | TaskRow | ThreadRow;
 
 /**
  * Tasks your Claude sent during one of its turns belong to that turn: drawn inside its card,
@@ -52,6 +57,16 @@ function withTasks(items: readonly LogItem[], tasks: readonly TaskView[]): reado
   for (const task of tasks) {
     const at = rows.findIndex((r) => r.ts > task.createdAt);
     rows.splice(at < 0 ? rows.length : at, 0, { type: 'task', id: `task:${task.id}`, ts: task.createdAt, task });
+  }
+  return rows;
+}
+
+function withThreadStarts(items: readonly Row[], starts: readonly ThreadStart[]): readonly Row[] {
+  if (!starts.length) return items;
+  const rows: Row[] = [...items];
+  for (const thread of starts) {
+    const at = rows.findIndex((r) => r.ts > thread.ts);
+    rows.splice(at < 0 ? rows.length : at, 0, { type: 'thread_start', id: `thread:${thread.id}`, ts: thread.ts, thread });
   }
   return rows;
 }
@@ -132,7 +147,8 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const turnTasks = useRef<ReadonlyMap<string, readonly TaskView[]>>(undefined);
   const inTurn = useMemo(() => (turnTasks.current = keepSameLists(turnTasks.current, placed.inTurn)), [placed]);
   // A turn you spoke during goes on below what you said: its live part is the chat's last row (BLG-22).
-  const shown = useMemo(() => withLiveTails(placed.rows), [placed]);
+  const starts = useApp((st) => threadStarts(st, channel), sameDeep);
+  const shown = useMemo(() => withLiveTails(withThreadStarts(placed.rows, starts)), [placed, starts]);
   const rows = useMemo(() => shown.map((x) => x.row), [shown]);
   const latest = useMemo(() => latestCard(items), [items]);
   const parent = useRef<HTMLDivElement>(null);
@@ -211,6 +227,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     return (
       <div className={s.logWrap}>
         <FindBar items={items} logRef={parent} onGo={() => undefined} />
+        <StartedByLine channel={channel} />
         <div className={s.logEmpty}>{empty ?? <Empty icon="chat" title="Nothing here yet" detail="Say something below." />}</div>
       </div>
     );
@@ -231,6 +248,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   return (
     <div className={s.logWrap} data-flight-layer="">
       <FindBar items={items} logRef={parent} onGo={go} />
+      <StartedByLine channel={channel} />
       <div ref={parent} className={s.log} onScroll={onScroll} onWheel={markScroll} onTouchMove={markScroll} onPointerDown={markScroll} onKeyDown={markScroll}>
         {/* The virtualizer sets the list's height and each row's position itself (see above). */}
         <div ref={virtualizer.containerRef} className={s.logInner}>
@@ -241,6 +259,8 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
               <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className={s.logRow}>
                 {item.type === 'task' ? (
                   <LogTaskCard task={item.task} />
+                ) : item.type === 'thread_start' ? (
+                  <ThreadStartLine thread={item.thread} />
                 ) : item.type === 'chat' ? (
                   <ChatRow item={item} continued={continued(v.index)} ends={!continued(v.index + 1)} mine={item.from === selfId} steer={steered.waiting.get(item.id)} />
                 ) : item.type === 'agent' ? (

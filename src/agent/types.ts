@@ -3,6 +3,7 @@ import type { ScriptFix, SetupFix, WorkedOutScripts } from './setup-fixer.js';
 import type { DraftContext, TaskDraft } from './task-drafter.js';
 import type { AgentRef, ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
 import type { UsageUpdate } from './usage.js';
+import type { Effort } from '../shared/settings-schema.js';
 import type { StepRecord } from '../shared/steps.js';
 import type { ArgsRuntime } from '../shared/agent-args.js';
 
@@ -130,6 +131,8 @@ export interface AgentRunInput {
   readonly dashboardTools?: DashboardTools;
   /** Your own runs: the notes of calls you were in (core/calls, BLG-715), to look up, never pasted in. */
   readonly callNotesTools?: CallNotesTools;
+  /** Your own runs, when you turned agent threads on: tools to start and follow child threads (core/threads), bound to this run's chat. */
+  readonly threadTools?: ThreadTools;
   /** A turn of a chaired dialogue (core/dialogues): its brief and end_dialogue tool. */
   readonly dialogue?: import('./dialogue-tools.js').DialogueTurnTools;
 }
@@ -234,6 +237,25 @@ export interface PlanTools {
   stop?(task: string): string;
   /** Pause the plan (nothing new starts) or resume it. */
   pause?(paused: boolean): string;
+}
+
+/** Child threads as an agent's tools (agent/thread-tools.ts, server `beluga_threads`). Bound to the calling chat: no argument names it. */
+export interface ThreadTools {
+  start(input: ThreadStartInput): Promise<string>;
+  status(input: { readonly id?: string; readonly waitSec?: number }): Promise<string>;
+  message(input: { readonly id: string; readonly text: string; readonly mode?: 'queue' | 'steer' }): string;
+  stop(input: { readonly id: string; readonly reason?: string }): string;
+}
+
+export interface ThreadStartInput {
+  readonly task: string;
+  readonly title?: string;
+  readonly agent?: { readonly runtime: string; readonly model?: string; readonly effort?: Effort };
+  readonly project?: string;
+  readonly where?: 'worktree' | 'read';
+  readonly base?: string;
+  readonly plan?: boolean;
+  readonly key?: string;
 }
 
 /**
@@ -435,7 +457,8 @@ export interface AgentPlace {
   /** The thinking effort picked for this conversation (unset: Settings'). */
   readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** A project's main folder: questions only, nothing may change (see policy.ts). */
-  readonly askOnly?: { readonly project: string };
+  /** `stays`: a read-only thread (core/threads) stays read-only: it cannot move itself into a worktree. */
+  readonly askOnly?: { readonly project: string; readonly stays?: boolean };
   /** With askOnly, for one run: Claude brings the default branch up to date (git syncing only; see sync-main.ts). */
   readonly syncMain?: { readonly branch: string; readonly upstream: string };
   /** With askOnly: a hidden worktree Claude may edit to fix a conflict there (see policy.ts). */

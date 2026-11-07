@@ -293,6 +293,37 @@ export class DemoTransport implements Transport {
     };
   }
 
+  /** Every conversation's family learns that this thread and the ones under it stopped. */
+  private stopThread(id: string): void {
+    const w = this.world;
+    const under = (at: string): string[] => [at, ...this.childrenOf(at).flatMap(under)];
+    for (const stopped of under(id)) {
+      for (const c of w.convs.values()) {
+        if (!c.threadFamily) continue;
+        const had = c.threadFamily.children.some((k) => k.id === stopped) || c.threadFamily.stoppable.includes(stopped);
+        if (!had) continue;
+        c.threadFamily = { ...c.threadFamily, children: c.threadFamily.children.map((k) => (k.id === stopped ? { ...k, state: 'stopped', working: false } : k)), stoppable: c.threadFamily.stoppable.filter((s) => s !== stopped) };
+        this.touch(c.topic);
+      }
+      const c = this.threadConv(stopped);
+      const last = c?.turns.at(-1);
+      if (c && last?.status === 'working') {
+        c.turns = [...c.turns.slice(0, -1), { ...last, status: 'stopped', step: undefined, endTs: Date.now() }];
+        c.working = false;
+        this.touch(c.topic, 'work');
+      }
+    }
+  }
+
+  private threadConv(id: string): ConvView | undefined {
+    const topic = [...this.world.convs.values()].flatMap((c) => c.threadFamily?.children ?? []).find((k) => k.id === id)?.topic;
+    return topic ? this.world.convs.get(topic) : undefined;
+  }
+
+  private childrenOf(id: string): string[] {
+    return this.threadConv(id)?.threadFamily?.children.map((k) => k.id) ?? [];
+  }
+
   private summary(c: ConvView): ConvSummary {
     const last = c.turns.at(-1);
     const waiting = this.world.needs.some((n) => n.topic === c.topic);
@@ -302,6 +333,7 @@ export class DemoTransport implements Transport {
     return {
       ...this.projectOf(c),
       ...(fresh ? { fresh } : {}),
+      ...this.world.threadRows[c.topic],
       topic: c.topic,
       title: c.title,
       project: c.project,
@@ -520,6 +552,16 @@ export class DemoTransport implements Transport {
           this.touch(c.topic, 'work');
         }
         return ok({ stopped: true, returned: [] });
+      }
+      // 1.43: a child thread stops, and those under it, as stopChat does on a real Mac.
+      case 'threads.stop': {
+        this.stopThread(str(0));
+        return ok({ stopped: true, returned: [] });
+      }
+      case 'threads.stopAll': {
+        const under = [...w.convs.values()].find((c) => c.threadFamily?.chat === str(0))?.threadFamily?.stoppable ?? [];
+        for (const thread of under) this.stopThread(thread);
+        return ok({ stopped: under.length });
       }
       // 1.30 (BLG-429): delete, edit and clear in a direct chat.
       case 'network.messages.delete':

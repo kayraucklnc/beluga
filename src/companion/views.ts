@@ -29,6 +29,7 @@ import { chatReactions, reactableChannel } from '../core/chat-reactions.js';
 import { resumeOf } from '../core/auto-continue.js';
 import { chatPeople, claudePill, offlineNote, waitingIn, waitingLabel } from '../core/chat-people.js';
 import { type AgentRef, CLAUDE_AGENT, type Profile, defaultAgentOf } from '../protocol.js';
+import { threadNesting } from '../ui/thread-tree.js';
 import { providerCards } from '../ui/usage-cards.js';
 import {
   type BranchView,
@@ -68,7 +69,8 @@ import {
 } from './protocol.js';
 import { HIDDEN_STEP, humanizeDoing, humanizeStep, plainLine, stepWords, stripCode } from './strip.js';
 import { withMath } from './math-svg.js';
-import { chatTopic, clip, convTopic, dashboardTopic, myId, nameOf, needsYou, planTopic, progressOf, sentinelTopic, taskTopic } from './needs-you.js';
+import { agentRefView, chatTopic, clip, convTopic, dashboardTopic, myId, nameOf, needsYou, planTopic, progressOf, sentinelTopic, taskTopic } from './needs-you.js';
+import { familyOf, threadFamilyOf, threadRowOf } from './thread-family.js';
 
 export { chatTopic, convTopic, dashboardTopic, planTopic, sentinelTopic, taskTopic } from './needs-you.js';
 export { needsYou };
@@ -632,6 +634,7 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
 export function workView(state: DomainState, ctx?: ViewContext): WorkView {
   const waiting = waitingTopics(needsYou(state));
   const convs = conversations(state);
+  const nesting = threadNesting(state);
   const byProject = new Map<string, { id: string; name: string; conversations: ConvSummary[]; icon?: string }>();
   // Your Mac has its own places (Home, the Ask sheet's first target).
   for (const c of convs) {
@@ -640,7 +643,7 @@ export function workView(state: DomainState, ctx?: ViewContext): WorkView {
     if (!s) continue;
     const key = c.projectId ?? (c.channel === 'room' ? 'room' : `shared:${c.project ?? ''}`);
     const entry = byProject.get(key) ?? { id: clip(key, 200), name: clip(c.project ?? c.title, 200), conversations: [], ...(c.projectId ? iconOf(ctx, c.projectId) : {}) };
-    entry.conversations.push(s);
+    entry.conversations.push({ ...s, ...threadRowOf(state, c.channel, nesting) });
     byProject.set(key, entry);
   }
   // Every project of yours, even one with nothing in it yet (one just added on a server): the Ask
@@ -713,6 +716,7 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     outputs: outputs.slice(0, 100),
     ...(queue.length ? { queue } : {}),
     ...mergeOf(state, ctx, channel),
+    ...threadFamilyOf(state, channel),
     ...(plan && planT ? { plan: planBand(state, plan, planT) } : {}),
     ...waitingOf(state, channel),
     ...pickerOf(state, channel, conv?.mine ?? false),
@@ -751,8 +755,6 @@ function workPicker(state: DomainState, ref: AgentRef | undefined): AgentPickerV
   // None picked: the phone's "Your agent" row is the one on, not your default's model.
   return ref ? p : { ...p, groups: p.groups.map((g) => ({ ...g, models: g.models.map((m) => ({ ...m, on: false })) })) };
 }
-
-const agentRefView = (a: AgentRef): AgentRef => ({ runtime: clip(a.runtime, 32), label: clip(a.label, 64), ...(a.model ? { model: clip(a.model, 64) } : {}) });
 
 function pickerView(p: ReturnType<typeof agentPicker>): AgentPickerView {
   return {
@@ -822,6 +824,7 @@ function branchViewOf(state: DomainState, ws: Workspace): BranchView | undefined
     ...(b.pr ? { pr: { ...b.pr, ...(url ? { url: clip(url, 500) } : {}) } } : {}),
     ...(next ? { next: { id: next.id, label: clip(next.label, 80), ...(next.claude ? { claude: true } : {}) } } : {}),
     ...(phoneSteps.length ? { steps: phoneSteps.slice(0, 20).map((s) => ({ id: s.id, label: clip(s.label, 80), hint: clip(plainLine(s.hint, 300), 300), ...(s.claude ? { claude: true } : {}), ...(s.danger ? { danger: true } : {}) })) } : {}),
+    ...familyOf(state, ws.id),
   };
 }
 
