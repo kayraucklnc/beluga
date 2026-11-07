@@ -836,7 +836,8 @@ The Mac app changes quickly; the phone must not fall behind silently.
    conversation, outputs, Needs you, Ask, Chats and People against a demo Mac, and the link worklet.
 2. **Notifications**: Beluga Push (the Worker, a Firebase project), notification actions, Done and
    Mentions.
-3. **iOS**: the same app; Keychain, APNs, the Notification Service Extension.
+3. **iOS**: the same app (built and shipped to TestFlight: packages/companion/README.md "iOS");
+   Keychain through expo-secure-store; APNs and the Notification Service Extension wait for push.
 4. **Later**: screen sharing (ScreenCaptureKit → H.264 over the same link, on demand only), voice
    asks, a home-screen widget for usage and Needs you (board tiles came first: BLG-361), other agents' allowance next to Claude's plan
    (the usage view is a list of providers, not one).

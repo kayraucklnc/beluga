@@ -29,9 +29,13 @@
     },
     "ios": {
       "bundleIdentifier": "sh.ratel.beluga",
+      "buildNumber": "1",
+      "icon": "./assets/icon-ios.png",
       "supportsTablet": false,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Beluga writes down what you say on this phone, so you can ask your Mac by voice. Nothing you say leaves the phone.",
+        "NSLocalNetworkUsageDescription": "Beluga connects straight to your Mac when it is on the same network as this phone.",
+        "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
@@ -46,6 +50,7 @@
       "typedRoutes": false
     },
     "plugins": [
+      "./plugins/no-push-entitlement",
       "expo-router",
       "expo-image",
       "expo-secure-store",

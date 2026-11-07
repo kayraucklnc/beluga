@@ -88,8 +88,10 @@ from the repo with `tsc` (bare-pack can't map `./x.js` imports to `.ts`), then p
 `bare-pack --linked` into `worklet/dist/link.bundle.mjs` (git-ignored). Without the bundle, Metro
 resolves the import to an empty module and only the demo works. The same script links the native
 addons the bundle loads (udx-native, sodium-native, …) with `bare-link` into
-`node_modules/react-native-bare-kit/android/src/main/addons`, which the APK build picks up; it lives
-in node_modules, so `postinstall` re-runs it. Android needs minSdk 29 (react-native-bare-kit).
+`node_modules/react-native-bare-kit/android/src/main/addons` (the APK build picks them up) and
+`node_modules/react-native-bare-kit/ios/addons` (the BareKit pod vendors them). The bundle covers
+both platforms, so an `npm install` (whose `postinstall` re-runs it) never leaves one without its
+addons; `-- --android` or `-- --ios` packs one only. Android needs minSdk 29 (react-native-bare-kit).
 
 **End to end against a real Mac** (BLG-32): an emulator (API 35, arm64) paired with a demo daemon
 in an isolated home, over the public DHT; scripts and screenshots in `.beluga/scratch/phone-e2e/`
@@ -115,7 +117,70 @@ in an isolated home, over the public DHT; scripts and screenshots in `.beluga/sc
   Mac" or "Update the app" instead of misbehaving.
 - **The worklet** is typechecked against the real `client.ts` (`npm run typecheck:worklet`).
 
+## iOS
+
+The same app, built for iPhone (iOS 16.4+). `ios/` is generated (git-ignored), like `android/`:
+`scripts/build-ios.mjs` makes it, and `app.json` / `app.config.js` / `plugins/` are what you change.
+Needs a Mac with Xcode 26+ and CocoaPods (`brew install cocoapods`).
+
+**On your iPhone, from Xcode**
+
+```sh
+cd packages/companion && npm install
+export BELUGA_APPLE_TEAM_ID=ABCDE12345     # your team: developer.apple.com › Account › Membership details
+npm run ios:prepare                        # worklet bundle (+ iOS addons), prebuild, pod install
+open ios/Beluga.xcworkspace                # the .xcworkspace, not the .xcodeproj
+npm start                                  # Metro, for a Debug build
+```
+
+In Xcode pick the **Beluga** scheme and your iPhone, and Run. Without `BELUGA_APPLE_TEAM_ID`, choose
+the team under Beluga › Signing & Capabilities (Automatically manage signing stays on). If the
+team can't register `sh.ratel.beluga` (an App ID belongs to one team), also set
+`BELUGA_IOS_BUNDLE_ID=com.yourname.beluga` before `ios:prepare`. A Release build (Product › Scheme
+› Edit Scheme › Run › Release) has the JS inside and runs without Metro.
+
+**TestFlight**
+
+1. App Store Connect › Apps › **+** › New App: iOS, name Beluga, the same bundle ID. One time only.
+2. `npm run ios:testflight` (with `BELUGA_APPLE_TEAM_ID` set): archives a Release build, signs it for
+   the App Store and uploads it. The build number is the time (`yymmddHHMM`) unless
+   `BELUGA_IOS_BUILD_NUMBER` says otherwise, so every upload is new. It signs in with the Apple ID in
+   Xcode › Settings › Accounts, or an App Store Connect API key (`BELUGA_ASC_KEY_PATH` to the .p8,
+   `BELUGA_ASC_KEY_ID`, `BELUGA_ASC_ISSUER_ID`).
+3. Once Apple has processed it (a few minutes), add yourself under TestFlight › Internal Testing and
+   install it from the TestFlight app. Internal testers need no review.
+
+`npm run ios:archive` stops before the upload: `dist/Beluga-<version>-<build>.xcarchive` and its
+`.ipa`, which Xcode › Window › Organizer › Distribute App can upload too.
+
+`ITSAppUsesNonExemptEncryption` is `false`: the link uses standard cryptography (Noise, libsodium)
+only to protect your own data, which Apple's export rules exempt. It saves the question on every
+upload; check it holds before a public App Store release.
+
+**What's the same, what isn't**
+
+| Android | iPhone |
+| --- | --- |
+| Pairing (QR, code, the four pictures), the link worklet over hyperdht | Same (BareKit, the same bundle) |
+| Home, Work, conversations, Ask, Chats, People, tasks, plans, sentinels, dashboards, outputs, files, terminal | Same |
+| Voice (Whisper on the phone) | Same |
+| Saving a file into the phone's storage | The share sheet (Save Image, Save to Files) |
+| Notifications while the app is open | Same |
+| Stay connected (a foreground service keeps the link with the screen off) | Not possible: iOS suspends the app soon after it leaves the screen. Needs push (below) |
+| Your Mac using this phone (Accessibility, screenshots, mirroring) | Not possible: iOS lets no app read or drive another |
+| Board tiles on the Home screen | Not yet (would be a WidgetKit extension) |
+| Updates itself from GitHub releases | TestFlight updates it |
+
+Push (Beluga Push relay; `lib/notifications.ts` keeps the choices and makes the Android channels)
+isn't on either platform yet. On iPhone it needs an APNs key (Certificates, Identifiers & Profiles
+› Keys › Apple Push Notifications service) on the relay, a paid team, and the Push Notifications
+entitlement back: `plugins/no-push-entitlement.js` takes it out for now, so a free team can sign.
+
+**A free (personal) Apple team** signs the app for your own iPhone but not for TestFlight (that
+needs the Apple Developer Program). The app it installs runs for 7 days, then wants a new build
+from Xcode. The iPhone needs Developer Mode on (Settings › Privacy & Security), and the first
+time, Settings › General › VPN & Device Management › trust your Apple ID.
+
 ## Not yet
 
-Push (Beluga Push relay; `lib/notifications.ts` keeps the choices and makes the Android channels),
-a release build with the JS embedded, iOS.
+Push (above), a release APK with the JS embedded.
