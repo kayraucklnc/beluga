@@ -36,6 +36,8 @@ import { hastText } from '../components/markdown/hast-text.js';
 import { GITHUB_REHYPE, TO_HTML } from '../components/markdown/md-pipeline.js';
 import { RichBlock, useRichFence } from '../components/blocks/RichBlock.js';
 import { loadHighlighter } from '../lib/highlight.js';
+import { useRunInTerminal } from '../lib/term-run.js';
+import { runnableCommand } from '@beluga/shared/render/run-command.js';
 import { CODE_FENCE } from '@beluga/shared/code-ref.js';
 import { CodeRefBlock } from '../components/code/CodeRefBlock.js';
 import { PR_COMMENTS_FENCE } from '@beluga/shared/pr-comments-ref.js';
@@ -48,7 +50,8 @@ import s from './chat.module.css';
 import { thisComputer } from '../lib/os-words.js';
 
 
-function Code({ code, lang }: { code: string; lang?: string }) {
+/** A code block in a message: Copy, and Run for shell commands (`onRun`: your own and your own Claude's only). */
+function Code({ code, lang, onRun }: { code: string; lang?: string; onRun?: ((command: string) => void) | undefined }) {
   const [html, setHtml] = useState<string | undefined>();
   useEffect(() => {
     if (!lang) return;
@@ -65,17 +68,27 @@ function Code({ code, lang }: { code: string; lang?: string }) {
   const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
   const copy = (text: string, what: string): void => void copyText(text).then(() => say(`Copied ${what}`));
   const fence = `\`\`\`${lang ?? ''}\n${code}\n\`\`\``;
+  const command = useMemo(() => (onRun ? runnableCommand(lang, code) : undefined), [onRun, lang, code]);
   const items: ActionItem[] = [
-    { label: 'Copy Code', icon: 'copy', onSelect: () => copy(code, 'the code') },
+    ...(command && onRun ? [{ label: 'Run in Terminal', icon: 'play' as const, onSelect: () => onRun(command) }] : []),
+    { label: 'Copy Code', icon: 'copy', separate: Boolean(command), onSelect: () => copy(code, 'the code') },
     { label: 'Copy as Markdown', onSelect: () => copy(fence, 'as Markdown') },
     { label: 'Quote in Reply', icon: 'chat', separate: true, onSelect: () => quoteInBox(ui, fence) },
   ];
   return (
     <ActionsContext items={items}>
       <div className={s.codeBlock}>
-        <button type="button" className={s.copyCode} onClick={() => copy(code, 'the code')} aria-label="Copy code">
-          Copy
-        </button>
+        <div className={s.codeTools}>
+          {command && onRun ? (
+            <button type="button" className={s.copyCode} onClick={() => onRun(command)} aria-label="Run in the terminal" title={command}>
+              <Icon name="play" size={10} />
+              Run
+            </button>
+          ) : null}
+          <button type="button" className={s.copyCode} onClick={() => copy(code, 'the code')} aria-label="Copy code">
+            Copy
+          </button>
+        </div>
         {/* eslint-disable-next-line react/no-danger */}
         {html ? <div className={s.shiki} dangerouslySetInnerHTML={{ __html: html }} /> : <pre><code>{code}</code></pre>}
       </div>
@@ -174,12 +187,15 @@ function MessageFence({ code, lang, localImages }: { code: string; lang: string 
   const { ui } = useBeluga();
   const live = useContext(LiveText);
   const fence = useRichFence(lang, code);
+  // Run only what's yours to run: your own words and your own Claude's, never a friend's.
+  const run = useRunInTerminal();
+  const onRun = localImages && !live ? run : undefined;
   if (fence?.kind === 'math') return <MathTex tex={fence.tex} display />;
   if (fence?.kind === 'mermaid') return fence.block.kind === 'graph' ? <GraphBlock code={fence.block.text} live={live} localImages={localImages} /> : <ViewBlock code={fence.block.text} type="any" live={live} local={localImages} />;
-  if (fence) return <RichBlock fence={fence} code={code} lang={lang} onQuote={(text) => quoteInBox(ui, text)} />;
+  if (fence) return <RichBlock fence={fence} code={code} lang={lang} onQuote={(text) => quoteInBox(ui, text)} onRun={onRun} />;
   // A kind of diagram we don't draw ourselves: Mermaid draws it, once it's all there.
   if (lang === 'mermaid' && !live) return <Diagram code={code} />;
-  return <Code code={code} {...(lang ? { lang } : {})} />;
+  return <Code code={code} {...(lang ? { lang } : {})} onRun={onRun} />;
 }
 
 type HastNode = { type: string; tagName?: string; value?: string; children?: HastNode[] };
