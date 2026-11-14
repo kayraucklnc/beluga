@@ -1,5 +1,6 @@
 import { decodeFailure, failureText } from '../../shared/run-failure.js';
 import { THREAD_LIMITS_WHERE, THREAD_LIMIT_ROWS, type ThreadEnd, type ThreadLimits, type ThreadRecord, type ThreadState } from '../../shared/threads.js';
+import { type DomainState, type LogItem, busyChannels } from '../store.js';
 
 /** The rules of one thread tree: pure, no I/O (core/threads/service.ts acts on them). */
 
@@ -74,6 +75,34 @@ export function isDescendant(nodes: readonly ThreadNode[], ancestor: string, id:
     at = byId.get(at.thread.parent);
   }
   return false;
+}
+
+/**
+ * The chats with a thread at work under them, at any depth: a chat shows as working while one of
+ * its threads works, also when its own turn ended. `busy`: the channels with a turn running now.
+ */
+export function threadsWorkingUnder(nodes: readonly ThreadNode[], busy: ReadonlySet<string>): Set<string> {
+  const byChannel = new Map(nodes.map((n) => [n.channel, n]));
+  const out = new Set<string>();
+  for (const n of nodes) {
+    if (!busy.has(n.channel)) continue;
+    // An ancestor already marked has its own ancestors marked too: that also ends a cycle.
+    for (let parent: string | undefined = n.thread.parent; parent !== undefined && !out.has(parent); parent = byChannel.get(parent)?.thread.parent) out.add(parent);
+  }
+  return out;
+}
+
+// The log is replaced on every streamed event, the projects are not: one pass per pair serves every chat.
+const workingUnder = new WeakMap<readonly LogItem[], { readonly projects: unknown; readonly value: ReadonlySet<string> }>();
+
+/** threadsWorkingUnder for the state: the chats that have a thread of theirs at work now. */
+export function chatsWithThreadsWorking(state: Pick<DomainState, 'log' | 'projects'>): ReadonlySet<string> {
+  const known = workingUnder.get(state.log);
+  if (known?.projects === state.projects) return known.value;
+  const nodes = state.projects.flatMap((p) => p.workspaces.flatMap((w) => (w.thread ? [{ id: w.id, channel: `ws:${w.id}`, thread: w.thread }] : [])));
+  const value = nodes.length ? threadsWorkingUnder(nodes, busyChannels(state.log)) : new Set<string>();
+  workingUnder.set(state.log, { projects: state.projects, value });
+  return value;
 }
 
 /** A result that still has to reach the parent. A thread with another owed turn reports when that turn ends. */
