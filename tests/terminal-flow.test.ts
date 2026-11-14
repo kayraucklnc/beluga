@@ -74,7 +74,8 @@ describe('FlowGate', () => {
   });
 });
 
-describe('a terminal streamed with flow control', () => {
+// The flood is /bin/sh running `yes`, which Windows doesn't have; the gate itself is tested above.
+describe.skipIf(process.platform === 'win32')('a terminal streamed with flow control', () => {
   const setup = async () => {
     const store = new Store(initialState('room'));
     const token = 'a'.repeat(32);
