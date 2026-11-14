@@ -38,7 +38,7 @@ import { explainTaskMentions } from '../shared/task-refs.js';
 import { HostChatLinks, type RunChain } from './chat-links/host.js';
 import type { ChatSendService, Delivered } from './chat-links/service.js';
 import { explainWorktreeRefs } from '../shared/worktree-refs.js';
-import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
+import { ASSISTANT_TITLE, isAssistant, YOUR_COMPUTER } from '../shared/assistant.js';
 import { type SlotWait, clampParallelRuns } from '../shared/run-slots.js';
 import { fallbackFor } from '../shared/runtime-fallbacks.js';
 import { agentForAsk } from './gateway/serve.js';
@@ -1971,7 +1971,7 @@ export class AgentHost {
     // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once, whatever was allowed before.
     if (!asOwner && writesCode(toolName, input, cwd ?? process.cwd())) {
       const file = String(input.file_path ?? input.notebook_path);
-      const answer = await this.askTool(requester, `${wants} change ${path.basename(file)}, a file that can run commands on your Mac`, file, channel, { once: true });
+      const answer = await this.askTool(requester, `${wants} change ${path.basename(file)}, a file that can run commands on ${YOUR_COMPUTER}`, file, channel, { once: true });
       return answer !== 'no';
     }
     // Invited by link to edit this project: as if you prompted, inside its folder (secrets were already refused).

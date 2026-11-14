@@ -4,7 +4,7 @@ import { EFFORTS, type Effort } from '../../shared/settings-schema.js';
 import type { Row, Source } from '../../shared/view-spec.js';
 import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
-import { ASSISTANT_TITLE } from '../../shared/assistant.js';
+import { ASSISTANT_TITLE, THE_COMPUTER } from '../../shared/assistant.js';
 import { chatMentionsAsTitles } from '../../shared/chat-ref.js';
 
 /**
@@ -922,7 +922,7 @@ export const TRIGGER_INFO: Readonly<Record<TriggerKind, { readonly label: string
 export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; readonly hint: string; readonly needs: Access; readonly phase: 1 | 2 | 3 | 5 }>> = {
   claude: { label: 'Ask your agent', hint: 'The agent reads, writes a brief, fixes, makes tasks', needs: 'look', phase: 1 },
   script: { label: 'Run a script', hint: 'One shell line or a script, in the project or your home folder', needs: 'look', phase: 1 },
-  notify: { label: 'Notify me', hint: 'On the Mac, and the phone if you like, with the report', needs: 'look', phase: 1 },
+  notify: { label: 'Notify me', hint: `On ${THE_COMPUTER}, and the phone if you like, with the report`, needs: 'look', phase: 1 },
   http: { label: 'Call a service', hint: 'A web request: Groqbot, Slack, Discord, any URL', needs: 'look', phase: 2 },
   pr: { label: 'Open a pull request', hint: 'From the worktree the run’s agent step made', needs: 'work', phase: 2 },
   merge: { label: 'Merge if acceptable', hint: 'When the checks pass and you’ve approved', needs: 'ship', phase: 2 },
@@ -1237,7 +1237,7 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
       if (step.code?.trim()) return `Runs its ${SCRIPT_LANGUAGE_INFO[step.language ?? 'sh'].label} script (${step.code.split('\n').length} lines) in ${step.cwd === 'home' ? 'your home folder' : 'the project'}`;
       return `Runs \`${quoteLine(step.command, 50)}\` in ${step.cwd === 'home' ? 'your home folder' : 'the project'}`;
     case 'notify':
-      return step.phone ? 'Tells you on the Mac and the phone' : 'Tells you on the Mac';
+      return step.phone ? `Tells you on ${THE_COMPUTER} and the phone` : `Tells you on ${THE_COMPUTER}`;
     case 'http':
       return step.preset && step.preset !== 'url' ? `${SERVICE_PRESETS[step.preset].label}: ${step.method} ${hostOf(step.url) || 'its address'}` : `${step.method} ${hostOf(step.url) || 'a URL'}`;
     case 'pr':
