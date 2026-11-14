@@ -1,6 +1,7 @@
 import { chatLinkOf, formatChatRef } from './chat-ref.js';
 import { editDiff } from './line-diff.js';
 import { underPart } from './path-inside.js';
+import { THIS_COMPUTER } from './assistant.js';
 
 /**
  * A step in words people use, never a tool's name or an id: "Read src/auth.ts", "Ran npm test",
@@ -111,7 +112,7 @@ function belugaTool(name: string, input: Readonly<Record<string, unknown>>): Hum
     case 'screenshot':
       return both(str(input.app) ? `Looked at ${str(input.app)}` : 'Took a screenshot', 'Taking a screenshot');
     case 'device_info':
-      return both('Looked at this Mac’s details', 'Looking at this Mac’s details');
+      return both(`Looked at ${THIS_COMPUTER}’s details`, `Looking at ${THIS_COMPUTER}’s details`);
     case 'list_chats':
       return both('Looked through your chats', 'Looking through your chats');
     case 'read_chat':

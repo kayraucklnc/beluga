@@ -89,6 +89,7 @@ import { Triggers, isEventTrigger } from './triggers/index.js';
 import type { TriggerDeps, TriggerEvent } from './triggers/types.js';
 import { newSecret } from './triggers/webhook.js';
 import { SentinelMover, type SentinelMovePort } from './move-work.js';
+import { THE_COMPUTER, THIS_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Sentinels (docs/sentinel.md): the sentinels and their runs, kept in ~/.beluga/sentinel.json and
@@ -843,11 +844,11 @@ export class Sentinels {
       this.replace(moved);
       const sentence = scheduleSentence(s.trigger);
       if (due.kind === 'skip') {
-        this.note(moved, 'schedule', { kind: 'schedule', summary: sentence }, 'Missed while the Mac was asleep or Beluga was closed', 'Skipped: the Mac was asleep or Beluga was closed');
+        this.note(moved, 'schedule', { kind: 'schedule', summary: sentence }, `Missed while ${THE_COMPUTER} was asleep or Beluga was closed`, `Skipped: ${THE_COMPUTER} was asleep or Beluga was closed`);
         continue;
       }
       try {
-        this.start(moved.id, 'schedule', { kind: 'schedule', summary: due.late ? `${sentence} (caught up: the Mac was asleep or Beluga was closed)` : sentence });
+        this.start(moved.id, 'schedule', { kind: 'schedule', summary: due.late ? `${sentence} (caught up: ${THE_COMPUTER} was asleep or Beluga was closed)` : sentence });
       } catch {
         // Deleted or paused meanwhile.
       }
@@ -1666,7 +1667,7 @@ export class Sentinels {
     const exact = m.rows.find((r) => sameRow(r, row));
     const alike = exact ? [exact] : m.rows.filter((r) => Object.keys(row).length > 0 && Object.entries(row).every(([k, v]) => (r[k] ?? null) === (v ?? null)));
     const kept = alike.length === 1 ? alike[0] : undefined;
-    if (!kept) throw new Error(alike.length > 1 ? `Several of ${m.label}’s rows look like that one: run it from the Mac` : `That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
+    if (!kept) throw new Error(alike.length > 1 ? `Several of ${m.label}’s rows look like that one: run it from ${THE_COMPUTER}` : `That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
     const target = this.need(col.sentinel);
     const words = col.button?.trim() || col.label?.trim() || `Run ${target.name}`;
     return this.start(target.id, by, { kind: 'manual', summary: `You pressed “${words}” on a row of ${m.label}`, payload: { row: kept, sentinel: s.name, metric: m.label } }, [s.id]);
@@ -1682,7 +1683,7 @@ export class Sentinels {
     const bytes = runId ? this.folders.readDocument(runId, name) : undefined;
     if (!bytes) throw new Error(`${name} is no longer kept: “${s.name}” keeps its documents ${this.filesKeepDays(s)} days`);
     const read = documentRead(name, documentMime(name), bytes, max);
-    if (!read) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on the Mac`);
+    if (!read) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on ${THE_COMPUTER}`);
     return { ...read, runId, ...(m.rowsAt ? { at: m.rowsAt } : {}) };
   }
 
@@ -1707,7 +1708,7 @@ export class Sentinels {
     const { name, bytes } = await this.fetchStorage(sentinel, metric, column, value);
     const copy = safeFileName(`storage-${name}`);
     const file = m.rowsRunId && this.folders.writeDocument(m.rowsRunId, copy, bytes) ? this.folders.documentPath(m.rowsRunId, copy) : undefined;
-    if (!file) throw new Error(`Couldn’t save ${name} on this Mac for “${s.name}”`);
+    if (!file) throw new Error(`Couldn’t save ${name} on ${THIS_COMPUTER} for “${s.name}”`);
     return file;
   }
 
@@ -1849,7 +1850,7 @@ export class Sentinels {
   dataFolder(sentinel: string, runId?: string): string {
     const s = this.need(sentinel);
     const dir = runId ? (this.runs.some((x) => x.id === runId && x.sentinelId === s.id) ? this.folders.folder(runId) : undefined) : this.metricFiles.root ? path.join(this.metricFiles.root, safeName(s.id)) : undefined;
-    if (!dir || !existsSync(dir)) throw new Error(runId ? 'That run kept no files on this Mac' : `“${s.name}” keeps no numbers on this Mac yet`);
+    if (!dir || !existsSync(dir)) throw new Error(runId ? `That run kept no files on ${THIS_COMPUTER}` : `“${s.name}” keeps no numbers on ${THIS_COMPUTER} yet`);
     return dir;
   }
 

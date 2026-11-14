@@ -7,6 +7,7 @@ import { defaultAgentOf } from '../protocol.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import { builtInInstead } from '../shared/skills.js';
 import { experimentOn } from '../shared/experiments.js';
+import { ASSISTANT_TITLE, FILE_MANAGER } from '../shared/assistant.js';
 
 /**
  * "~/x" (or "~\\x" on Windows) from your home folder. No node:os here (the screens load this file):
@@ -41,13 +42,13 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'shell', args: '<path>|default|login on|off|args …', desc: 'the shell for the built-in terminal, and how it starts' },
   { name: 'env', args: '[project] KEY=value', desc: 'set an environment variable for your shells, scripts and your agent (KEY= removes it)' },
   { name: 'visualize', args: '[what]', desc: 'your agent draws it as an interactive graph: architecture, a flow, what changed' },
-  { name: 'schedule', args: '[prompt]', desc: 'send a prompt into this chat on a schedule, as from Sentinel (the Mac app; chat-schedules experiment)' },
+  { name: 'schedule', args: '[prompt]', desc: 'send a prompt into this chat on a schedule, as from Sentinel (Beluga’s app; chat-schedules experiment)' },
   { name: 'btw', args: '<question>', desc: 'a side question: Claude answers beside the chat, without stopping or remembering it' },
   { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (your agent keeps what matters)" },
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
   { name: 'fork', args: '<name>', desc: 'copy this workspace and its conversation' },
-  { name: 'finder', desc: 'open this workspace in Finder' },
+  { name: 'finder', desc: `open this workspace in ${FILE_MANAGER}` },
   { name: 'archive', desc: 'archive this workspace (keeps branch and conversation)' },
   { name: 'restore', desc: 'bring an archived workspace back' },
   { name: 'delete', desc: 'delete this workspace, its branch and conversation' },
@@ -107,7 +108,7 @@ function inviteCommand(session: Session, args: readonly string[], channel: strin
   const place: InvitePlace = ws && wsId ? { kind: 'workspace', workspaceId: wsId, projectId: ws.projectId, name: ws.name } : { kind: 'none' };
   const route = inviteRoute(place, parsed.names, state.network.friends);
   if (route.kind === 'error') return session.toast(route.text, 'warn');
-  if (route.kind !== 'share' || !route.workspaceId) return session.toast('Type it in the Mac app’s message box there', 'info');
+  if (route.kind !== 'share' || !route.workspaceId) return session.toast('Type it in Beluga’s message box there', 'info');
   const workspaceId = route.workspaceId;
   if (session.sharing.friends) {
     for (const f of route.friends) session.sharing.shareWithFriend({ peerId: f.peerId, workspaceId, ...(route.projectId ? { projectId: route.projectId } : {}), role: 'contribute' });
@@ -140,10 +141,10 @@ export function runCommand(session: Session, name: string, args: readonly string
       return;
     case 'invite':
       return inviteCommand(session, args, channel);
-    // The Mac's message box opens its Schedule sheet itself (BLG-400); typed anywhere else it says where, or what turns it on.
+    // The app's message box opens its Schedule sheet itself (BLG-400); typed anywhere else it says where, or what turns it on.
     case 'schedule':
       if (!experimentOn(state.prefs.experiments, 'chat-schedules')) return session.toast('/schedule needs the Chat schedules experiment: turn it on in Settings › Experimental', 'info');
-      return session.toast('/schedule opens its sheet in the Mac app, in a worktree, project or Your Mac chat', 'info');
+      return session.toast(`/schedule opens its sheet in Beluga’s app, in a worktree, project or ${ASSISTANT_TITLE} chat`, 'info');
     case 'btw': {
       const question = args.join(' ').trim();
       if (!question) return session.toast('Usage: /btw <question>', 'warn');
