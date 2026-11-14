@@ -400,9 +400,9 @@ export class DaemonServer {
   }
 
   private async call(client: ConnectedClient, id: string, method: string, raw: readonly unknown[]): Promise<DaemonFrame> {
-    if (!mayCall(client.kind, method)) return { t: 'result', id, ok: false, error: 'External agents are managed from the Mac app or `beluga mcp` on the computer Beluga runs on' };
+    if (!mayCall(client.kind, method)) return { t: 'result', id, ok: false, error: 'External agents are managed from the Beluga app or `beluga mcp` on the computer Beluga runs on' };
     // A browser's session can't mint, revoke or move browser sessions: a stolen cookie can't outlive its revoke.
-    if (client.kind === 'web' && WEB_ADMIN.has(method)) return { t: 'result', id, ok: false, error: 'Browsers are let in and revoked from the Mac app or `beluga web` on the computer Beluga runs on' };
+    if (client.kind === 'web' && WEB_ADMIN.has(method)) return { t: 'result', id, ok: false, error: 'Browsers are let in and revoked from the Beluga app or `beluga web` on the computer Beluga runs on' };
     // Your app driving this computer: what src/machines/coverage.ts refuses it (BLG-776).
     if (client.kind === 'machine' && machineRefuses(method)) return { t: 'result', id, ok: false, error: MACHINE_REFUSED };
     return { t: 'result', id, ...(await dispatchCall(this.session, client.id, method, raw)) };

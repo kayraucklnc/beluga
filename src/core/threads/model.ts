@@ -1,5 +1,6 @@
 import { decodeFailure, failureText } from '../../shared/run-failure.js';
 import { THREAD_LIMITS_WHERE, THREAD_LIMIT_ROWS, type ThreadEnd, type ThreadLimits, type ThreadRecord, type ThreadState } from '../../shared/threads.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 import { type DomainState, type LogItem, busyChannels } from '../store.js';
 
 /** The rules of one thread tree: pure, no I/O (core/threads/service.ts acts on them). */
@@ -114,7 +115,7 @@ export function threadLimitProblem(counts: ThreadCounts, limits: ThreadLimits): 
   if (counts.childDepth > limits.depth) return `This thread would be at depth ${counts.childDepth}, and the limit is ${limits.depth}. Start it from a shallower chat, or do the work in this chat. ${raise('depth')}`;
   if (counts.treeLive >= limits.treeLive) return `${counts.treeLive} threads in this tree are not archived, and the limit is ${limits.treeLive}. A person must archive a thread to free a slot. ${raise('treeLive')}`;
   if (counts.treeRunning >= limits.treeRunning) return `${counts.treeRunning} threads are running or queued in this tree, and the limit is ${limits.treeRunning}. Wait for one to finish, or stop one with thread_stop. ${raise('treeRunning')}`;
-  if (counts.macRunning >= limits.macRunning) return `${counts.macRunning} threads are running or queued on this Mac, and the limit is ${limits.macRunning}. Wait for one to finish, or stop one with thread_stop. ${raise('macRunning')}`;
+  if (counts.macRunning >= limits.macRunning) return `${counts.macRunning} threads are running or queued on ${THIS_COMPUTER}, and the limit is ${limits.macRunning}. Wait for one to finish, or stop one with thread_stop. ${raise('macRunning')}`;
   return undefined;
 }
 

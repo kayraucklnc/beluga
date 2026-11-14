@@ -22,6 +22,7 @@ import { liveFrom } from './progress.js';
 import { type PlanGit, planGitOf } from './plan-git.js';
 import { type Plans, UNTITLED } from './plans.js';
 import { checkFailedPrompt, checkerBrief, describePlan, headBrief, milestoneNote, planningBrief, reviewerBrief, sizeWords, workerNote } from './prompt.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Plans at work: making a plan (its own conversation, in the project's main folder where Claude
@@ -205,7 +206,7 @@ export class PlansWork {
     // Its conversation plans on the agent picked for its work (a new conversation: nothing to hand off).
     // One this Mac can't run would fail the first turn, so your default plans it and the plan keeps the pick.
     if (input.agent && runsHere(this.deps.store.getState().runtimes, input.agent)) controller.manager.setAgent(chat.id, input.agent);
-    else if (input.agent) this.deps.store.dispatch({ type: 'system', channel: home, text: `${agentName(input.agent)} isn’t set up on this Mac, so your default agent plans this.`, level: 'warn' });
+    else if (input.agent) this.deps.store.dispatch({ type: 'system', channel: home, text: `${agentName(input.agent)} isn’t set up on ${THIS_COMPUTER}, so your default agent plans this.`, level: 'warn' });
     if (!opts.quiet) this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
     this.deps.askClaude(goal, home, true);
     // Named in a moment by a quick model (your message is never its name); Claude's plan_write names it after that.

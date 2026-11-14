@@ -6,6 +6,7 @@ import { type InvitePlace, friendNamed, inviteRoute, namesLine, parseInvite } fr
 import { defaultAgentOf } from '../protocol.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import { builtInInstead } from '../shared/skills.js';
+import { FILE_MANAGER } from '../shared/assistant.js';
 
 /**
  * "~/x" (or "~\\x" on Windows) from your home folder. No node:os here (the screens load this file):
@@ -45,7 +46,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
   { name: 'fork', args: '<name>', desc: 'copy this workspace and its conversation' },
-  { name: 'finder', desc: 'open this workspace in Finder' },
+  { name: 'finder', desc: `open this workspace in ${FILE_MANAGER}` },
   { name: 'archive', desc: 'archive this workspace (keeps branch and conversation)' },
   { name: 'restore', desc: 'bring an archived workspace back' },
   { name: 'delete', desc: 'delete this workspace, its branch and conversation' },
@@ -105,7 +106,7 @@ function inviteCommand(session: Session, args: readonly string[], channel: strin
   const place: InvitePlace = ws && wsId ? { kind: 'workspace', workspaceId: wsId, projectId: ws.projectId, name: ws.name } : { kind: 'none' };
   const route = inviteRoute(place, parsed.names, state.network.friends);
   if (route.kind === 'error') return session.toast(route.text, 'warn');
-  if (route.kind !== 'share' || !route.workspaceId) return session.toast('Type it in the Mac app’s message box there', 'info');
+  if (route.kind !== 'share' || !route.workspaceId) return session.toast('Type it in Beluga’s message box there', 'info');
   const workspaceId = route.workspaceId;
   if (session.sharing.friends) {
     for (const f of route.friends) session.sharing.shareWithFriend({ peerId: f.peerId, workspaceId, ...(route.projectId ? { projectId: route.projectId } : {}), role: 'contribute' });
