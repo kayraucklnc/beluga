@@ -4,9 +4,11 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, AgentPlace, AgentRunInput, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer, TerminalLaunch, TerminalSink } from '../agent/types.js';
 import { ALWAYS_ASK_YOU, writesCode } from '../agent/policy.js';
+import { withAppContext } from '../mcp-apps/domain/app-requests.js';
 import { type ChromeAccess, chromeCard, chromeOffByFlags } from '../agent/chrome.js';
 import { outsideYourHand } from './by-hand.js';
 import { type AgentRef, type BodyInput, type BodyOf, CLAUDE_AGENT, MAX_TEXT, type MessageVia } from '../protocol.js';
+import { mcpSignInTools } from './mcp-sign-in.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
 import type { ShareService } from './shares.js';
@@ -99,13 +101,17 @@ export interface AgentHostDeps {
   readonly plans?: (channel: string, from: string, chain?: () => import('../agent/types.js').ChatChain) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string; readonly checker?: boolean } | undefined;
   /** Child threads (core/threads): their tools, bound to this chat. Your own runs only, with the flag on (see runAgent). */
   readonly threads?: (channel: string) => import('../agent/types.js').ThreadTools | undefined;
+  /** MCP Apps (Settings › Experimental): what apps in this conversation told the model since its last turn, taken by this one. */
+  readonly appContext?: (channel: string) => ReadonlyArray<{ readonly app: string; readonly text: string }>;
   /** "Your Mac" (core/assistant), your own runs in its conversation: where it runs, its tools, what Claude is told. */
   readonly assistant?: (channel: string, from: string) => { readonly place: AgentPlace; readonly tools: MacTools; readonly brief: string } | undefined;
   /** Your own agent asked in a friend's worktree (your "@claude" there): where it runs here, and what it's told about theirs. */
   readonly guestRun?: (channel: string, from: string) => { readonly place: AgentPlace; readonly brief: string } | undefined;
-  /** Your phone (core/phone, BLG-150), your own runs: tools to act on it, saving screenshots in `scratchDir`. `env` lets Bash use adb/scrcpy (BLG-174). */
+  /** Open a web page on your screen: an MCP sign-in your own run starts (core/mcp-sign-in.ts). */
+  readonly openPage?: (url: string) => Promise<void>;
   /** The notes of calls you were in (core/calls, BLG-715), as tools for your own runs. */
   readonly callNotes?: () => import('../agent/types.js').CallNotesTools | undefined;
+  /** Your phone (core/phone, BLG-150), your own runs: tools to act on it, saving screenshots in `scratchDir`. `env` lets Bash use adb/scrcpy (BLG-174). */
   readonly phone?: (scratchDir?: string) => { readonly tools: import('../agent/types.js').PhoneTools; readonly brief: string; readonly env?: Record<string, string> } | undefined;
   /** How freely Claude may use the phone now (off · ask · use · full), for the owner-approval gate. */
   /** Your own worktree runs: the project's setup, and Claude's tool to correct it (core/workbench). */
@@ -1550,6 +1556,9 @@ export class AgentHost {
       const phone = from === this.selfId ? this.deps.phone?.(scratch && place ? path.join(place.cwd, scratch) : undefined) : undefined;
       // Calls you were in (BLG-715): your own runs look up what was said, a page at a time.
       const callNotes = from === this.selfId ? this.deps.callNotes?.() : undefined;
+      // Your MCP servers: runs you asked for sign in to one from the chat (never a friend's, a guest's or an external agent's); its page opens on your screen.
+      const openPage = this.deps.openPage;
+      const mcpTools = from === this.selfId && !external && openPage && agent.mcpSignIn ? mcpSignInTools(agent, { roots: () => this.store.getState().projects.map((p) => p.root), openPage }) : undefined;
       // Other chats (core/chat-links): only runs you asked for find and read them, never a friend's, a guest's or an external agent's.
       const chats = this.links.toolsFor({ from, external: Boolean(external), channel: body.channel, chain: () => chain, signal: controller.signal });
       // Live previews (Settings › Experimental): your own runs in a project's folder learn to show what they build.
@@ -1621,11 +1630,14 @@ export class AgentHost {
         ...(guest ? { sharedBrief: guest.brief } : {}),
         ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
         ...(callNotes ? { callNotesTools: callNotes } : {}),
+        ...(mcpTools ? { mcpTools } : {}),
         ...(chats ? { chatTools: chats } : {}),
         ...(previewBrief ? { previewBrief } : {}),
         ...(sentinel ? { sentinelTools: sentinel.tools, sentinelBrief: sentinel.brief, ...(sentinel.dashboard ? { dashboardTools: sentinel.dashboard } : {}) } : {}),
-        prompt: this.promptOf(body, from, lane.sent),
+        // What MCP Apps here said for the model: your own runs only, wrapped as data (apps are third-party).
+        prompt: withAppContext(this.promptOf(body, from, lane.sent), from === this.selfId ? (this.deps.appContext?.(body.channel) ?? []) : []),
         ...this.promptIdOf(body),
+        ...this.ownWordsOf(from, body),
         requesterName: this.askerOf(body, from),
         viaAgent: body.viaAgent,
         context: this.recentChat(body.channel),
@@ -1887,6 +1899,16 @@ export class AgentHost {
   private viaOf(requester: string): MessageVia | undefined {
     if (!isExternalRequester(requester)) return undefined;
     return { id: requester.slice(requester.indexOf(':') + 1), name: this.nameOf(requester), creationSource: 'mcp' };
+  }
+
+  /**
+   * The words you typed yourself, for a run you asked for on this computer: not a friend's, not an
+   * agent's, and without what Beluga adds to the prompt (worktree paths, task text, a carried
+   * conversation). Only usage statistics read it, at level On (src/telemetry/observe.ts).
+   */
+  private ownWordsOf(from: string, body: BodyOf<'agent_request'>): { ownWords?: string } {
+    // A message an agent sent from another chat (BLG-149) isn't yours either.
+    return from === this.selfId && !body.via && !body.viaAgent && !body.origin ? { ownWords: body.prompt } : {};
   }
 
   /** Who a run is for, as its agent reads it. `from` alone decides what it may do. */

@@ -1,7 +1,7 @@
 import type { ConvView } from './link/protocol';
 
 /**
- * A chat's schedules in words (1.54, BLG-401): the ••• sheet's summary, and which ones already ran
+ * A chat's schedules in words (1.57, BLG-401): the ••• sheet's summary, and which ones already ran
  * their one time. Plain: no React Native.
  */
 

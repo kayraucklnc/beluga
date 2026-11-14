@@ -331,6 +331,12 @@ export const PHONE: Record<Method, Side> = {
 
   // ---- supporting Beluga: the star ask is the Mac's (it opens GitHub there)
   'support.answer': 'mac',
+  // ---- usage statistics: the level is the phone's too (Settings); the ask and the onboarding are the Mac's
+  'telemetry.choose': 'phone',
+  'telemetry.answer': 'mac',
+  // A project's Settings sheet is the Mac's.
+  'telemetry.exclude': 'mac',
+  'telemetry.mark': 'mac',
   // ---- your stats: the Usage tab's charts and what the composer saw (the phone keeps its plan meters)
   'stats.get': 'mac',
   'stats.leaderboard': 'mac',
@@ -533,6 +539,12 @@ export const PHONE: Record<Method, Side> = {
   // A live preview builds and runs code on the Mac for its own window's frame; the phone shows a plain card.
   'preview.open': 'mac',
   'preview.snapshot': 'mac',
+  // An MCP App runs a server's page in the Mac window's frame; the phone shows the step's one line.
+  'apps.get': 'mac',
+  'apps.call': 'mac',
+  'apps.read': 'mac',
+  'apps.message': 'mac',
+  'apps.context': 'mac',
   'files.searchContent': 'mac',
   'files.searchNames': 'mac',
   'files.save': 'mac',

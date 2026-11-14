@@ -20,6 +20,7 @@ import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { recipientLabel, recipientPrefix, toast, useApi, useApp, useBeluga, useUi, useMachine, useScopedKey } from '../lib/beluga.js';
+import { makeAhead } from '../lib/make-ahead.js';
 import { agentName, useAgentNameIn, useMyAgentName } from '../lib/agent-words.js';
 import { sameDeep, sameFields } from '../lib/stable.js';
 import { getPrefs, usePrefs } from '../lib/prefs.js';
@@ -35,6 +36,7 @@ import { sendToComputer, useStartDeps } from '../machines/start-there.js';
 import { QueueTray } from './QueueTray.js';
 import { BtwCard, askBtw } from './BtwCard.js';
 import { expectClaude, launchFlight } from './flight.js';
+import { lastMineIn } from './starting-model.js';
 import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
 import { sendSteerNow, stopClaude } from '../lib/commands.js';
 import { useAttachments } from './use-attachments.js';
@@ -212,7 +214,6 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const ready = !!buffer.trim() || commentsWaiting;
   // A chat's link pasted here becomes a chip. In a friend's worktree, one of yours can take a copy along (see send).
   const chipLinks = (text: string): string | undefined => {
-    if (!client.store.getState().prefs.chatLinks) return undefined;
     const words = chatLinksToMentions(text, (r) => chatChipOf(resolveChat(client.store.getState(), r)).label);
     return words && boxChats(words);
   };
@@ -435,7 +436,15 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     setWorktreeState({ name: '' });
     arm(false);
     if (sent === 'sent') return;
-    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}), ...(worktree.agent ? { agent: worktree.agent } : {}), ...mode }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
+    // Its row and "Making…" page show at once (BLG-942), whatever the daemon is busy with; a failure takes them away again.
+    // The draft's words went with it: forgotten now, as the page changes in this same moment (no render in between to do it).
+    drafts.delete(boxKey);
+    const ahead = makeAhead(client, projectId, name || text || 'worktree', { ...(worktree.base ? { base: worktree.base } : {}), asked: text });
+    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}), ...(worktree.agent ? { agent: worktree.agent } : {}), ...mode, ...(ahead ? { id: ahead.id } : {}) }).catch((err: unknown) => {
+      ahead?.drop();
+      keepWords(text);
+      toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error');
+    });
   };
   /** Held for a computer that can't take it now: the words go back in the box, nothing was sent. */
   const keepWords = (text: string): void => {
@@ -480,7 +489,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   };
   /** Chats of yours that the words name, when this chat is another person's and goes to their agent. */
   const ownChatsNamed = (typed: string): Array<{ readonly ref: string; readonly title: string }> => {
-    if (state.view.kind !== 'shared' || runOn === 'here' || typed.startsWith('/') || !client.store.getState().prefs.chatLinks) return [];
+    if (state.view.kind !== 'shared' || runOn === 'here' || typed.startsWith('/')) return [];
     const now = client.store.getState();
     const mine = chatMentionsIn(typed).flatMap((m) => {
       const ref = parseChatRef(m.ref);
@@ -548,12 +557,19 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       const live = state.log.some((l) => l.type === 'agent' && l.channel === channel && isRunning(l.status));
       launchFlight({ channel, target: queueing && compose.typing && !urgent ? 'queue' : 'chat', text: typed, from: ref.current, live });
       // Steering joins the turn Claude is on (no new card to wait for).
-      if (compose.typing && !compose.busy) expectClaude(channel, state.log.filter((l) => l.type === 'agent' && l.channel === channel).length);
+      if (compose.typing && !compose.busy) {
+        const here = state.log.filter((l) => l.channel === channel);
+        expectClaude(channel, here.filter((l) => l.type === 'agent').length, lastMineIn(here, state.selfId));
+      }
     }
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, typed].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (Beluga keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
-      api.attachments.expand(text, channel, [...images], [...shown]).then(
+      // An image still being saved is waited for (it showed in the box at once).
+      att
+        .saved(images)
+        .then((real) => api.attachments.expand(text, channel, [...real], [...shown]))
+        .then(
         (expanded) => deliver(expanded, urgent),
         (err: unknown) => {
           // Put the message and its images back so nothing is lost.

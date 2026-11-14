@@ -10,7 +10,7 @@ import { Sheet } from './Sheet';
 import { haptic, IconBadge, Press, T, toneInk } from './ui';
 
 /**
- * A chat's schedules (1.54, BLG-401): the sentinels that send into it, as the Mac's Info panel lists
+ * A chat's schedules (1.57, BLG-401): the sentinels that send into it, as the Mac's Info panel lists
  * them. Run now and Pause / Turn on only: the phone never makes or changes a schedule. One that
  * already ran its one time reads as done, with no Pause.
  */

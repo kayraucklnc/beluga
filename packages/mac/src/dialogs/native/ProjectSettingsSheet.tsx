@@ -11,6 +11,7 @@ import { agentEntries } from '../../chat/ModelPicker.js';
 import { Checkbox, Field, FormSheet, Popup, SourceTag, TextInput } from '../../components/FormSheet.js';
 import { agentName, useMyAgent } from '../../lib/agent-words.js';
 import { useApi, useApp } from '../../lib/beluga.js';
+import { thisComputer } from '../../lib/os-words.js';
 import type { NativeMenuProps } from './index.js';
 
 type Kind = 'setup' | 'run';
@@ -53,6 +54,10 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
   const models = useApp((st) => st.models);
   const runtimes = useApp((st) => st.runtimes);
   const mine = useMyAgent();
+  // Usage statistics (BLG-922): a project can be left out, whatever the level.
+  const telemetry = useApp((st) => st.telemetry);
+  const sharesNow = !project || !(telemetry.excluded ?? []).includes(project.root);
+  const [shares, setShares] = useState(sharesNow);
   const scripts = project?.scripts ?? {};
   const [values, setValues] = useState<Record<Kind, string>>({ setup: scripts.setup?.command ?? '', run: scripts.run?.command ?? '' });
   const [team, setTeam] = useState(false);
@@ -84,7 +89,9 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
   };
   // Guessed values say so (once), so you check them.
   const hint = (kind: Kind, what: string) => (!edited(kind) && scripts[kind]?.source === 'detected' ? `${what} Guessed from the project: check it.` : !edited(kind) && scripts[kind]?.source === 'claude' ? `${what} Your agent worked it out from the project: check it.` : what);
-  const changed = edited('setup') || edited('run') || team || auto !== autoSetup || agent !== agentNow;
+  const changed = edited('setup') || edited('run') || team || auto !== autoSetup || agent !== agentNow || shares !== sharesNow;
+  // Only where there's something to leave out: a build that sends, at a level that sends.
+  const offersShare = telemetry.available && Boolean(telemetry.level) && telemetry.level !== 'off';
 
   const save = (): void => {
     for (const kind of ['setup', 'run'] as const) {
@@ -94,6 +101,7 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
       else if (!team && edited(kind)) void api.workbench.setScript(project.id, kind, value);
     }
     if (auto !== autoSetup) void api.session.setPrefs({ autoSetup: auto });
+    if (shares !== sharesNow) void api.telemetry.exclude(project.root, !shares);
     if (agent !== agentNow) {
       const { [project.name]: _, ...others } = projectAgents ?? {};
       void api.session.setPrefs({ projectAgents: agent === '~' ? others : { ...others, [project.name]: agentForChoice(agent, runtimes) } });
@@ -109,9 +117,9 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
   );
   if (!general) {
     return (
-      <FormSheet title={`${project.name} Settings`} icon={tab === 'environment' ? 'lock' : 'branch'} intro={tab === 'environment' ? 'Given to shells, setup and run commands in its workspaces, and your agent, over yours for everywhere. They stay on this computer.' : undefined} submitLabel={changed ? 'Save' : 'Done'} onSubmit={save} onCancel={close} cancelLabel={changed ? 'Cancel' : 'Close'} width={640}>
+      <FormSheet title={`${project.name} Settings`} icon={tab === 'environment' ? 'lock' : 'branch'} intro={tab === 'environment' ? `For its terminals, commands and your agent. They stay on ${thisComputer()}.` : undefined} submitLabel={changed ? 'Save' : 'Done'} onSubmit={save} onCancel={close} cancelLabel={changed ? 'Cancel' : 'Close'} width={640} scrolls>
         {tabs}
-        <div className={e.sheetBody}>
+        <div className={e.sheetBody} data-sheet-scroll>
           {tab === 'environment' ? (
             <>
               <EnvEditor projectId={project.id} />
@@ -148,6 +156,11 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
       <Field label="">
         <Checkbox checked={auto} onChange={setAuto} label="Run setup in new worktrees" detail="For every project; in its Terminal tab" />
       </Field>
+      {offersShare ? (
+        <Field label="">
+          <Checkbox checked={shares} onChange={setShares} label="Send usage statistics from this project" detail="Off: its agents’ runs send nothing, whatever Settings › General says" />
+        </Field>
+      ) : null}
     </FormSheet>
   );
 }

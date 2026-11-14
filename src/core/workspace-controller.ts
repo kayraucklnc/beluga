@@ -86,8 +86,8 @@ export interface ControllerDeps {
   readonly env?: {
     readonly newKeysBack: (projectId: string) => boolean;
     readonly merge: (projectId: string, vars: Readonly<Record<string, string>>) => number;
-    /** A worktree's added or removed .env keys into its .env.example (BLG-925); `noteOnly`: just note its keys now. */
-    readonly syncExample?: (id: string, noteOnly?: boolean) => { readonly file: string; readonly added: readonly string[]; readonly removed: readonly string[] } | undefined;
+    /** A worktree's .env.example caught up with its .env, then its added or removed keys (BLG-925); `noteOnly`: just note its keys now. */
+    readonly syncExample?: (id: string, noteOnly?: boolean) => { readonly file: string; readonly added: readonly string[]; readonly removed: readonly string[]; readonly caughtUp?: boolean } | undefined;
     /** A deleted worktree's own variables go with it (BLG-924). */
     readonly forgetWorktree?: (id: string) => void;
   };
@@ -264,9 +264,13 @@ export class WorkspaceController {
     }
   }
 
-  /** A worktree opened: the workbench (setup) and the listeners hear of it. */
+  /**
+   * A worktree opened: its .env.example caught up with the .env it was given (before setup or its
+   * agent starts, so it's there from the first commit), then the workbench (setup) and the listeners hear of it.
+   */
   private created(ws: Workspace, extra: { from?: string; about?: string } = {}): void {
     this.deleted.delete(`${WS_PREFIX}${ws.id}`);
+    if (!ws.external) this.syncExample(ws, false);
     this.deps.onWorktreeCreated?.(ws);
     this.emit({ kind: 'created', ws, ...extra });
   }
@@ -292,6 +296,7 @@ export class WorkspaceController {
       armSync: (wsId, target) => void this.syncRuns.set(wsId, target),
       askClaude: (prompt, channel) => deps.askClaude(prompt, channel),
       saving: () => deps.store.getState().powerSaving,
+      fetchEvery: () => deps.store.getState().prefs.fetchEvery,
       open: (wsId) => this.open(wsId),
     });
   }
@@ -437,11 +442,14 @@ export class WorkspaceController {
     if (followed.length) this.deps.toast(`The main folder’s env changed: updated ${followed.length === 1 ? followed[0] : `${followed.length} worktrees`} too`, 'info');
   }
 
-  /** A worktree's own .env.example follows the keys it added or removed (a toast says which). */
+  /**
+   * A worktree's own .env.example follows the keys it added or removed (a toast says which). A new
+   * worktree's catch-up is quiet: it's in its changes, and goes out with its work.
+   */
   private syncExample(w: Workspace, noteOnly: boolean): void {
     try {
       const done = this.deps.env?.syncExample?.(w.id, noteOnly);
-      if (!done) return;
+      if (!done || done.caughtUp) return;
       const what = [...done.added.map((k) => `+${k}`), ...done.removed.map((k) => `−${k}`)].join(' ');
       this.deps.toast(`${w.name}: ${done.file} updated (${what}), so it goes with this work`, 'info');
     } catch {
@@ -902,31 +910,64 @@ export class WorkspaceController {
    * line saying what it is. No agent starts: you look, run it, or ask. A second click while it's
    * made is the same one.
    */
-  openPull(projectId: string, pull: PullHead): Promise<Workspace | undefined> {
-    const key = `${projectId}#${pull.number}`;
+  openPull(projectId: string, number: number, head: PullHead | (() => Promise<PullHead>), opts: { readonly id?: string } = {}): Promise<Workspace | undefined> {
+    const key = `${projectId}#${number}`;
     const running = this.pulling.get(key);
     if (running) return running;
-    const job = this.openPullNow(projectId, pull).finally(() => this.pulling.delete(key));
+    const job = this.openPullNow(projectId, number, head, opts.id).finally(() => this.pulling.delete(key));
     this.pulling.set(key, job);
     return job;
   }
 
-  private async openPullNow(projectId: string, pull: PullHead): Promise<Workspace | undefined> {
+  /** The id a new worktree gets: the one a screen already shows it under, when it's free (BLG-942). */
+  private freeId(wanted: string | undefined): string {
+    return wanted && !this.deps.manager.find(wanted) && !this.ahead.making.has(wanted) ? wanted : this.deps.manager.newWorktreeId();
+  }
+
+  /**
+   * Its row and page show at once (BLG-942), before GitHub is asked which branch it's on: that
+   * took a second or two, with nothing on screen. The worktree already on that branch, if there
+   * is one, opens instead once that's known.
+   */
+  private async openPullNow(projectId: string, number: number, head: PullHead | (() => Promise<PullHead>), wanted?: string): Promise<Workspace | undefined> {
     const project = this.deps.manager.list.find((p) => p.id === projectId && p.root);
     if (!project) {
       this.deps.toast('That project is gone', 'warn');
       return undefined;
     }
-    const mine = (branch: string): boolean => branch === pull.branch || (Boolean(pull.fork) && branch === `pr-${pull.number}`);
-    const there = project.workspaces.find((w) => w.kind === 'worktree' && !w.archived && w.branch && mine(w.branch));
+    const mine = (pull: PullHead, branch: string): boolean => branch === pull.branch || (Boolean(pull.fork) && branch === `pr-${pull.number}`);
+    const already = (pull: PullHead): Workspace | undefined => project.workspaces.find((w) => w.kind === 'worktree' && !w.archived && w.branch && mine(pull, w.branch));
+    const known = typeof head === 'function' ? undefined : head;
+    const there = known ? already(known) : undefined;
     if (there) {
       this.open(there.id);
       return there;
     }
-    const id = this.deps.manager.newWorktreeId();
-    this.ahead.making.set(id, pendingWorktree({ id, project, name: `pr-${pull.number}`, ...(pull.base ? { base: `origin/${pull.base}` } : {}) }));
+    const id = this.freeId(wanted);
+    this.ahead.making.set(id, pendingWorktree({ id, project, name: `pr-${number}`, ...(known?.base ? { base: `origin/${known.base}` } : {}) }));
     this.publish();
     this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab: 'chat' } });
+    const leave = (): void => {
+      if (this.ahead.making.delete(id)) this.publish();
+      this.deps.intend({ type: 'close_tab', id });
+    };
+    let pull: PullHead;
+    try {
+      pull = known ?? (await (head as () => Promise<PullHead>)());
+    } catch (err) {
+      leave();
+      throw err;
+    }
+    const found = already(pull);
+    if (found) {
+      leave();
+      this.open(found.id);
+      return found;
+    }
+    if (pull.base) {
+      this.ahead.making.set(id, pendingWorktree({ id, project, name: `pr-${number}`, base: `origin/${pull.base}` }));
+      this.publish();
+    }
     const ws = await this.act(`Couldn't open #${pull.number} in a worktree`, () => this.deps.manager.createPullWorktree(projectId, pull, { id }), undefined, { later: true });
     const shown = this.ahead.making.delete(id);
     this.publish();
@@ -1011,11 +1052,11 @@ export class WorkspaceController {
    * by the name the model gave it; with `nameLater`, as soon as it's made (its id stays when the
    * name comes, so a caller that only wants the id needn't wait for the model).
    */
-  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string; plan?: boolean; tasks?: boolean; quiet?: boolean; nameLater?: boolean; agent?: AgentRef; terminal?: boolean } = {}): Promise<Workspace | undefined> {
+  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string; plan?: boolean; tasks?: boolean; quiet?: boolean; nameLater?: boolean; agent?: AgentRef; terminal?: boolean; id?: string } = {}): Promise<Workspace | undefined> {
     const text = firstMessage.trim();
     const named = opts.name?.trim();
     const proper = named || !text ? undefined : nameTask(firstMessage).catch(() => undefined);
-    const id = this.deps.manager.newWorktreeId();
+    const id = this.freeId(opts.id);
     const channel = `${WS_PREFIX}${id}`;
     // Your message shows at once on its page while git makes the folder (BLG-531); Claude gets it when that's done.
     const shown = text && this.deps.showAsk ? this.deps.showAsk(firstMessage, channel) : undefined;
