@@ -314,6 +314,7 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'external.stopAgent': { refused: GRANTS },
   'external.stopAll': { refused: GRANTS },
   'external.setPaused': { refused: GRANTS },
+  'external.toolSearch': { refused: 'Progress for a pane in Settings: beluga_find already uses semantic tool search once it is ready.' },
   'external.activity': { refused: GRANTS },
   'gateway.list': 'gated',
   'gateway.confirm': { refused: APPROVALS },

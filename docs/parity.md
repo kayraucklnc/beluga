@@ -318,6 +318,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `external.stopAgent` | The driven-by strip, Settings › External agents › Stop, and the phone's External agents |
 | `external.stopAll` | Settings › External agents › Stop All, and the phone's External agents |
 | `external.setPaused` | Settings › External agents › Pause All |
+| `external.toolSearch` | Settings › Experimental › Semantic tool search (its progress) |
 | `external.activity` | Settings › External agents › Activity, and the phone's External agents |
 | `voice.models` | Settings › Voice: the models on this Mac, here or coming |
 | `voice.prepare` | Settings › Voice › Get now |

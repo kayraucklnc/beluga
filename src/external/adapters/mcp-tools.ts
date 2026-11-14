@@ -102,7 +102,7 @@ export function dropHeldCards(cards: Map<string, HeldCard>, agentId: string): vo
 
 const CHAT_TARGET = 'chat:';
 const CARD_ARGS_MAX = 2000;
-const DISCOVERY_INSTRUCTIONS = 'This list has the chat tools. Beluga has many more: use beluga_find to find one and its input schema, then beluga_call with its name and arguments.';
+const DISCOVERY_INSTRUCTIONS = 'This list has the chat tools and the task tools. Beluga has many more: use beluga_find to find one and its input schema, then beluga_call with its name and arguments.';
 const WAITING = "The owner must answer a card in Beluga. Nothing ran. Tell your user, then call this tool again with the same arguments.";
 
 /** One request's MCP server, with this grant's tools behind the wrapper. */

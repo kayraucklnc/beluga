@@ -704,6 +704,7 @@ export const MACHINE: Record<Method, MachineSide> = {
   'external.status': 'drive',
   'external.stopAgent': 'drive',
   'external.stopAll': 'drive',
+  'external.toolSearch': 'drive',
 };
 
 /** A method a screen driving a computer may not call (unknown names are left to the API, which refuses them). */

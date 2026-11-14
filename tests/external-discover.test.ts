@@ -10,7 +10,7 @@ import { callTool, type ExternalToolDef } from '../src/external/adapters/mcp-too
 import { withDiscovery } from '../src/external/adapters/tools/discover.js';
 import { decide, type Level, OPERATION_CLASSES } from '../src/external/domain/decide.js';
 import type { Grant } from '../src/external/domain/grant.js';
-import { CHAT_TOOLS, type ExternalTool, TOOL_ACCESS } from '../src/external/domain/tools.js';
+import { ALSO_LISTED, CHAT_TOOLS, type ExternalTool, TOOL_ACCESS } from '../src/external/domain/tools.js';
 import { launchExternal } from '../src/external/launch.js';
 import { needExternal } from '../src/external/registry.js';
 import { ExternalService } from '../src/external/service.js';
@@ -42,7 +42,7 @@ const REAL_QUERIES: ReadonlyArray<readonly string[]> = [
 ];
 
 describe('what a client lists', () => {
-  it('over a real MCP client on the real tools: 14, the chat tools and find and call', async () => {
+  it('over a real MCP client on the real tools: 20, the chat tools, the board bookkeeping, and find and call', async () => {
     const home = mkdtempSync(path.join(os.tmpdir(), 'external-list-'));
     const before = { ...process.env };
     process.env.BELUGA_HOME = home;
@@ -56,8 +56,16 @@ describe('what a client lists', () => {
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(service.status().url!), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
       const { tools } = await client.listTools();
-      expect(tools.map((t) => t.name).sort()).toEqual([...CHAT_TOOLS, 'beluga_find', 'beluga_call'].sort());
-      expect(tools).toHaveLength(14);
+      expect(tools.map((t) => t.name).sort()).toEqual([...CHAT_TOOLS, ...ALSO_LISTED, 'beluga_find', 'beluga_call'].sort());
+      expect(tools).toHaveLength(20);
+      // Beluga's words for things, so a search names the action and the right noun.
+      expect(tools.find((t) => t.name === 'beluga_find')?.description).toMatch(/watcher.*sentinel/i);
+      // A listed tool is not found again: find only searches what the list leaves out.
+      const listedHit = JSON.parse(((await client.callTool({ name: 'beluga_find', arguments: { query: 'update a task status', limit: 20 } })) as { content: Array<{ text: string }> }).content[0]!.text) as { tools: Array<{ name: string }> };
+      expect(listedHit.tools.map((t) => t.name)).not.toContain('task_update');
+      // The capabilities name the listed tools too.
+      const caps = JSON.parse(((await client.callTool({ name: 'beluga_capabilities', arguments: {} })) as { content: Array<{ text: string }> }).content[0]!.text) as { tools: string[] };
+      expect(caps.tools).toEqual(expect.arrayContaining([...ALSO_LISTED]));
       expect(client.getInstructions()).toContain('beluga_find');
       // Through find and call, a tool that is not listed is there.
       const found = JSON.parse(((await client.callTool({ name: 'beluga_find', arguments: { query: 'git log' } })) as { content: Array<{ text: string }> }).content[0]!.text) as { tools: Array<{ name: string; inputSchema: { properties: object } }> };

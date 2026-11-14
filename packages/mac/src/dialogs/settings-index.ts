@@ -328,6 +328,8 @@ export const SETTINGS: readonly Entry[] = [
 
   // Experimental: one group per experiment, its switch the row (made from shared/experiments.ts).
   ...EXPERIMENTS.flatMap((id) => rows('experimental', EXPERIMENT_INFO[id].title, [[EXPERIMENT_INFO[id].title, EXPERIMENT_INFO[id].summary, `${id} experimental early ${EXPERIMENT_INFO[id].keywords}`]])),
+  // Semantic tool search, once on: how far it is, and Remove.
+  ...rows('experimental', EXPERIMENT_INFO.toolSearch.title, [['Status', 'How far getting ready is, and Remove.', 'progress download ready remove delete']]),
 
   // About
   ...rows('about', undefined, [

@@ -1,7 +1,7 @@
 import type { Session } from '../core/session.js';
 import type { PairingSpec } from '../external/domain/oauth.js';
 import { FULL_REACH, STANDALONE_CHATS, defaultLevel } from '../external/domain/grant.js';
-import { needExternal } from '../external/registry.js';
+import { needExternal, toolSearchStatus } from '../external/registry.js';
 import type { Args, Method } from './api.js';
 
 /** What each `external.*` method does (see external-api.ts). */
@@ -21,6 +21,7 @@ export const EXTERNAL_HANDLERS = {
   'external.stopAgent': (s, id) => needExternal(s).stopAgent(id),
   'external.stopAll': (s) => needExternal(s).stopAll(),
   'external.setPaused': (s, paused) => needExternal(s).setPaused(paused),
+  'external.toolSearch': (s) => toolSearchStatus(s),
   'external.activity': (s, filter) => needExternal(s).activity(filter ? { ...(filter.agent ? { agent: filter.agent } : {}), ...(filter.kind ? { kind: filter.kind } : {}), ...(filter.limit ? { limit: filter.limit } : {}) } : {}),
 } satisfies ExternalHandlers;
 

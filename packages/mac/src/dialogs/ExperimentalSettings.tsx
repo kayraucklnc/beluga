@@ -1,5 +1,7 @@
 import { EXPERIMENTS, EXPERIMENT_INFO, type Experiment, experimentOn, withExperiment } from '@beluga/shared/experiments.js';
+import { useEffect, useState } from 'react';
 import { Icon } from '../components/Icon.js';
+import { Button } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { Group, Row, Switch } from './settings-controls.js';
 import s from './settings.module.css';
@@ -31,6 +33,7 @@ export function ExperimentalSettings() {
             <Row label={info.title} detail={info.summary}>
               <Switch label={info.title} on={on} onChange={(v) => set(id, v)} />
             </Row>
+            {id === 'toolSearch' && on ? <ToolSearchStatus onRemove={() => set(id, false)} /> : null}
             <div className={x.about}>
               <div className={x.heading}>What changes</div>
               <ul className={x.changes}>
@@ -46,5 +49,55 @@ export function ExperimentalSettings() {
       })}
       <p className={s.note}>Something not right in an experiment? Report a Problem, in About, tells us.</p>
     </>
+  );
+}
+
+interface ToolSearch {
+  readonly state: 'idle' | 'preparing' | 'ready' | 'failed';
+  readonly progress?: { readonly done: number; readonly total: number };
+  readonly error?: string;
+}
+
+const mb = (bytes: number): string => `${Math.round(bytes / 1e6)} MB`;
+
+/** Semantic tool search, once on: how far getting ready is, or that it is ready, and Remove (turns it off; the daemon deletes the files). */
+function ToolSearchStatus({ onRemove }: { onRemove: () => void }) {
+  const api = useApi();
+  const [status, setStatus] = useState<ToolSearch>({ state: 'preparing' });
+  useEffect(() => {
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = (): void =>
+      void api.external.toolSearch().then(
+        (v) => {
+          if (!live) return;
+          const next = v as ToolSearch;
+          setStatus(next);
+          if (next.state === 'preparing' || next.state === 'idle') timer = setTimeout(poll, 1000);
+        },
+        () => undefined,
+      );
+    poll();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [api]);
+  const { progress } = status;
+  const text =
+    status.state === 'ready'
+      ? 'Ready. beluga_find ranks tools by meaning.'
+      : status.state === 'failed'
+        ? `Couldn’t get ready: ${status.error ?? 'unknown error'}. beluga_find keeps its built-in search. Turn it off and on to try again.`
+        : progress && progress.done < progress.total
+          ? `Downloading: ${mb(progress.done)} of ${mb(progress.total)}`
+          : 'Getting ready: reading Beluga’s tools once. This takes a minute or two.';
+  return (
+    <Row label="Status" detail={text}>
+      {status.state === 'preparing' && progress ? <progress className={x.progress} max={progress.total} value={progress.done} aria-label="Download progress" /> : null}
+      <Button tone="error" onClick={onRemove}>
+        Remove
+      </Button>
+    </Row>
   );
 }

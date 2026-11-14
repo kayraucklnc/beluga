@@ -4,7 +4,7 @@
  * that explains each one). Browser-safe: data only.
  */
 
-export const EXPERIMENTS = ['previews'] as const;
+export const EXPERIMENTS = ['previews', 'toolSearch'] as const;
 export type Experiment = (typeof EXPERIMENTS)[number];
 
 export interface ExperimentInfo {
@@ -34,6 +34,19 @@ export const EXPERIMENT_INFO: Readonly<Record<Experiment, ExperimentInfo>> = {
     ],
     keywords: 'preview component react render storybook page html props live',
     cost: 'Each preview is built on this computer when it scrolls into view, which takes a moment of CPU and some memory. Beluga lets it go when you look away, and while this is off nothing of it runs at all.',
+  },
+  toolSearch: {
+    id: 'toolSearch',
+    title: 'Semantic tool search',
+    summary: 'Agents outside Beluga find its tools by what they mean, not only by the words they share: “get rid of that watcher” finds the tool that removes a sentinel.',
+    changes: [
+      'beluga_find, the search that agents outside Beluga use to reach most of its tools, ranks them with a small embedding model (bge-small) instead of only matching words. It helps most with agents that search in their own words, such as local models.',
+      'Beluga’s own agents don’t change: they get their tools from their harness.',
+      'Until it’s ready, and if anything fails, beluga_find keeps its built-in search and says why once.',
+      'An agent can’t turn this on by itself: a change of settings asks you first.',
+    ],
+    keywords: 'tool search semantic embeddings beluga_find external agents mcp ratel local model ollama',
+    cost: 'Turning it on downloads about 4 MB of packages (Ratel’s SDK, from npm) and a 134 MB model (from Hugging Face), each checked against a fingerprint built into Beluga, into ~/.beluga/tool-search. Getting ready then takes a minute or two of CPU once; later starts take about a second. Searches run on this computer, and nothing about them leaves it. Turning it off deletes the folder.',
   },
 };
 

@@ -514,6 +514,14 @@ export const GATED_TOOLS = [
   'gateway_image',
 ] as const;
 
+/**
+ * Hidden tools that a client lists anyway (BLG-376): the board bookkeeping that Beluga's own agents do
+ * without being asked (core/board/prompt.ts, core/plans/prompt.ts). An agent that does not know such a
+ * tool exists searches the subject ('BLG-797 friends brief') and not the action (task_update), and no
+ * ranker finds it then. At most 6, so tools/list stays small.
+ */
+export const ALSO_LISTED = ['task_list', 'task_get', 'task_update', 'task_brief_edit', 'task_note', 'task_attach_proof'] as const satisfies readonly (typeof STATE_TOOLS)[number][];
+
 /** Find a tool that is not listed, and call it: the call itself has the named tool's class. */
 export const DISCOVERY_TOOLS = ['beluga_find', 'beluga_call'] as const;
 

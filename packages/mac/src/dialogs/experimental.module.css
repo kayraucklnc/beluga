@@ -41,3 +41,8 @@
   margin: 0;
   line-height: 1.5;
 }
+.progress {
+  width: 120px;
+  margin-right: 8px;
+  accent-color: var(--accent);
+}

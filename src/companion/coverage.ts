@@ -740,6 +740,7 @@ export const PHONE: Record<Method, Side> = {
   'external.stopAgent': 'phone',
   'external.stopAll': 'phone',
   'external.setPaused': 'mac',
+  'external.toolSearch': 'mac',
   'external.activity': 'phone',
 };
 

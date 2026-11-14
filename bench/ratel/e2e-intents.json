@@ -1,0 +1,22 @@
+[
+ {"q": "Archive the worktree blg-12-login in the beluga project.", "gold": ["archive_worktree"], "kind": "kw"},
+ {"q": "Pause my sentinel called Morning brief.", "gold": ["sentinel_pause", "sentinel_set_paused"], "kind": "kw"},
+ {"q": "Leave a note on task BLG-40 saying the fix is on staging.", "gold": ["task_note"], "kind": "kw"},
+ {"q": "Show me the CI log for the latest failed run in beluga.", "gold": ["ci_log", "ci_runs"], "kind": "kw"},
+ {"q": "Take a screenshot of my phone.", "gold": ["phone_screenshot"], "kind": "kw"},
+ {"q": "Add a tile for the signups metric to my Growth dashboard.", "gold": ["dashboard_add_tile"], "kind": "kw"},
+ {"q": "Invite a friend: their code is mia-7Q2.", "gold": ["friend_invite"], "kind": "kw"},
+ {"q": "Rename the chat 'untitled' to 'Login bug'.", "gold": ["chat_rename"], "kind": "kw"},
+ {"q": "Turn GitHub issue #88 in beluga into a task.", "gold": ["issue_to_task"], "kind": "kw"},
+ {"q": "Read src/cli.ts in the beluga project.", "gold": ["file_read"], "kind": "kw"},
+ {"q": "Kill the dev server I started in worktree blg-12-login.", "gold": ["worktree_stop_run"], "kind": "para"},
+ {"q": "Get rid of that watcher that checks flyingpapers.com, I don't need it anymore.", "gold": ["sentinel_remove"], "kind": "para"},
+ {"q": "Press back on my Android.", "gold": ["phone_key"], "kind": "para"},
+ {"q": "Unfriend Ali.", "gold": ["friend_remove"], "kind": "para"},
+ {"q": "What did reviewers say on the pull request for worktree blg-12-login?", "gold": ["pr_conversation"], "kind": "para"},
+ {"q": "How much disk are my worktrees eating?", "gold": ["workbench_measure_disk", "worktree_free_space"], "kind": "para"},
+ {"q": "Mark BLG-40 as blocked by BLG-41.", "gold": ["task_relate"], "kind": "para"},
+ {"q": "Hang up the call I'm in.", "gold": ["calls_leave"], "kind": "para"},
+ {"q": "Check that the database connection string in flyingpapers works.", "gold": ["env_test_database"], "kind": "para"},
+ {"q": "Branch this conversation into a copy so I can try another idea.", "gold": ["chat_fork"], "kind": "para"}
+]

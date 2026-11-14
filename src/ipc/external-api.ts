@@ -31,5 +31,7 @@ export const EXTERNAL_API = {
   // Refuse every agent and keep the grants; the choice survives restarts. → the status.
   'external.setPaused': { args: z.tuple([z.boolean()]) },
   // What agents did and who decided, newest first. → records with kind allowed, asked or refused.
+  // Semantic tool search (Settings › Experimental, turned on in prefs): → { state: idle | preparing | ready | failed, progress?: { done, total } bytes, error? }.
+  'external.toolSearch': { args: z.tuple([]) },
   'external.activity': { args: z.tuple([z.object({ agent: z.string().min(1).max(40).optional(), kind: z.enum(['allowed', 'asked', 'refused']).optional(), limit: z.number().int().min(1).max(500).optional() }).optional()]) },
 } as const;
