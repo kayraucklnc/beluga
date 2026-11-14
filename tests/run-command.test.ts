@@ -13,9 +13,25 @@ describe('runnableCommand', () => {
   it('never runs code that is not a shell', () => {
     expect(runnableCommand('ts', 'console.log(1)')).toBeUndefined();
     expect(runnableCommand('python', 'print(1)')).toBeUndefined();
-    expect(runnableCommand(undefined, 'ls')).toBeUndefined();
-    expect(runnableCommand('', 'ls')).toBeUndefined();
-    expect(runnableCommand('text', 'ls')).toBeUndefined();
+    expect(runnableCommand('ts', 'npm install')).toBeUndefined();
+  });
+
+  it('runs a block with no language when every line reads as a command (Claude often leaves it off)', () => {
+    expect(runnableCommand(undefined, 'npm install\nnpm run dev')).toBe('npm install\nnpm run dev');
+    expect(runnableCommand('', 'brew install gh')).toBe('brew install gh');
+    expect(runnableCommand('text', 'cd packages/mac && npm run app:dev')).toBe('cd packages/mac && npm run app:dev');
+    expect(runnableCommand(undefined, './scripts/setup.sh --fast')).toBe('./scripts/setup.sh --fast');
+    expect(runnableCommand(undefined, 'docker run \\\n  -p 80:80 nginx')).toBe('docker run \\\n  -p 80:80 nginx');
+    expect(runnableCommand(undefined, '$ git status')).toBe('git status');
+  });
+
+  it('leaves a block with no language alone when it reads as prose, config or code', () => {
+    expect(runnableCommand(undefined, 'Hello there')).toBeUndefined();
+    expect(runnableCommand(undefined, 'PORT=3000\nHOST=localhost')).toBeUndefined();
+    expect(runnableCommand('', 'npm install\nthen open the app')).toBeUndefined();
+    expect(runnableCommand('text', 'const x = 1;')).toBeUndefined();
+    expect(runnableCommand(undefined, 'git')).toBe('git');
+    expect(runnableCommand(undefined, 'gitignore entries')).toBeUndefined();
   });
 
   it('takes the prompts off when every command has one', () => {

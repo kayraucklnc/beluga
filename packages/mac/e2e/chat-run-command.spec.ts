@@ -24,6 +24,26 @@ async function sendBlock(page: Page, lang: string, body: string): Promise<void> 
   await composer(page).press('Enter');
 }
 
+test('Claude says to paste a command in your terminal: Run on its block runs it there instead', async ({ page }) => {
+  await openWorkspace(page);
+  await composer(page).fill('How do I check my Node version?');
+  await composer(page).press('Enter');
+  // Claude's answer (the demo's): "Paste this in your terminal…" and a bash block.
+  await expect(page.getByText('Paste this in your terminal')).toBeVisible({ timeout: 20_000 });
+  const block = page.locator('pre', { hasText: 'node --version' }).last().locator('..');
+  await block.hover({ position: { x: 8, y: 8 } });
+  const run = block.locator('..').getByRole('button', { name: 'Run in the terminal' }).last();
+  await expect(run).toBeVisible();
+  await run.hover();
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: shot('04-run-on-claudes-answer') });
+  await run.click();
+  const term = page.getByRole('complementary', { name: 'Panel' }).getByRole('region', { name: 'Terminal' });
+  await expect(term).toBeVisible();
+  await expect.poll(() => termText(term), { timeout: 15_000 }).toMatch(/v\d+\.\d+\.\d+/);
+  await page.screenshot({ path: shot('05-ran-claudes-command') });
+});
+
 test('Run on a shell block opens the terminal in the right panel and runs it there', async ({ page }) => {
   await openWorkspace(page);
   await sendBlock(page, 'bash', '# a note, left out\necho run-$((6*7))');
