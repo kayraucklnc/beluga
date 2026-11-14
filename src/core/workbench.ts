@@ -1594,12 +1594,12 @@ export class Workbench {
     const sources = project ? [project.root, ...project.workspaces.filter((w) => w.id !== wsId && !w.pending && setups[w.id]?.status !== 'running').map((w) => w.path)] : [];
     const session = this.openSession(setupId(wsId), ws, clonedSetup(command, ws.path, sources) ?? command);
     if (!session) return;
+    // Quiet while it runs (the command is in its Terminal tab): one short toast when it's done.
     this.deps.store.dispatch({ type: 'setup', id: wsId, run: { status: 'running', command } });
-    this.deps.toast(`Setting up ${ws.name}: ${command}`);
     this.watchExit(setupId(wsId), session, (code) => {
       if (code === 0) {
         this.deps.store.dispatch({ type: 'setup', id: wsId, run: { status: 'done', command } });
-        this.deps.toast(`${ws.name} is set up`, 'success');
+        this.deps.toast(`${project?.name ?? ws.name}'s worktree is set up`, 'success');
         return;
       }
       if (learn && this.deps.fixSetup) return void this.retrySetup(ws, command, code, session.backlog(), session.exited?.signal);
