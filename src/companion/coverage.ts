@@ -681,6 +681,8 @@ export const PHONE: Record<Method, Side> = {
   'sentinel.moveReceive': 'mac',
   'sentinel.moveLand': 'mac',
   'sentinel.moveDrop': 'mac',
+  // A chat's schedules (BLG-399): the Info panel on the Mac, the conversation sheet on the phone (BLG-401).
+  'sentinel.forChat': 'phone',
   'sentinel.runs': 'phone',
   'sentinel.runGet': 'phone',
   'sentinel.decide': 'phone',

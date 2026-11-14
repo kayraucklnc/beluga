@@ -31,6 +31,8 @@ export type TaskDraftResult = z.infer<typeof TaskDraftResult>;
 /** What `put` answers: a piece taken, then the file's ref. */
 /** A sentinel's run as the phone reads it (src/core/sentinel/model.ts RunSummary; more fields pass through). */
 export const SentinelRunResult = z.object({ id: z.string(), sentinelId: z.string(), state: z.string(), startedAt: z.number(), headline: z.string() }).passthrough();
+/** One of a chat's schedules (BLG-399): the phone's conversation sheet lists them (BLG-401). */
+export const ChatScheduleResult = z.object({ id: z.string(), name: z.string(), paused: z.boolean(), prompt: z.string(), running: z.boolean(), nextAt: z.number().optional() }).passthrough();
 export const PutResult =z.union([z.object({ received: z.number().int().min(0) }), z.object({ ref: z.string() })]);
 
 export const PhoneCalls = {
@@ -193,6 +195,7 @@ export const PhoneCalls = {
   // report, and Merge / Not Now on a run waiting for you.
   'sentinel.run': entry('sentinel.run', SentinelRunResult),
   'sentinel.pause': entry('sentinel.pause', done),
+  'sentinel.forChat': entry('sentinel.forChat', z.array(ChatScheduleResult)),
   'sentinel.runs': entry('sentinel.runs', z.array(SentinelRunResult)),
   'sentinel.runGet': entry('sentinel.runGet', z.object({ run: SentinelRunResult, sentinel: z.object({ id: z.string(), name: z.string() }).optional(), report: z.string().optional() }).passthrough()),
   'sentinel.decide': entry('sentinel.decide', SentinelRunResult),

@@ -417,6 +417,7 @@ export const MACHINE: Record<Method, MachineSide> = {
   'sentinel.moveReceive': 'drive',
   'sentinel.moveLand': 'drive',
   'sentinel.moveDrop': 'drive',
+  'sentinel.forChat': 'drive',
   'sentinel.runs': 'drive',
   'sentinel.runDelete': 'drive',
   'sentinel.runGet': 'drive',
