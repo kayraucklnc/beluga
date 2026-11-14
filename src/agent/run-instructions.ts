@@ -1,7 +1,7 @@
 import os from 'node:os';
 import type { AgentRef } from '../protocol.js';
 import { buildGraphAppend } from './graph-prompt.js';
-import { type ShellSetup, buildAskOnlyAppend, buildChatSendAppend, buildCommitAppend, buildKeepAppend, buildScratchAppend, buildShellAppend, buildShippedAppend, buildSystemAppend, loginShellSetup } from './prompt.js';
+import { type ShellSetup, buildAskOnlyAppend, buildChatSendAppend, buildChatVarsAppend, buildCommitAppend, buildKeepAppend, buildScratchAppend, buildShellAppend, buildShippedAppend, buildSystemAppend, loginShellSetup } from './prompt.js';
 import { buildSyncMainAppend } from './sync-main.js';
 import { buildTerminalAppend } from './terminal-prompt.js';
 import type { AgentRunInput } from './types.js';
@@ -45,6 +45,7 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
     (input.dialogue?.brief ?? '') +
     (input.setup && !askOnly ? input.setup.brief : '') +
     (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') +
+    (input.chatVars?.length ? buildChatVarsAppend(input.chatVars) : '') +
     // On zsh, how to write commands for it: the Claude runner says whether zsh-compat.sh is in (runtime/claude/zsh-compat.ts).
     buildShellAppend(shell) +
     (worktree ? buildKeepAppend(agent) : '') +

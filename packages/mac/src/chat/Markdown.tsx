@@ -18,6 +18,8 @@ import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { MentionPill } from './Mention.js';
+import { KEY_LINK, knownKeyNames, linkKeyRefs } from './key-refs.js';
+import kp from './key-paste.module.css';
 import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
 import { keepBlankLines } from './typed-lines.js';
@@ -264,10 +266,18 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
   const worktrees = useApp((st) => (tasks ? worktreeIds(st.projects) : ''));
   // Paths relative to a worktree link only where there's one on screen to open them in.
   const inWorktree = useApp((st) => paths && st.view.kind === 'workspace');
+  // `$NAME` this chat keeps (a key kept out of the chat, BLG-965): a key chip, as in the box.
+  const keyNames = useApp((st) => {
+    if (!text.includes('$')) return '';
+    const wsId = st.view.kind === 'workspace' ? st.view.id : undefined;
+    const project = wsId ? st.projects.find((p) => p.workspaces.some((w) => w.id === wsId)) : undefined;
+    return knownKeyNames(st.envKeys, wsId, project?.root).join(' ');
+  });
   // A chat named by its ref ("<owner>/<channel>", or a mention a line's code kept from being a pill) is its chip.
   const source = useMemo(() => {
     // Math first (prices stay words), then set aside so the links below leave it alone.
-    const math = guardMath(prepareMath(typed ? keepBlankLines(text) : text));
+    const keyed = keyNames ? linkKeyRefs(text, new Set(keyNames.split(' '))) : text;
+    const math = guardMath(prepareMath(typed ? keepBlankLines(keyed) : keyed));
     // A pasted worktree link in ticks first (its chip), then mentions, chats, paths and task keys: each leaves the code and links before it alone.
     const known = new Set(worktrees.split(' '));
     const withRefs = worktrees ? codeWorktreeRefs(math.text, (id) => known.has(id)) : math.text;
@@ -276,7 +286,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
     const withPaths = paths ? linkPaths(withChats, { relative: inWorktree }) : withChats;
     const board = new Set(keys.split(' '));
     return math.restore(keys ? linkTaskKeys(withPaths, (k) => board.has(k)) : withPaths);
-  }, [text, keys, worktrees, mentions, paths, inWorktree, typed]);
+  }, [text, keys, worktrees, mentions, paths, inWorktree, typed, keyNames]);
   // Every local image in the message, so the lightbox steps from one to the next.
   const images = useMemo(() => (localImages ? messageImages(text) : []), [text, localImages]);
   // The same renderers from one render to the next: a new one would remount what it drew (a graph
@@ -299,6 +309,14 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       if (mention) return <MentionPill mention={mention} />;
       // A bare task key (shared/task-refs.ts linkTaskKeys): the board's small chip.
       if (href.startsWith(TASK_LINK_SCHEME)) return <TaskKeyChip taskKey={href.slice(TASK_LINK_SCHEME.length)} />;
+      // A key this chat keeps: its chip (the words say $NAME; the agent has the key in its environment).
+      if (href.startsWith(KEY_LINK))
+        return (
+          <span className={kp.ref} data-key-ref={href.slice(KEY_LINK.length)} title="A key kept for this chat: its name went, never the key">
+            <Icon name="key" size={10} />
+            {href.slice(KEY_LINK.length)}
+          </span>
+        );
       // An image in the words: the chip the message box showed, a link that opens it full size.
       const image = parseAttachmentHref(href);
       if (image) {
