@@ -47,6 +47,9 @@ describe('forking a friend’s worktree to your Mac', () => {
     mkdirSync(path.join(theirs.path, '.beluga', 'scratch'), { recursive: true });
     writeFileSync(path.join(theirs.path, '.beluga', 'scratch', '01-notes.md'), 'what I found\n');
     const head = git(theirs.path, 'rev-parse', 'HEAD');
+    // The new .env key reaches this worktree's .env.example (BLG-925) on ata's own env check, which
+    // otherwise lands 1.5 s after a refresh, mid-fork: done now, so "as it was" means before the fork.
+    await ata.session.workspaces!.checkEnv(project.id);
     const statusBefore = git(theirs.path, 'status', '--porcelain');
     ata.session.workspaces!.manager.rememberSession(theirs.id, 'sess-fork-1');
     const sessions = path.join(claude, 'projects', encodeProjectDir(theirs.path));

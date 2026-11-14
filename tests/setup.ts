@@ -33,7 +33,9 @@ if (process.platform === 'win32') process.env.USERPROFILE = home;
 // anything else reading XDG) the test home's own, empty, config.
 process.env.XDG_CONFIG_HOME = path.join(home, '.config');
 process.env.GIT_CONFIG_GLOBAL = path.join(home, '.gitconfig');
-writeFileSync(process.env.GIT_CONFIG_GLOBAL, '');
+// The tests read files byte for byte: without this, Git for Windows' own config (autocrlf=true)
+// checks every file out with CRLF. Harmless elsewhere, where it's already off.
+writeFileSync(process.env.GIT_CONFIG_GLOBAL, '[core]\n\tautocrlf = false\n');
 process.env.BELUGA_HOME = made('beluga-home');
 // Nor the old name, for a test that clears BELUGA_HOME (an inherited KLAUD_HOME is real data).
 delete process.env.KLAUD_HOME;
