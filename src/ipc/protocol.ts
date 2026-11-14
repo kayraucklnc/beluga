@@ -53,7 +53,9 @@ export const ClientFrame = z.discriminatedUnion('t', [
     attention: z.object({ shown: z.array(z.string().max(200)).max(50), visible: z.array(z.string().max(200)).max(50), files: z.boolean(), front: z.boolean().optional() }),
   }),
   z.object({ t: z.literal('cap_result'), id, ok: z.boolean(), value: z.unknown().optional(), error: z.string().max(2000).optional() }),
-  z.object({ t: z.literal('term_attach'), term }),
+  // `flow` (BLG-963): this screen answers with `term_ack` as it draws, and the program waits while it's far behind.
+  z.object({ t: z.literal('term_attach'), term, flow: z.boolean().optional() }),
+  z.object({ t: z.literal('term_ack'), term, chars: z.number().int().min(0).max(1_000_000_000) }),
   z.object({ t: z.literal('term_detach'), term }),
   z.object({ t: z.literal('term_input'), term, data: z.string().max(1_000_000), reply: z.boolean().optional() }),
   z.object({ t: z.literal('term_resize'), term, cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(500) }),
