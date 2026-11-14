@@ -30,6 +30,9 @@ export const TaskDraftResult = OneDraft.extend({ more: z.array(OneDraft).optiona
 export type TaskDraftResult = z.infer<typeof TaskDraftResult>;
 /** What `put` answers: a piece taken, then the file's ref. */
 /** A sentinel's run as the phone reads it (src/core/sentinel/model.ts RunSummary; more fields pass through). */
+/** 1.57: one plan of a chat (plans.ofHome; src/core/plans/work.ts HomePlan). */
+export const HomePlanResult = z.object({ id: z.string(), title: z.string(), status: z.string(), createdAt: z.number(), closedAt: z.number().optional(), current: z.boolean() });
+
 export const SentinelRunResult = z.object({ id: z.string(), sentinelId: z.string(), state: z.string(), startedAt: z.number(), headline: z.string() }).passthrough();
 export const PutResult =z.union([z.object({ received: z.number().int().min(0) }), z.object({ ref: z.string() })]);
 
@@ -139,6 +142,9 @@ export const PhoneCalls = {
   'plans.discard': entry('plans.discard', done),
   'plans.fixReview': entry('plans.fixReview', done),
   'plans.verify': entry('plans.verify', done),
+  // 1.57: close a chat's plan, and list a chat's plans (newest first).
+  'plans.close': entry('plans.close', done),
+  'plans.ofHome': entry('plans.ofHome', z.array(HomePlanResult)),
   'plans.pass': entry('plans.pass', done),
   'plans.recheck': entry('plans.recheck', done),
   'plans.sendBack': entry('plans.sendBack', done),

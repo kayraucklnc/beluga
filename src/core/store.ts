@@ -366,6 +366,8 @@ export interface Prefs {
   readonly prOnReview: boolean;
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder (watched live in the Mac app). */
   readonly scratchFolder: boolean;
+  /** A project chat's agent can turn the conversation into a plan of the chat's own, and close it (plan_open, plan_close). Off by default. */
+  readonly chatPlans: boolean;
   /** Experimental features that are on (shared/experiments.ts), off until you turn each on. */
   readonly experiments: readonly string[];
   readonly subagents: Settings['subagents'];
@@ -807,6 +809,7 @@ export const DEFAULT_PREFS: Prefs = {
   fetchEvery: FETCH_EVERY_DEFAULT,
   prOnReview: false,
   scratchFolder: true,
+  chatPlans: false,
   experiments: [],
   subagents: 'full',
   hiddenButtons: [],

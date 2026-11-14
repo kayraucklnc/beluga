@@ -60,6 +60,10 @@ export const PLANS_API = {
   // The plan's autonomy, or one milestone's.
   'plans.setAutonomy': { args: z.tuple([id, autonomy, ref.optional()]) },
   'plans.setPaused': { args: z.tuple([id, z.boolean()]) },
+  // Close a plan: kept, read-only; its chat can open a new one (chatPlans).
+  'plans.close': { args: z.tuple([id]) },
+  // Every plan of a chat (its channel), closed and done ones too, newest first.
+  'plans.ofHome': { args: z.tuple([z.string().min(1).max(200)]) },
   'plans.setParallel': { args: z.tuple([id, z.number().int().min(1).max(MAX_PARALLEL)]) },
   // When the e2e and full suites run: once per milestone (at its check), or only in the final step.
   'plans.setTestsAt': { args: z.tuple([id, z.enum(TESTS_AT)]) },

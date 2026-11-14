@@ -18,15 +18,16 @@ export interface PlanOwner {
 /**
  * Plans that show in the sidebar as one row: being written, running, or every milestone passed
  * with its branch not in main yet (its pull request still to open or merge): it goes once it ships.
+ * Never a closed one.
  */
-export const isLivePlan = (plan: Plan): boolean => plan.status !== 'done' || (Boolean(plan.branch) && !plan.shipped && plan.pr?.state !== 'MERGED');
+export const isLivePlan = (plan: Plan): boolean => !plan.closedAt && (plan.status !== 'done' || (Boolean(plan.branch) && !plan.shipped && plan.pr?.state !== 'MERGED'));
 
 /** Every worktree that belongs to a running plan (workspace id → its plan's id). */
 export function planWorktrees(plans: PlansState, board: BoardState): ReadonlyMap<string, string> {
   const out = new Map<string, string>();
   const issues = new Map(board.issues.map((i) => [i.id, i]));
   for (const plan of plans.plans) {
-    if (plan.status !== 'active') continue;
+    if (plan.status !== 'active' || plan.closedAt) continue;
     for (const { task } of allTasks(plan.body)) {
       const issue = task.issueId ? issues.get(task.issueId) : undefined;
       if (!issue || issue.status === 'canceled') continue;
@@ -39,7 +40,7 @@ export function planWorktrees(plans: PlansState, board: BoardState): ReadonlyMap
 /** The running plan a worktree does a task of, if any. */
 export function planOwnerOf(plans: PlansState, board: BoardState, workspaceId: string): PlanOwner | undefined {
   for (const plan of plans.plans) {
-    if (plan.status !== 'active') continue;
+    if (plan.status !== 'active' || plan.closedAt) continue;
     for (const { task, milestone } of allTasks(plan.body)) {
       const issue = task.issueId ? board.issues.find((i) => i.id === task.issueId) : undefined;
       if (issue && issue.status !== 'canceled' && issue.worktrees.includes(workspaceId)) return { plan, task, milestone, issue };

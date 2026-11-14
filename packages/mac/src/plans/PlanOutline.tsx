@@ -5,6 +5,7 @@ import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
+import { useReadOnly } from './read-only.js';
 import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel, milestoneRows, taskWords } from './plans-model.js';
 import { TaskChatMark, TaskStateIcon } from './marks.js';
 import { openDecision } from './plan-ask-model.js';
@@ -56,6 +57,7 @@ function Milestone({ view, plan, m, keys, marks, selected, onSelect, startable }
   const { api, act, openWorktree } = usePlanActions();
   const edit = (ops: PlanOp[]): void => void act(() => api.edit(plan.id, ops));
   const info = MILESTONE_STATE[m.state];
+  const readOnly = useReadOnly();
   const checker = useCheckerChat(m);
   const menu: ActionItem[] = [
     ...(checker ? [{ label: m.state === 'checking' ? 'Watch the Check' : 'Open the Check', onSelect: () => openWorktree(checker) }] : []),
@@ -74,9 +76,11 @@ function Milestone({ view, plan, m, keys, marks, selected, onSelect, startable }
         <span className={p.msCount}>
           {m.state === 'draft' ? `${m.milestone.tasks.length} tasks` : `${m.finished}/${m.total}`}
         </span>
-        <ActionsDropdown items={menu}>
-          <IconButton icon="more" label={`${m.milestone.title} Options`} />
-        </ActionsDropdown>
+        {readOnly ? null : (
+          <ActionsDropdown items={menu}>
+            <IconButton icon="more" label={`${m.milestone.title} Options`} />
+          </ActionsDropdown>
+        )}
       </header>
       {m.milestone.goal ? <p className={p.oGoal}>{m.milestone.goal}</p> : null}
       <ul className={p.oTasks}>
@@ -124,8 +128,10 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
     { label: t.task.assignee === 'me' ? 'Give It to the Agent' : 'I’ll Do It Myself', onSelect: () => edit([{ op: 'update_task', id: t.task.id, patch: { assignee: t.task.assignee === 'me' ? 'claude' : 'me' } }]) },
     { label: 'Take Out of the Plan', danger: true, separate: true, onSelect: () => edit([{ op: 'remove_task', id: t.task.id }]) },
   ];
+  const readOnly = useReadOnly();
+  const opens = (): ActionItem[] => [...(t.worktree ? [{ label: 'Open Worktree', onSelect: () => openWorktree(t.worktree!) }] : []), ...(t.issue ? [{ label: 'Open Task', onSelect: () => openTask(t.issue!.id) }] : [])];
   return (
-    <ActionsContext items={menu}>
+    <ActionsContext items={readOnly ? opens : menu}>
       <li className={cx(p.oTask, selected && p.oTaskSelected, p[`task_${t.state}`])}>
         <div role="button" tabIndex={0} className={p.oTaskMain} onClick={onSelect} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onSelect())} aria-label={`${t.task.title}, ${info.label}`}>
           <TaskStateIcon state={t.state} />
@@ -157,6 +163,8 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
 function Rename({ value, onDone, className, label }: { value: string; onDone: (next: string) => void; className?: string; label: string }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
+  const readOnly = useReadOnly();
+  if (readOnly) return <span className={className}>{value}</span>;
   if (!editing) {
     return (
       <span

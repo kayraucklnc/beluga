@@ -69,6 +69,8 @@ export const calls = {
   createPlan: (project: string, goal: string): Call => make('plans.create', [{ projectId: project, goal }], `Plan "${short(goal)}"`),
   /** How a plan runs (1.5): Step by Step, Check-ins or Autopilot. */
   setAutonomy: (plan: string, autonomy: 'step' | 'gated' | 'autopilot', label: string): Call => make('plans.setAutonomy', [plan, autonomy], `Run as ${label}`),
+  /** 1.57: a chat's plans, newest first (its current one, then the closed or done ones). */
+  plansOfHome: (topic: Topic): Call => make('plans.ofHome', [channelOf(topic)], 'The chat’s plans'),
   /** 1.32 (BLG-446): a model of this conversation's runtime, or another runtime's agent (null: your default again). */
   setModel: (topic: Topic, value: string, label: string): Call => make('workbench.setModel', [channelOf(topic), value], `Use ${label}`),
   setAgent: (topic: Topic, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('workbench.setAgent', [channelOf(topic), agent], `Use ${label}`),

@@ -125,6 +125,7 @@ export const PrefsPatch = z
     fetchEvery: z.union([z.literal(0), z.number().int().min(FETCH_EVERY_MIN).max(FETCH_EVERY_MAX)]),
     prOnReview: bool,
     scratchFolder: bool,
+    chatPlans: bool,
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),
     friendWorktrees: z.enum(['ask', 'off']),

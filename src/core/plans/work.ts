@@ -14,14 +14,14 @@ import { coherenceWarnings, warningsText } from './coherence.js';
 import { DraftReviewer } from './draft-review.js';
 import { dropEpics, syncEpics } from './epics.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
-import { type Autonomy, type Plan, type TestsAt, activeDecisions, allTasks, checkerOf, planForHome, planTaskOfIssue, planTitle, reviewerOf } from './model.js';
+import { type Autonomy, type Plan, type TestsAt, activeDecisions, allTasks, checkerOf, planForHome, planTaskOfIssue, planTitle, plansOfHome, reviewerOf } from './model.js';
 import { PlanMover } from './move-work.js';
 import { issueForWorkspace } from '../board/model.js';
 import { type PilotDeps, PlanPilot } from './pilot.js';
 import { liveFrom } from './progress.js';
 import { type PlanGit, planGitOf } from './plan-git.js';
 import { type Plans, UNTITLED } from './plans.js';
-import { checkFailedPrompt, checkerBrief, describePlan, headBrief, milestoneNote, planningBrief, reviewerBrief, sizeWords, workerNote } from './prompt.js';
+import { WRITE_CHAT_PLAN_PROMPT, chatPlanBrief, checkFailedPrompt, checkerBrief, describePlan, earlierPlansText, headBrief, milestoneNote, planningBrief, reviewerBrief, sizeWords, workerNote } from './prompt.js';
 
 /**
  * Plans at work: making a plan (its own conversation, in the project's main folder where Claude
@@ -70,6 +70,16 @@ export interface PlansWorkDeps {
    * another runtime gets the recent conversation with the next message (a quiet switch, BLG-592).
    */
   readonly followAgent?: (channel: string, agent: AgentRef | undefined) => void;
+}
+
+/** One plan of a chat, as its list shows it (plans.ofHome). `current`: the chat's plan now (planForHome). */
+export interface HomePlan {
+  readonly id: string;
+  readonly title: string;
+  readonly status: Plan['status'];
+  readonly createdAt: number;
+  readonly closedAt?: number;
+  readonly current: boolean;
 }
 
 const WS = 'ws:';
@@ -257,6 +267,7 @@ export class PlansWork {
 
   /** Plan in the conversation you're in (the composer's Plan with Tasks): an empty draft, written from what you say next. */
   here(channel: string, autonomy?: Autonomy): Plan {
+    // A closed plan is skipped (planForHome): the conversation gets a new draft.
     const existing = planForHome(this.plans.state(), channel);
     if (existing && existing.status !== 'done') return existing;
     const ws = channel.startsWith(WS) ? this.deps.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(WS.length)) : undefined;
@@ -331,6 +342,19 @@ export class PlansWork {
     } catch {
       // The task went: nothing to keep in step.
     }
+  }
+
+  /** Close a plan (you, or its chat's agent): kept, read-only; its chat can open a new one. */
+  close(id: string, by: Actor = this.me()): Plan {
+    const plan = this.plans.close(id, by);
+    this.pilot.schedule();
+    return plan;
+  }
+
+  /** Every plan of a chat, closed and done ones too, newest first: what a list of them shows (a screen opens one by id). */
+  ofHome(channel: string): readonly HomePlan[] {
+    const current = planForHome(this.plans.state(), channel)?.id;
+    return plansOfHome(this.plans.state(), channel).map((p) => ({ id: p.id, title: planTitle(p), status: p.status, createdAt: p.createdAt, current: p.id === current, ...(p.closedAt ? { closedAt: p.closedAt } : {}) }));
   }
 
   /** Your changes: an approved plan without waiting changes takes them at once (you're the one approving). */
@@ -482,8 +506,12 @@ export class PlansWork {
 
   // ------------------------------------------------------------------ for Claude
 
-  /** A run in a plan's home conversation (yours): the plan's tools, and how to plan or run it. */
-  forRun(channel: string, from: string, chain?: () => ChatChain): { readonly tools?: PlanTools; readonly brief?: string; readonly checker?: boolean } | undefined {
+  /**
+   * A run in a plan's home conversation (yours): the plan's tools, and how to plan or run it. With
+   * the chatPlans pref, a project chat that is no plan home gets plan_open (`opener`: nothing else
+   * of the plan's, so the chat stays as it is), and a plan home also gets plan_close and plan_open.
+   */
+  forRun(channel: string, from: string, chain?: () => ChatChain): { readonly tools?: PlanTools; readonly brief?: string; readonly checker?: boolean; readonly opener?: boolean } | undefined {
     const me = this.deps.board.me();
     if (me.kind !== 'person' || from !== me.id) return undefined;
     // A milestone's checker: its brief, and only plan_get and plan_gate.
@@ -497,12 +525,60 @@ export class PlansWork {
       const m = view.milestones.find((x) => x.milestone.id === checking.milestone);
       return m ? { tools: this.checkerTools(checking.plan.id, m.milestone.id), brief: checkerBrief(view, m), checker: true } : undefined;
     }
+    const chatPlans = this.deps.store.getState().prefs.chatPlans && this.isOwnChat(channel);
     const plan = planForHome(this.plans.state(), channel);
-    if (!plan) return undefined;
+    if (!plan) return chatPlans ? this.openerRun(channel) : undefined;
     const board = this.deps.store.getState().board;
     const view = this.pilot.view(plan);
     const brief = plan.body ? headBrief(view) + planningBrief(plan, board, this.plans.planningStyle) : planningBrief(plan, board, this.plans.planningStyle);
-    return { tools: this.toolsFor(plan.id, undefined, chain), brief };
+    const tools = this.toolsFor(plan.id, undefined, chain);
+    return { tools: chatPlans ? { ...tools, open: () => this.openHere(channel), close: () => this.closeHere(plan.id) } : tools, brief };
+  }
+
+  /** chatPlans: a project chat of yours, worked by Claude (not a worktree, nor another agent's). */
+  private isOwnChat(channel: string): boolean {
+    if (!channel.startsWith(WS)) return false;
+    const id = channel.slice(WS.length);
+    const project = this.deps.store.getState().projects.find((p) => p.root && p.workspaces.some((w) => w.id === id));
+    const ws = project?.workspaces.find((w) => w.id === id);
+    return Boolean(ws && ws.kind === 'chat' && !ws.archived && !ws.purpose && (ws.agent?.runtime ?? 'claude') === 'claude');
+  }
+
+  /** chatPlans, in a chat that is no plan home: plan_open, and plan_get for its earlier plans (read-only). */
+  private openerRun(channel: string): { readonly tools: PlanTools; readonly brief: string; readonly opener: true } {
+    const earlier = (): readonly Plan[] => plansOfHome(this.plans.state(), channel);
+    const refuse = (): never => {
+      throw new Error('This chat has no current plan: plan_open starts one');
+    };
+    return {
+      opener: true,
+      brief: chatPlanBrief(earlier().length),
+      tools: {
+        only: ['plan_get', 'plan_open'],
+        get: () => earlierPlansText(earlier().map((p) => this.pilot.view(p))),
+        write: refuse,
+        update: refuse,
+        gate: refuse,
+        start: async () => refuse(),
+        message: refuse,
+        open: () => this.openHere(channel),
+      },
+    };
+  }
+
+  /** plan_open: a new draft with this chat as its home, then one turn here that writes it (with the full plan tools). */
+  private openHere(channel: string): string {
+    const live = planForHome(this.plans.state(), channel);
+    if (live && live.status !== 'done') throw new Error(`This chat already has a current plan (“${planTitle(live)}”). Close it with plan_close first`);
+    const plan = this.here(channel);
+    this.deps.askClaude(WRITE_CHAT_PLAN_PROMPT, channel, false);
+    return `Opened a new draft plan (${plan.id}) in this chat. End your turn now. Beluga starts a new turn here with the plan tools, and in that turn you write the plan with plan_write.`;
+  }
+
+  /** plan_close: the chat's current plan is closed (kept, read-only). */
+  private closeHere(planId: string): string {
+    const plan = this.close(planId, this.claude());
+    return `Closed the plan “${planTitle(plan)}”. It stays in this chat as a record that you can read but not change. plan_open starts a new plan in this chat.`;
   }
 
   /** In a task's worktree: the plan it's part of. */

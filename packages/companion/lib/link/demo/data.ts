@@ -735,6 +735,21 @@ export function makeWorld(now = Date.now()): DemoWorld {
     milestones: [{ id: 'd1', title: 'Write it up', state: 'done', criteria: [], tasks: [{ id: 'd1a', title: 'How it works', state: 'done' }, { id: 'd1b', title: 'Pictures', state: 'done' }] }],
     needsYou: [],
   };
+  // 1.57: the onboarding chat's first plan, closed when it opened "Beluga for phones": read-only now.
+  const spikePlan: PlanView = {
+    id: 'phones-spike',
+    title: 'Spike: a phone that talks to the Mac',
+    goal: 'Find out if a phone can reach the Mac over hyperdht, and what it should show first.',
+    state: 'closed',
+    closedAt: now - 72 * HOUR,
+    topic: 'conv:beluga.onboarding',
+    needsYou: [],
+    autonomy: 'step',
+    milestones: [
+      { id: 's1', title: 'Reach the Mac', state: 'done', criteria: ['A ping over hyperdht from Android'], tasks: [{ id: 's1a', title: 'Bare worklet hello', state: 'done' }, { id: 's1b', title: 'Noise handshake', state: 'done' }] },
+      { id: 's2', title: 'What to show first', state: 'todo', criteria: ['A list of screens'], tasks: [{ id: 's2a', title: 'Sketch Home', state: 'todo' }] },
+    ],
+  };
   const radarPlan: PlanView = {
     id: 'weather-v2',
     title: 'Pixel Weather v2',
@@ -833,7 +848,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       { id: 'asked', name: 'Asked of friends', convs: [] },
     ],
     files,
-    plans: [plan, widgetPlan, radarPlan, docsPlan],
+    plans: [plan, widgetPlan, radarPlan, docsPlan, spikePlan],
     chats,
     people,
     tasks: demoTasks(now),

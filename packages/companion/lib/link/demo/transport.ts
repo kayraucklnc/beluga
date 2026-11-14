@@ -233,9 +233,10 @@ export class DemoTransport implements Transport {
       const merge = w.merges.get(topic);
       const outputs = c.turns.flatMap(allOutputs).sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
       // 1.15: the plan this chat writes and runs, and its decisions asked here too (views.ts).
-      const plan = w.plans.find((p) => p.topic === topic);
+      const plan = w.plans.find((p) => p.topic === topic && p.state !== 'closed');
+      const earlier = w.plans.filter((p) => p.topic === topic && p !== plan).length;
       const planT = plan ? (`plan:${plan.id}` as Topic) : undefined;
-      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic || (planT && n.topic === planT)), ...this.projectOf(c), outputs, ...(plan && planT ? { plan: { topic: planT, title: plan.title, state: plan.state, ...count(plan), milestones: plan.milestones.length } } : {}), ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true, agent: c.agent ?? demoPicker(c.topic === 'conv:beluga.push' ? 'codex' : 'claude', c.topic === 'conv:beluga.push' ? 'gpt-5-codex' : '') } : {}), ...(merge ? { merge } : {}) };
+      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic || (planT && n.topic === planT)), ...this.projectOf(c), outputs, ...(plan && planT ? { plan: { topic: planT, title: plan.title, state: plan.state, ...count(plan), milestones: plan.milestones.length, ...(earlier ? { earlier } : {}) } } : {}), ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true, agent: c.agent ?? demoPicker(c.topic === 'conv:beluga.push' ? 'codex' : 'claude', c.topic === 'conv:beluga.push' ? 'gpt-5-codex' : '') } : {}), ...(merge ? { merge } : {}) };
     }
     if (topic.startsWith('plan:')) {
       const p = w.plans.find((x) => x.id === topic.slice(5));
@@ -474,6 +475,27 @@ export class DemoTransport implements Transport {
         }
         this.touch(`plan:${str(0)}` as Topic, 'plans');
         return ok();
+      }
+      // 1.57: close a chat's plan (kept, read-only), and list a chat's plans: its current one first.
+      case 'plans.close': {
+        const p = w.plans.find((x) => x.id === str(0));
+        if (!p) return this.frames.emit({ t: 'result', id, ok: false, error: 'No such plan' });
+        if (p.state === 'closed') return this.frames.emit({ t: 'result', id, ok: false, error: 'This plan is already closed' });
+        Object.assign(p, { state: 'closed', closedAt: Date.now(), needsYou: [], agents: undefined, running: 0 });
+        w.needs = w.needs.filter((n) => n.topic !== `plan:${p.id}`);
+        this.touch(`plan:${p.id}` as Topic, 'plans', ...(p.topic ? [p.topic] : []));
+        return ok();
+      }
+      case 'plans.ofHome': {
+        const home = `conv:${str(0)}`;
+        const mine = w.plans.filter((p) => p.topic === home);
+        const current = mine.find((p) => p.state !== 'closed');
+        const at = (p: PlanView): number => p.closedAt ?? Date.now();
+        return ok(
+          mine
+            .sort((a, b) => Number(b === current) - Number(a === current) || at(b) - at(a))
+            .map((p) => ({ id: p.id, title: p.title, status: p.state, createdAt: at(p) - 2 * 86_400_000, current: p === current, ...(p.closedAt ? { closedAt: p.closedAt } : {}) })),
+        );
       }
       case 'plans.recheck':
         this.resolve(item);

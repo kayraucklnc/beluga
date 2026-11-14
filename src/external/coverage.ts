@@ -426,6 +426,8 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'plans.setStyle': 'covered',
   'plans.verify': 'gated',
   'plans.fixReview': 'covered',
+  'plans.close': { refused: NO_TOOL },
+  'plans.ofHome': { refused: NO_TOOL },
   'dialogues.start': 'covered',
   'dialogues.confirm': 'covered',
   'dialogues.continue': 'covered',

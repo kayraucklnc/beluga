@@ -461,6 +461,8 @@ export const MACHINE: Record<Method, MachineSide> = {
   // A fresh agent's read of a draft, and Fix (BLG-772): a plan's own work, wherever it runs.
   'plans.verify': 'drive',
   'plans.fixReview': 'drive',
+  'plans.close': 'drive',
+  'plans.ofHome': 'drive',
   'plans.setAutonomy': 'drive',
   'plans.setPaused': 'drive',
   'plans.setParallel': 'drive',

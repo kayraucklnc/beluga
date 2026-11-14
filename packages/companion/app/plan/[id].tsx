@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, ChevronDown, ChevronRight, Eye, Gauge, Hand, Monitor, Rocket, User } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronRight, Eye, Gauge, Hand, Lock, Monitor, Rocket, User } from 'lucide-react-native';
 import { Options } from '../../components/Options';
 import { AgentMarkIcon, markIcon, runtimeMark } from '../../components/AgentMark';
 import { AgentChoiceSheet, agentOfRow } from '../../components/AgentPicker';
@@ -27,6 +27,8 @@ const AUTONOMY = {
   autopilot: { label: 'Autopilot', sub: 'Runs to the end, stops only if something fails', Icon: Rocket },
 } as const;
 type Autonomy = keyof typeof AUTONOMY;
+/** The header's words for a plan's state (the rest show as they come). */
+const STATE_LABEL: Record<string, string> = { running: 'Running', closed: 'Closed' };
 
 /**
  * A plan (Advanced Planning) as it's designed and run: its goal, decisions waiting on you (Approve
@@ -64,6 +66,8 @@ export default function Plan() {
   const blocked = tasks.filter((t) => t.state === 'blocked').length;
   // Claude is still writing the first plan: its chat and one placeholder, nothing to run or approve yet.
   const drafting = p?.state === 'draft' && !p.milestones.length;
+  // Closed in its chat (1.57): a record to read; nothing on it runs, changes or waits on you.
+  const closed = p?.state === 'closed';
   const writing = Boolean(useView<ConvView>(drafting ? p?.topic : undefined)?.data.working);
   // The map's tap: scroll the timeline to that milestone and open it.
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
@@ -80,8 +84,8 @@ export default function Plan() {
     <Screen>
       <Header scrolled={scrolled} back eyebrow="Plan" title={p?.title ?? 'Plan'} at={view?.at} right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {p ? <Pill label={p.state === 'running' ? 'Running' : p.state} tone={toneOf(p.state)} /> : null}
-            <More onPress={() => setMenu(true)} label="Plan options" />
+            {p ? <Pill label={STATE_LABEL[p.state] ?? p.state} tone={closed ? 'plain' : toneOf(p.state)} /> : null}
+            {closed ? null : <More onPress={() => setMenu(true)} label="Plan options" />}
           </View>
         } />
       <Options
@@ -118,6 +122,7 @@ export default function Plan() {
         {p ? (
           <>
             <View style={{ paddingHorizontal: 20, paddingTop: 6, gap: 12 }}>
+              {closed ? <ClosedNote at={p.closedAt} /> : null}
               {p.goal ? <T v="callout" style={{ fontSize: 15, lineHeight: 21 }}>{p.goal}</T> : null}
               {drafting ? null : <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: color.sunken, overflow: 'hidden' }}>
@@ -132,7 +137,7 @@ export default function Plan() {
                   {[p.running ? `${p.running} running side by side${p.parallel ? ` (up to ${p.parallel})` : ''}` : '', blocked ? `${blocked} waiting on others` : ''].filter(Boolean).join(' · ')}
                 </T>
               ) : null}
-              {how && !drafting ? (
+              {how && !drafting && !closed ? (
                 <Press onPress={() => setHowOpen(true)} accessibilityLabel={`How it runs: ${how.label}`} style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, height: 34, paddingHorizontal: 12, borderRadius: 17, backgroundColor: toneBg('lavender') }}>
                   <how.Icon color={toneInk('lavender')} size={15} strokeWidth={1.9} />
                   <T v="caption" c={toneInk('lavender')} style={{ fontWeight: '700' }}>
@@ -152,7 +157,7 @@ export default function Plan() {
               ) : null}
               {/* A fresh agent reads the draft before you approve it (1.45, BLG-772); what it finds waits on you below. */}
               {p.review?.state === 'reviewing' ? <Verifying review={p.review} /> : null}
-              {p.topic ? <PlanChat topic={p.topic} drafting={drafting} /> : null}
+              {p.topic ? <PlanChat topic={p.topic} drafting={drafting} closed={closed} /> : null}
             </View>
 
             {/* The plan as a small graph, first thing under its chat: what runs after what, at a glance. */}
@@ -164,7 +169,7 @@ export default function Plan() {
                 <MilestoneMap milestones={p.milestones} onPick={pick} />
               </View>
             ) : null}
-            {needs.length ? (
+            {needs.length && !closed ? (
               <View style={{ marginTop: 20, gap: 10 }}>
                 <T v="eyebrow" style={{ paddingHorizontal: 20 }}>
                   Waiting on you
@@ -221,6 +226,19 @@ export default function Plan() {
         )}
       </ScrollView>
     </Screen>
+  );
+}
+
+/** Atop a closed plan: it is a record now, read-only; its chat opens new plans. */
+function ClosedNote({ at }: { readonly at?: number }) {
+  const when = at ? new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : undefined;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: color.sunken }}>
+      <Lock color={color.text2} size={14} strokeWidth={2} />
+      <T v="caption" c={color.text2} style={{ flex: 1 }}>
+        Closed{when ? ` on ${when}` : ''}. You can read it, but it no longer runs or changes.
+      </T>
+    </View>
   );
 }
 

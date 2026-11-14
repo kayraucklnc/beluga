@@ -452,6 +452,11 @@ function AgentPane() {
           <Switch label="Scratch tab" on={macPrefs.scratchTab} onChange={(v) => setPrefs({ scratchTab: v })} />
         </Row>
       </Group>
+      <Group title="Chat plans">
+        <Row label="A chat can run its own plan" detail="Ask a project chat to turn the conversation into a plan: the chat writes and runs it, and shows it in the Plan tab of the right panel. Close it to open a new one; earlier plans stay there, read-only.">
+          <Switch label="Chat plans" on={p.chatPlans} onChange={(v) => void api.session.setPrefs({ chatPlans: v })} />
+        </Row>
+      </Group>
       <Group title="Pull requests and templates">
         <Row label="Pull request instructions" detail={state.prCustom ? 'Customized' : 'Built-in'}>
           <Button onClick={() => void api.workbench.editPrPrompt()}>Edit…</Button>

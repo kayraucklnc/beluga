@@ -101,6 +101,7 @@ const SavedPlan = z
     activity: z.array(z.unknown()).default([]),
     createdAt: z.number(),
     updatedAt: z.number(),
+    closedAt: z.number().optional().catch(undefined),
   })
   .passthrough();
 
@@ -132,6 +133,13 @@ export class Plans {
   need(id: string): Plan {
     const plan = this.get(id);
     if (!plan) throw new Error('That plan isn’t here any more');
+    return plan;
+  }
+
+  /** A plan that can still change: here, and not closed (a closed plan is read-only). */
+  private open(id: string): Plan {
+    const plan = this.need(id);
+    if (plan.closedAt) throw new PlanError('This plan is closed: it can’t change. Open a new plan in its chat');
     return plan;
   }
 
@@ -169,14 +177,14 @@ export class Plans {
 
   /** Claude's whole plan (the draft). Tasks it named before keep their board tasks. */
   writeDraft(id: string, input: BodyInput, by: Actor): Plan {
-    const plan = this.need(id);
+    const plan = this.open(id);
     const draft = normalizeBody(input, [plan.draft, plan.body]);
     return this.setDraft(plan, draft, by, plan.body ? 'proposed changes to the plan' : 'wrote the plan');
   }
 
   /** Changes to the draft (one is made from what was approved when there's none). */
   editDraft(id: string, ops: readonly PlanOp[], by: Actor, reason?: string): Plan {
-    const plan = this.need(id);
+    const plan = this.open(id);
     const base = plan.draft ?? plan.body;
     if (!base) throw new PlanError('This plan has nothing in it yet: write it whole first (plan_write)');
     const draft = applyOps(base, ops);
@@ -195,7 +203,7 @@ export class Plans {
 
   /** The title (and goal) change at once, approved plan or not (nothing to approve in a name). */
   retitle(id: string, title: string, by: Actor): Plan {
-    const plan = this.need(id);
+    const plan = this.open(id);
     const clean = title.replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!clean) throw new PlanError('A plan needs a title');
     return this.change(plan, { ...(plan.draft ? { draft: { ...plan.draft, title: clean } } : {}), ...(plan.body ? { body: { ...plan.body, title: clean } } : {}) }, [event(by, 'note', `renamed the plan to “${clean}”`, this.now())]);
@@ -211,7 +219,7 @@ export class Plans {
 
   /** Throw the draft away (a plan never approved goes with it). */
   discard(id: string, by: Actor): Plan | undefined {
-    const plan = this.need(id);
+    const plan = this.open(id);
     if (!plan.body) {
       this.remove(id);
       return undefined;
@@ -229,7 +237,7 @@ export class Plans {
 
   /** The draft is on the board now (`body`: it, with each task's board task). */
   approved(id: string, body: PlanBody, by: Actor, summary: string): Plan {
-    const plan = this.need(id);
+    const plan = this.open(id);
     const first = !plan.body;
     const at = this.now();
     const open = body.milestones.some((m) => !plan.runs[m.id]?.passedAt);
@@ -251,9 +259,21 @@ export class Plans {
   }
 
   setPaused(id: string, paused: boolean, by: Actor, why?: string): Plan {
-    const plan = this.need(id);
+    const plan = paused ? this.need(id) : this.open(id);
     if (plan.paused === paused) return plan;
     return this.change(plan, { paused }, [event(by, paused ? 'paused' : 'resumed', paused ? `paused the plan${why ? ` — ${why}` : ''}` : 'resumed the plan', this.now())]);
+  }
+
+  /**
+   * Close the plan: its record stays (read-only) and its chat can open a new one. An active plan is
+   * paused first, so nothing new starts; tasks at work finish their turn, and board tasks stay.
+   */
+  close(id: string, by: Actor): Plan {
+    const plan = this.need(id);
+    if (plan.closedAt) throw new PlanError('This plan is already closed');
+    const at = this.now();
+    const pause = plan.status === 'active' && !plan.paused;
+    return this.change(plan, { closedAt: at, closedBy: by, ...(pause ? { paused: true } : {}) }, [event(by, 'closed', 'closed the plan', at)]);
   }
 
   setMaxParallel(id: string, n: number, by: Actor): Plan {

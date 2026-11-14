@@ -454,6 +454,8 @@ export const PHONE: Record<Method, Side> = {
   'plans.edit': 'mac',
   'plans.setAutonomy': 'phone',
   'plans.setPaused': 'mac',
+  'plans.close': 'phone',
+  'plans.ofHome': 'phone',
   'plans.setParallel': 'mac',
   'plans.setTestsAt': 'mac',
   // Who works the plan's milestones and tasks from here on (BLG-498): a pick from a list.

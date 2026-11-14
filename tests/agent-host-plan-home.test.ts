@@ -19,6 +19,8 @@ import { waitFor } from './helpers.js';
 
 const ME = 'me';
 const HOME = 'ws:home';
+/** A project chat with chatPlans on: it can only open a plan (BLG-415). */
+const CHAT = 'ws:chat';
 
 function setup() {
   const store = new Store(initialState('room', 'auto'));
@@ -34,7 +36,7 @@ function setup() {
       return `answered ${input.prompt}`;
     },
   };
-  const place = (channel: string) => ({ cwd: dir, additionalDirectories: [], autoEdit: channel !== HOME, onSession: () => undefined, ...(channel === HOME ? { askOnly: { project: 'p' }, fixup: path.join(dir, 'fix') } : {}) });
+  const place = (channel: string) => ({ cwd: dir, additionalDirectories: [], autoEdit: channel !== HOME, onSession: () => undefined, ...(channel === HOME || channel === CHAT ? { askOnly: { project: 'p' }, fixup: path.join(dir, 'fix') } : {}) });
   const host = new AgentHost({
     store,
     selfId: () => ME,
@@ -49,7 +51,7 @@ function setup() {
     approvalTimeoutMs: () => 60_000,
     refreshUsage: async () => undefined,
     workspaces: { place, refreshWorkspace: async () => undefined, manager: { list: [] } } as never,
-    plans: (channel) => (channel === HOME ? { tools: {} as never, brief: 'head' } : undefined),
+    plans: (channel) => (channel === HOME ? { tools: {} as never, brief: 'head' } : channel === CHAT ? { tools: {} as never, brief: 'open', opener: true } : undefined),
   });
   const ask = (requestId: string, prompt: string, channel: string): Promise<void> => host.onAgentRequest(ME, { kind: 'agent_request', requestId, prompt, viaAgent: false, channel, urgent: false, plan: false });
   return { host, runs, release, ask };
@@ -68,6 +70,15 @@ describe('the plan’s own conversation', () => {
     expect(t.runs.some((r) => r.prompt === 'task 5')).toBe(false);
     t.release.forEach((r) => r());
     await waitFor(() => t.runs.some((r) => r.prompt === 'task 5'));
+  });
+
+  it('a chat that can only open a plan stays questions-only, with plan_open mounted (BLG-415)', async () => {
+    const t = setup();
+    await t.ask('c1', 'turn this into a plan', CHAT);
+    await waitFor(() => t.runs.length === 1);
+    expect(t.runs[0]!.place?.askOnly).toBeDefined();
+    expect(t.runs[0]!.planTools).toBeDefined();
+    expect(t.runs[0]!.planBrief).toBe('open');
   });
 
   it('isn’t questions-only: its Claude may change things (and still fixes conflicts in a hidden worktree)', async () => {

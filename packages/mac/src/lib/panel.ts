@@ -31,6 +31,8 @@ interface Runtime {
   readonly panelBack?: boolean;
   /** An Android phone is paired: the panel has its Phone tab (BLG-186). */
   readonly phone?: boolean;
+  /** The chat workspace on screen has plans of its own (chatPlans on): the panel has its Plan tab. */
+  readonly planChat?: string | undefined;
 }
 
 let runtime: Runtime = { termFocus: 0 };
@@ -63,11 +65,16 @@ export function filesWsOf(state: PanelState): string | undefined {
 /** Uncommitted files or commits ahead of its base. */
 export const hasChanges = (ws: Workspace | undefined): boolean => (ws?.status?.changed ?? 0) + (ws?.status?.ahead ?? 0) > 0;
 
-export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind, runtime.phone).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
+export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind, runtime.phone, state.view.kind === 'workspace' && runtime.planChat === state.view.id).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
 
 /** Whether a phone is paired, so the panel offers its Phone tab (set from the shared state as it changes). */
 export const setPhoneTab = (on: boolean): void => {
   if (Boolean(runtime.phone) !== on) patch({ phone: on });
+};
+
+/** The chat workspace with plans of its own, on screen (none: no Plan tab). */
+export const setPlanTab = (wsId: string | undefined): void => {
+  if (runtime.planChat !== wsId) patch({ planChat: wsId });
 };
 
 /** A pane's tabs for what's on screen, in your order. */

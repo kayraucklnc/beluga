@@ -16,7 +16,7 @@ import type { PendingQuestion } from '../core/collab-store.js';
 import { chatsWithThreadsWorking } from '../core/threads/model.js';
 import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
-import { type Plan, planForHome, planTitle, reviewState } from '../core/plans/model.js';
+import { type Plan, planForHome, planTitle, plansOfHome, reviewState } from '../core/plans/model.js';
 import { verifyProgress } from '../core/plans/verify-progress.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState, notOnPr } from '../core/branch-state.js';
@@ -844,7 +844,8 @@ function waitingOf(state: DomainState, channel: string): { waiting?: string } {
 
 function planBand(state: DomainState, plan: Plan, topic: Topic): NonNullable<ConvView['plan']> {
   const progress = progressOf(state, plan);
-  return { topic, title: clip(planTitle(plan), 300), state: planState(plan, progress), done: progress.done, total: progress.total, milestones: progress.milestones.length };
+  const earlier = plansOfHome(state.plans, plan.home).length - 1;
+  return { topic, title: clip(planTitle(plan), 300), state: planState(plan, progress), done: progress.done, total: progress.total, milestones: progress.milestones.length, ...(earlier > 0 ? { earlier } : {}) };
 }
 
 const base = (p: string): string => p.split(/[\\/]/).at(-1) ?? p;
@@ -901,7 +902,7 @@ function queueOf(state: DomainState, channel: string): NonNullable<ConvView['que
     .map((l) => ({ id: clip(l.requestId, 200), text: plainLine(l.prompt ?? '', 300) || 'A message', ...(l.slotWait ? { waiting: clip(slotWaitDetail(l.slotWait), 300) } : {}), ...(l.origin ? { origin: { ref: clip(l.origin.ref, 400), title: clip(l.origin.title, 200), agent: clip(l.origin.agent.label, 64) } } : {}) }));
 }
 
-const planState = (plan: Plan, progress: PlanProgress): string => (plan.status === 'active' && plan.paused ? 'paused' : plan.status === 'active' && progress.next.kind === 'done' ? 'done' : plan.status);
+const planState = (plan: Plan, progress: PlanProgress): string => (plan.closedAt ? 'closed' : plan.status === 'active' && plan.paused ? 'paused' : plan.status === 'active' && progress.next.kind === 'done' ? 'done' : plan.status);
 
 export function plansView(state: DomainState): PlansView {
   return {
@@ -942,6 +943,8 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
     title: clip(planTitle(plan), 300),
     ...(goal ? { goal: clip(plainLine(goal, 4000), 4000) } : {}),
     state: planState(plan, progress),
+    // 1.57 (BLG-419): closed in its chat: read-only, nothing to pick or run.
+    ...(plan.closedAt ? { closedAt: plan.closedAt } : {}),
     ...(home ? { topic: home } : {}),
     milestones: progress.milestones.slice(0, 50).map((m) => ({
       id: clip(m.milestone.id, 200),
@@ -980,7 +983,7 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
 
     // 1.35 (BLG-498): who works its milestones and tasks (none: your default), and the list to change it from.
     ...(plan.agent ? { agent: agentRefView(plan.agent) } : {}),
-    ...(plan.status !== 'done' ? { agents: workPicker(state, plan.agent) } : {}),
+    ...(plan.status !== 'done' && !plan.closedAt ? { agents: workPicker(state, plan.agent) } : {}),
     // 1.45 (BLG-772): its decisions, and its draft's review.
     ...decisionsAndReview(state, plan),
   };

@@ -1,4 +1,5 @@
 import type { View } from '../../../../src/core/store.js';
+import { CHAT_DEFAULT, CHAT_MIN } from '../plans/plan-layout.js';
 import { isSentinelView } from '../sentinel/sentinel-model.js';
 
 /**
@@ -6,12 +7,12 @@ import { isSentinelView } from '../sentinel/sentinel-model.js';
  * get, and how older window preferences carry over. No DOM here, so it's tested on its own.
  */
 
-export type PanelTab = 'changes' | 'files' | 'terminal' | 'info' | 'history' | 'scratch' | 'background' | 'phone';
+export type PanelTab = 'changes' | 'files' | 'terminal' | 'info' | 'history' | 'scratch' | 'background' | 'phone' | 'plan';
 
-/** Every tab in its fixed place: ⌥⌘1 is always Changes, ⌥⌘4 always Info, ⌥⌘5 History, ⌥⌘6 Scratch, ⌥⌘7 Background, ⌥⌘8 Phone. */
-export const PANEL_TABS: readonly PanelTab[] = ['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background', 'phone'];
+/** Every tab in its fixed place: ⌥⌘1 is always Changes, ⌥⌘4 always Info, ⌥⌘5 History, ⌥⌘6 Scratch, ⌥⌘7 Background, ⌥⌘8 Phone, ⌥⌘9 Plan. */
+export const PANEL_TABS: readonly PanelTab[] = ['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background', 'phone', 'plan'];
 
-export const PANEL_LABELS: Record<PanelTab, string> = { changes: 'Changes', files: 'Files', terminal: 'Terminal', info: 'Info', history: 'History', scratch: 'Scratch', background: 'Background', phone: 'Phone' };
+export const PANEL_LABELS: Record<PanelTab, string> = { changes: 'Changes', files: 'Files', terminal: 'Terminal', info: 'Info', history: 'History', scratch: 'Scratch', background: 'Background', phone: 'Phone', plan: 'Plan' };
 
 /**
  * The panel is two panes, one above the other, each with its own tabs: by default what Claude
@@ -25,8 +26,8 @@ export interface PanelLayout {
 }
 
 /** The tabs with a place of their own (every one of them is in exactly one pane). */
-export const SLOTS: readonly PanelTab[] = ['changes', 'files', 'scratch', 'info', 'terminal', 'background', 'phone'];
-export const DEFAULT_LAYOUT: PanelLayout = { top: ['changes', 'files', 'scratch', 'info', 'phone'], bottom: ['terminal', 'background'] };
+export const SLOTS: readonly PanelTab[] = ['plan', 'changes', 'files', 'scratch', 'info', 'terminal', 'background', 'phone'];
+export const DEFAULT_LAYOUT: PanelLayout = { top: ['plan', 'changes', 'files', 'scratch', 'info', 'phone'], bottom: ['terminal', 'background'] };
 
 /** The tab a view lives in: History is inside Changes. */
 export const slotOf = (tab: PanelTab): PanelTab => (tab === 'history' ? 'changes' : tab);
@@ -39,7 +40,9 @@ export function normalizeLayout(raw: unknown): PanelLayout {
   const bottom = [...new Set(read(r.bottom))].filter((t) => !top.includes(t));
   for (const slot of SLOTS) {
     if (top.includes(slot) || bottom.includes(slot)) continue;
-    (DEFAULT_LAYOUT.bottom.includes(slot) ? bottom : top).push(slot);
+    // The Plan tab, new to a saved layout, goes first: it's what a plan's chat is about.
+    if (slot === 'plan') top.unshift(slot);
+    else (DEFAULT_LAYOUT.bottom.includes(slot) ? bottom : top).push(slot);
   }
   return { top, bottom };
 }
@@ -96,17 +99,19 @@ type WsKind = 'chat' | 'main' | 'worktree' | string;
 /**
  * The panel's tabs for what's on screen, in their fixed order. With a phone paired (`phone`), its
  * live mirror is a tab beside Your Mac's chat (BLG-186), where Ask Claude on the Phone page takes
- * you. Not beside a project's chats: nothing there is about the phone.
+ * you. Not beside a project's chats: nothing there is about the phone. A project chat with plans
+ * of its own (`plan`: chatPlans on) has its Plan tab first.
  */
-export function panelTabsFor(view: View, wsKind?: WsKind, phone = false): PanelTab[] {
+export function panelTabsFor(view: View, wsKind?: WsKind, phone = false, plan = false): PanelTab[] {
   const tabs = tabsOfView(view, wsKind);
+  if (plan && view.kind === 'workspace' && wsKind === 'chat') return ['plan', ...tabs];
   return phone && tabs.length && view.kind === 'assistant' ? [...tabs, 'phone'] : tabs;
 }
 
 function tabsOfView(view: View, wsKind?: WsKind): PanelTab[] {
   // Scratch: what Claude saves to the workspace's .beluga/scratch/ while it works, live.
   // Background: the commands Claude and its agents run there in the background (dev servers, tests), live.
-  if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : PANEL_TABS.filter((t) => t !== 'phone');
+  if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : PANEL_TABS.filter((t) => t !== 'phone' && t !== 'plan');
   // A project's home (and its History page): its main folder's Files, and the project's history too.
   if (view.kind === 'project') return ['files', 'terminal', 'info', 'history'];
   // A plan's page is the plan and its chat, side by side; the Tasks board, a task's page and the plans have the whole window.
@@ -155,6 +160,35 @@ export const CENTER_MIN = 690;
 export function clampPanelWidth(width: number, windowWidth: number, sidebarWidth = 0): number {
   const max = Math.max(PANEL_MIN, Math.min(Math.floor(windowWidth * PANEL_MAX_SHARE), windowWidth - sidebarWidth - CENTER_MIN));
   return Math.round(Math.min(max, Math.max(PANEL_MIN, width)));
+}
+
+/** While the Plan tab shows, the center (the chat) keeps the Plan page's chat minimum, not CENTER_MIN. */
+export const PLAN_CENTER_MIN = CHAT_MIN;
+
+/** The Plan tab's first width: the Plan page's proportions, the window less the sidebar and a CHAT_DEFAULT chat. */
+export const planPanelDefault = (windowWidth: number, sidebarWidth = 0): number => windowWidth - sidebarWidth - CHAT_DEFAULT;
+
+/** The panel's width while the Plan tab shows: at least PANEL_MIN, and the center keeps PLAN_CENTER_MIN. */
+export function clampPlanPanelWidth(width: number, windowWidth: number, sidebarWidth = 0): number {
+  const max = Math.max(PANEL_MIN, windowWidth - sidebarWidth - PLAN_CENTER_MIN);
+  return Math.round(Math.min(max, Math.max(PANEL_MIN, width)));
+}
+
+/** The widths the panel keeps: one while the Plan tab shows (none until you drag it), one for every other tab. */
+export interface PanelWidths {
+  readonly panelWidth: number;
+  readonly planPanelWidth?: number | undefined;
+}
+
+/** The panel's width now: the Plan tab's own (first: planPanelDefault), else the one every other tab shares. */
+export function panelWidthFor(planShowing: boolean, widths: PanelWidths, windowWidth: number, sidebarWidth = 0): number {
+  if (!planShowing) return clampPanelWidth(widths.panelWidth, windowWidth, sidebarWidth);
+  return clampPlanPanelWidth(widths.planPanelWidth ?? planPanelDefault(windowWidth, sidebarWidth), windowWidth, sidebarWidth);
+}
+
+/** What a drag to `width` saves: planPanelWidth while the Plan tab shows, panelWidth otherwise. */
+export function panelWidthPatch(planShowing: boolean, width: number, windowWidth: number, sidebarWidth = 0): { planPanelWidth: number } | { panelWidth: number } {
+  return planShowing ? { planPanelWidth: clampPlanPanelWidth(width, windowWidth, sidebarWidth) } : { panelWidth: clampPanelWidth(width, windowWidth, sidebarWidth) };
 }
 
 export const clampShare = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, Number.isFinite(v) ? v : min));

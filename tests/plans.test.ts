@@ -452,6 +452,26 @@ describe('running a plan', () => {
     expect(issue(t, 'Live keys').status).toBe('todo');
   });
 
+  it('a closed plan starts no task and asks no check (BLG-414)', async () => {
+    const t = await running('autopilot', 3, 'task');
+    const started = t.made.length;
+    t.plans.close(t.plan.id, t.me);
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks']) t.board.update(issue(t, title).id, { status: 'done' }, t.me);
+    await tick(5);
+    t.work.pilot.tick();
+    await tick(5);
+    // Receipts was waiting on them: it stays where it was.
+    expect(t.made).toHaveLength(started);
+    expect(issue(t, 'Receipts once').status).toBe('todo');
+    t.board.update(issue(t, 'Receipts once').id, { status: 'done' }, t.me);
+    await tick(5);
+    t.work.pilot.tick();
+    await tick(5);
+    expect(t.plans.need(t.plan.id).runs.safe?.checkAsked).toBeUndefined();
+    expect(t.asked.some((a) => a.prompt.includes('Check its pass criteria'))).toBe(false);
+    await expect(t.work.startTask(t.plan.id, 'receipts')).rejects.toThrow(/closed/);
+  });
+
   it('the head Claude’s conversation stays free: a failed check reaches it with the notes, to add the fix tasks', async () => {
     const t = await running('autopilot');
     for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(issue(t, title).id, { status: 'in_review' }, t.claude);
@@ -605,6 +625,16 @@ describe('making a plan', () => {
     expect(planForHome(t.store.getState().plans, 'ws:main')?.id).toBe(plan.id);
     expect(t.work.here('ws:main').id).toBe(plan.id);
     expect(t.work.forRun('ws:main', 'p-bob')).toBeUndefined();
+  });
+
+  it('a closed plan stays; here() makes a new draft in the same conversation (BLG-414)', () => {
+    const t = setup();
+    const old = t.work.here('ws:main');
+    t.plans.close(old.id, t.me);
+    const next = t.work.here('ws:main');
+    expect(next.id).not.toBe(old.id);
+    expect(next).toMatchObject({ status: 'draft', home: 'ws:main' });
+    expect(t.plans.need(old.id).closedAt).toBeDefined();
   });
 
   it('your planning style goes into Claude’s instructions', () => {

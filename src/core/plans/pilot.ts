@@ -384,6 +384,8 @@ export class PlanPilot {
         // Its branch, catching up, merges: paused or done, they go on (nothing new starts).
         if (plan.body && plan.status !== 'draft') this.tend(plan);
         // Started tasks that stopped without finishing: woken once, then they wait for you.
+        // A closed plan is only tended (its merges finish): nothing is woken, started or checked.
+        if (plan.closedAt) continue;
         if (plan.body && plan.status === 'active') this.watch(this.deps.plans.need(plan.id));
         if (plan.status === 'active' && !plan.paused && !plan.draft) this.step(this.deps.plans.need(plan.id));
       } catch (err) {
@@ -401,6 +403,7 @@ export class PlanPilot {
    */
   async startNow(planId: string, taskId: string, by: Actor, agent?: AgentRef): Promise<string> {
     const plan = this.deps.plans.need(planId);
+    if (plan.closedAt) throw new Error('The plan is closed: nothing of it starts any more');
     if (plan.movedTo) throw new Error(`This plan moved to ${plan.movedTo.name}: it runs there now`);
     if (plan.status !== 'active' || !plan.body) throw new Error('The plan isn’t approved yet');
     if (plan.draft) throw new Error('Changes to the plan are waiting for approval: approve or discard them first');
@@ -941,7 +944,7 @@ export class PlanPilot {
     const plan = this.deps.plans.need(planId);
     const run = plan.runs[milestone.id];
     // Passed (or asked) while its conversation was being made.
-    if (run?.passedAt || run?.checkAsked !== undefined || plan.merging?.[milestone.id] || plan.status !== 'active') return;
+    if (run?.passedAt || run?.checkAsked !== undefined || plan.merging?.[milestone.id] || plan.status !== 'active' || plan.closedAt) return;
     const view = this.view(plan);
     const m = view.milestones.find((x) => x.milestone.id === milestone.id);
     if (!m) return;

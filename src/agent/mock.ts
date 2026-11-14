@@ -294,6 +294,21 @@ async function mockPlan(input: AgentRunInput, pace: number): Promise<string> {
   return 'Done. `requireUser()` protects `/api/payments/*` and all **27 tests** pass.';
 }
 
+/** What asks a chat's agent to open a plan of the chat's own (chatPlans). */
+const OPENS_PLAN = /\b(?:into a plan|(?:open|start) a (?:new )?plan|new plan)\b/i;
+
+/** chatPlans: the chat's agent closes its current plan when asked, then opens a new one (Beluga's next turn writes it). */
+async function mockOpenPlan(input: AgentRunInput, plan: NonNullable<AgentRunInput['planTools']>, pace: number): Promise<string> {
+  await sleep(300 * pace, input.signal);
+  if (plan.close && /\bclose\b/i.test(input.prompt)) {
+    input.onEvent('tool', 'plan_close');
+    plan.close();
+  }
+  input.onEvent('tool', 'plan_open');
+  plan.open!();
+  return 'Opened a new plan in this chat: I’m writing it now.';
+}
+
 /** The demo's planner: a first plan from what you asked, a revision for what you say next, and milestone checks. */
 async function mockPlanning(input: AgentRunInput, plan: NonNullable<AgentRunInput['planTools']>, pace: number): Promise<string> {
   // Verifying a draft (BLG-772): it reads the plan and finds one thing to fix (an empty plan: nothing).
@@ -336,7 +351,8 @@ async function mockPlanning(input: AgentRunInput, plan: NonNullable<AgentRunInpu
   }
   const empty = /The plan is empty|no milestones/i.test(plan.get()) || !/## 1\./.test(plan.get());
   if (empty) {
-    const what = input.prompt.replace(/\s+/g, ' ').trim().replace(/[.!?]$/, '');
+    // A chat's own plan (chatPlans): Beluga's follow-up turn asks for it; the chat was about deploys.
+    const what = /^You opened a new plan/.test(input.prompt) ? 'Make deploys one command' : input.prompt.replace(/\s+/g, ' ').trim().replace(/[.!?]$/, '');
     input.onEvent('tool', 'plan_write');
     plan.write({
       // A name, as Claude would give it: never your message cut off.
@@ -936,8 +952,10 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     if (input.sentinelTools && /You are the Sentinel chat/.test(input.sentinelBrief ?? '')) return mockSentinelChat(input, input.sentinelTools, input.dashboardTools, pace);
     // Changing a sentinel (sentinel.ask): it reads the words, fills the sentinel in with its tools.
     if (input.sentinelTools?.asking) return mockSentinelAsk(input, input.sentinelTools, input.sentinelTools.asking, pace);
-    // A plan's conversation: Claude writes, revises and checks the plan with its tools.
-    if (input.planTools && !/^\/compact/.test(input.prompt.trim())) return mockPlanning(input, input.planTools, pace);
+    // chatPlans: "turn this into a plan" (or "close the plan and open a new one") in a project chat.
+    if (input.planTools?.open && OPENS_PLAN.test(input.prompt) && !/^You opened a new plan/.test(input.prompt)) return mockOpenPlan(input, input.planTools, pace);
+    // A plan's conversation: Claude writes, revises and checks the plan with its tools. A chat that can only open one talks as usual.
+    if (input.planTools && !input.planTools.only?.includes('plan_open') && !/^\/compact/.test(input.prompt.trim())) return mockPlanning(input, input.planTools, pace);
     // A message that names another chat (see explainChatMentions): it reads that chat, as real Claude may.
     if (input.chatTools && CHAT_NOTE.test(input.prompt)) return mockReadChat(input, input.chatTools, pace);
     if (HOLD_CHAT.test(input.prompt.trim())) {

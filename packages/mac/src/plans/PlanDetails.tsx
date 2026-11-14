@@ -8,6 +8,7 @@ import { Markdown } from '../chat/Markdown.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Button, IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
+import { useReadOnly } from './read-only.js';
 import { ProofItems } from '../tasks/TaskSections.js';
 import { type FlowStep, MILESTONE_STATE, branchFlow, milestoneNowWords, taskWords } from './plans-model.js';
 import { LiveDot, TaskChatMark, TaskStateIcon, TonePill } from './marks.js';
@@ -191,6 +192,7 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
   const all = view.milestones.flatMap((m) => m.tasks);
   // Its Claude stopped without finishing: one click wakes it with what it missed.
   const canResume = Boolean(t.worktree) && (t.state === 'idle' || t.state === 'stalled');
+  const readOnly = useReadOnly();
   // The board's checklist when it has one (ticked, or explained with its reason: deferred, not done), else the plan's.
   const onBoard = criteria(t.issue?.brief.acceptance);
   const checks: readonly Criterion[] = onBoard.length ? onBoard : t.task.acceptance.map((text) => ({ text, state: 'open' as const }));
@@ -214,7 +216,7 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
             </Button>
           </SplitButton>
         ) : null}
-        {canResume ? (
+        {canResume && !readOnly ? (
           <Button size="small" variant="primary" icon="play" onClick={() => void act(() => api.resumeTask(view.plan.id, t.task.id))}>
             Resume
           </Button>
@@ -326,7 +328,8 @@ function GateHead({ m }: { m: MilestoneView }) {
 function GateDetails({ plan, m, onPick }: { plan: Plan; m: MilestoneView; onPick: (id: string) => void }) {
   const { api, act, openWorktree } = usePlanActions();
   const check = m.run.check;
-  const yours = plan.body && !plan.draft && (m.state === 'gate' || m.state === 'checking' || m.state === 'failed');
+  const readOnly = useReadOnly();
+  const yours = !readOnly && plan.body && !plan.draft && (m.state === 'gate' || m.state === 'checking' || m.state === 'failed');
   // Its checker's conversation (folded into the plan, off the sidebar): watched live, or read once it said.
   const checker = useCheckerChat(m);
   const openChecker = checker ? (
@@ -355,7 +358,7 @@ function GateDetails({ plan, m, onPick }: { plan: Plan; m: MilestoneView; onPick
                 ))}
               </ul>
               <div className={p.detailsActions}>
-                {conflict.stuck ? (
+                {conflict.stuck && !readOnly ? (
                   <Button size="small" variant="primary" icon="claude" onClick={() => void act(() => api.retryConflicts(plan.id), 'Your agent is on the conflict again')}>
                     Ask Claude Again
                   </Button>

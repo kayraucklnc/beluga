@@ -31,6 +31,8 @@ export interface UiPrefs {
   readonly inspector: boolean;
   /** How wide the right panel is (px; never more than 60% of the window). */
   readonly panelWidth: number;
+  /** How wide the right panel is while a chat's Plan tab shows (px); none until you drag it: window less sidebar less 380. */
+  readonly planPanelWidth?: number | undefined;
   /** The tab you last picked in the panel, per workspace ('ws:<id>') and for everything else ('app'); the bottom pane's end in '|bottom'. */
   readonly panelTabs: Readonly<Record<string, PanelTab>>;
   /** Which tabs are in the panel's top pane and which in its bottom one (drag a tab across to change it). */
@@ -247,7 +249,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, sendDuringTurn: saved.sendDuringTurn === 'steer' ? 'steer' : 'queue', panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, chatWidth: chatWidthOf(saved), convoDefault: saved.convoDefaultPicked === true && isConvoMode(saved.convoDefault) ? saved.convoDefault : 'terminal', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true, lightTheme: themeIdOf(saved.lightTheme, 'light'), darkTheme: themeIdOf(saved.darkTheme, 'dark'), accent: saved.accent in ACCENTS ? saved.accent : 'system', rowColors: rowColorsOf(saved.rowColors) };
+    return { ...saved, sendDuringTurn: saved.sendDuringTurn === 'steer' ? 'steer' : 'queue', panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, chatWidth: chatWidthOf(saved), convoDefault: saved.convoDefaultPicked === true && isConvoMode(saved.convoDefault) ? saved.convoDefault : 'terminal', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true, lightTheme: themeIdOf(saved.lightTheme, 'light'), darkTheme: themeIdOf(saved.darkTheme, 'dark'), accent: saved.accent in ACCENTS ? saved.accent : 'system', rowColors: rowColorsOf(saved.rowColors), planPanelWidth: typeof saved.planPanelWidth === 'number' && Number.isFinite(saved.planPanelWidth) ? saved.planPanelWidth : undefined };
   } catch {
     return DEFAULT_PREFS;
   }

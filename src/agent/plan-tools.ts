@@ -201,6 +201,27 @@ export function createPlanToolDefs(plan: PlanTools) {
       { paused: z.boolean().describe('true: pause; false: resume') },
       (a) => guarded(() => (plan.pause ? plan.pause(a.paused) : 'Pausing isn’t available here')),
     ),
+    // A chat's own plans (the chatPlans pref): only when the run has them.
+    ...(plan.open
+      ? [
+          tool(
+            'plan_open',
+            'Make this chat the home of a new plan. Use this tool only when the user asks to turn the conversation into a plan, or to open a new plan. Beluga makes an empty draft. Then Beluga starts a new turn in this chat. In that turn, you write the plan from the conversation with plan_write.',
+            {},
+            () => guarded(() => plan.open!()),
+          ),
+        ]
+      : []),
+    ...(plan.close
+      ? [
+          tool(
+            'plan_close',
+            'Close the current plan of this chat. Use this tool only when the user asks to close the plan. Beluga keeps the plan as a record that you can read but not change. No new task of the plan starts. Tasks that run now finish their turn. To start a new plan after this, use plan_open.',
+            {},
+            () => guarded(() => plan.close!()),
+          ),
+        ]
+      : []),
   ];
   // plan_review is the draft's reviewer's alone.
   const mine = defs.filter((d) => d.name !== 'plan_review' || plan.review);

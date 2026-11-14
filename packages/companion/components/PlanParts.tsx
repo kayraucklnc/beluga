@@ -15,14 +15,14 @@ type Milestone = PlanView['milestones'][number];
  * The plan's own conversation, on its page (the Mac keeps it beside the plan): what its Claude is
  * doing now (writing the plan, running it) or the last thing it said, and a tap into the whole chat.
  */
-export function PlanChat({ topic, drafting }: { readonly topic: Topic; readonly drafting: boolean }) {
-  const conv = useView<ConvView>(topic)?.data;
+export function PlanChat({ topic, drafting, closed = false }: { readonly topic: Topic; readonly drafting: boolean; /** 1.57: the plan was closed: its chat works on newer plans now, so none of that shows here. */ readonly closed?: boolean }) {
+  const conv = useView<ConvView>(closed ? undefined : topic)?.data;
   const turns = conv?.turns ?? [];
   const live = [...turns].reverse().find((t) => t.who === 'claude' && t.status === 'working');
   const last = [...turns].reverse().find((t) => t.who === 'claude' && t.prose.text);
   const since = useSince(live?.ts);
   const working = Boolean(conv?.working);
-  const title = drafting ? 'Writing the plan' : working ? 'Working on the plan' : 'The plan’s chat';
+  const title = closed ? 'The chat it was made in' : drafting ? 'Writing the plan' : working ? 'Working on the plan' : 'The plan’s chat';
   return (
     <Press scaleTo={0.985} onPress={() => router.push(convHref(topic))} accessibilityLabel="Open the plan’s chat">
       <Card style={{ padding: 14, gap: 10 }}>
@@ -33,7 +33,7 @@ export function PlanChat({ topic, drafting }: { readonly topic: Topic; readonly 
               {title}
             </T>
             <T v="caption" numberOfLines={1}>
-              {working ? `Your agent is at it${since !== undefined ? ` · ${elapsed(since)}` : ''}` : turns.length ? 'Tap for the whole conversation' : 'Tell your agent what to plan'}
+              {closed ? 'It runs newer plans now' : working ? `Your agent is at it${since !== undefined ? ` · ${elapsed(since)}` : ''}` : turns.length ? 'Tap for the whole conversation' : 'Tell your agent what to plan'}
             </T>
           </View>
           {working ? <TypingDots tone="lavender" /> : <ChevronRight color={color.text3} size={17} />}

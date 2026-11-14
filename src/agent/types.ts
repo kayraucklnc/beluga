@@ -264,6 +264,10 @@ export interface PlanTools {
   stop?(task: string): string;
   /** Pause the plan (nothing new starts) or resume it. */
   pause?(paused: boolean): string;
+  /** chatPlans: make this chat the home of a new draft plan (a follow-up turn writes it). */
+  open?(): string;
+  /** chatPlans: close this chat's current plan (kept, read-only). */
+  close?(): string;
 }
 
 /** Child threads as an agent's tools (agent/thread-tools.ts, server `beluga_threads`). Bound to the calling chat: no argument names it. */

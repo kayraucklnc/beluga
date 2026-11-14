@@ -669,3 +669,32 @@ export function sizeWords(body: PlanBody | undefined): string {
   const t = body?.milestones.reduce((n, x) => n + x.tasks.length, 0) ?? 0;
   return `${m} ${m === 1 ? 'milestone' : 'milestones'}, ${t} ${t === 1 ? 'task' : 'tasks'}`;
 }
+
+/** chatPlans: a project chat that is no plan home. Its agent can open a plan of the chat's own (plan_open). */
+export function chatPlanBrief(earlier: number): string {
+  return [
+    '',
+    '<beluga_chat_plans>',
+    'This chat can have its own plan in Beluga Plans. A plan has milestones and tasks. Each task runs in its own worktree.',
+    'When the user asks to turn this conversation into a plan, or to open a new plan, call plan_open. Do not call it for other requests.',
+    'After plan_open, end your turn. Beluga then starts a new turn in this chat with the plan tools. In that turn, you write the plan.',
+    earlier ? `This chat has ${earlier} earlier ${earlier === 1 ? 'plan' : 'plans'} (closed or done). plan_get shows them. You cannot change them.` : '',
+    '</beluga_chat_plans>',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** chatPlans: the turn after plan_open, in the same chat. */
+export const WRITE_CHAT_PLAN_PROMPT = [
+  'You opened a new plan in this chat with plan_open. The plan is an empty draft.',
+  'Write the plan now with plan_write. Use what the user and you said in this conversation: the goal, the decisions and the open questions.',
+  'Read the code that the plan changes before you write it. Ask the user only what you cannot find out.',
+].join('\n');
+
+/** chatPlans: what plan_get shows in a chat whose plans are all closed or done (read-only). */
+export function earlierPlansText(views: readonly PlanView[]): string {
+  if (!views.length) return 'This chat has no plan yet. plan_open starts one.';
+  const list = views.map((v, i) => `${i + 1}. ${shownBody(v.plan)?.title || 'New plan'} (${v.plan.closedAt ? 'closed' : v.plan.status})`);
+  return [`This chat has no current plan. Its earlier plans (newest first, read-only): plan_open starts a new one.`, ...list, '', `The newest one, in full:`, '', describePlan(views[0]!)].join('\n');
+}

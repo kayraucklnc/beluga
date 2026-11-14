@@ -677,6 +677,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `plans.edit` | ✓ editing a plan's outline (rename, criteria, move, remove, what waits on what) |
 | `plans.setAutonomy` | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu); the phone plan page's autonomy chip (1.5) |
 | `plans.setPaused` | ✓ Pause / Resume on a plan's page |
+| `plans.close` | — no Mac button yet (the chat's Plan tab comes later); the chat's agent closes it with `plan_close` when you ask (the `chatPlans` pref); the phone can call it (1.57) |
+| `plans.ofHome` | — no Mac list yet (the chat's Plan tab comes later); a chat's plans, newest first, closed and done ones too; the phone's plan band counts the earlier ones (`ConvView.plan.earlier`, 1.57) |
 | `plans.setParallel` | ✓ a plan's ⋯ › Run at Once ▸ |
 | `plans.setWorkAgent` | ✓ a plan's ⋯ › Agent for Its Work ▸ (BLG-498): who works the milestones and tasks that start from now on (ones at work keep theirs, the toast says so); the phone's plan page › ⋯ › Agent for its work (1.35) |
 | `plans.setTestsAt` | ✓ a plan's ⋯ › When to Run Tests ▸ (each milestone, or once at the end) |

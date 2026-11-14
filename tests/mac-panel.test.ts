@@ -41,16 +41,16 @@ describe('the right panel’s two panes', () => {
 
   it('a tab dragged across stays there, before the tab it was dropped on', () => {
     const moved = moveTab(DEFAULT_LAYOUT, 'info', 'bottom', 'background');
-    expect(moved).toEqual({ top: ['changes', 'files', 'scratch', 'phone'], bottom: ['terminal', 'info', 'background'] });
+    expect(moved).toEqual({ top: ['plan', 'changes', 'files', 'scratch', 'phone'], bottom: ['terminal', 'info', 'background'] });
     expect(paneOf(moved, 'info')).toBe('bottom');
     // History moves with Changes.
     expect(moveTab(DEFAULT_LAYOUT, 'history', 'bottom').bottom).toEqual(['terminal', 'background', 'changes']);
-    expect(moveTab(DEFAULT_LAYOUT, 'files', 'top')).toEqual({ top: ['changes', 'scratch', 'info', 'phone', 'files'], bottom: ['terminal', 'background'] });
+    expect(moveTab(DEFAULT_LAYOUT, 'files', 'top')).toEqual({ top: ['plan', 'changes', 'scratch', 'info', 'phone', 'files'], bottom: ['terminal', 'background'] });
   });
 
   it('a saved layout is made whole: every tab once, nothing unknown', () => {
     expect(normalizeLayout(undefined)).toEqual(DEFAULT_LAYOUT);
-    expect(normalizeLayout({ top: ['terminal', 'nope', 'terminal'], bottom: ['terminal', 'files'] })).toEqual({ top: ['terminal', 'changes', 'scratch', 'info', 'phone'], bottom: ['files', 'background'] });
+    expect(normalizeLayout({ top: ['terminal', 'nope', 'terminal'], bottom: ['terminal', 'files'] })).toEqual({ top: ['plan', 'terminal', 'changes', 'scratch', 'info', 'phone'], bottom: ['files', 'background'] });
     expect(paneKey(ws, 'bottom')).toBe('ws:w1|bottom');
   });
 });
