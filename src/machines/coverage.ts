@@ -93,6 +93,7 @@ export const MACHINE: Record<Method, MachineSide> = {
   'remote.requestWorktree': 'drive',
   'remote.handoff': 'drive',
   'remote.canHandOff': 'drive',
+  'remote.handoffNote': 'drive',
   // ---- diff
   'diff.load': 'drive',
   'diff.select': 'drive',

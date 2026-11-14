@@ -258,9 +258,12 @@ export const API = {
 
   // ---- work on a friend's computer
   'remote.requestWorktree': args(id, z.string().max(80), str, opt(bool)),
+  // Take it over (BLG-967): their agent continues it on their computer, from Share's "Take it over".
   'remote.handoff': args(id, id),
-  // Can this worktree go to them (who they are, and whether their Mac has the repository)? Asked as the Hand Off sheet opens.
+  // Can this worktree go to them (who they are, and whether their Mac has the repository)? Asked when Share's "Take it over" is picked.
   'remote.canHandOff': args(id, id),
+  // Your agent writes a handoff note for whoever you share with (or whoever joins): in the chat and as HANDOFF.md in Scratch.
+  'remote.handoffNote': args(id, opt(id)),
 
   // ---- a workspace shared with you: what changed, and its read-only shell
   'diff.load': args(id),
