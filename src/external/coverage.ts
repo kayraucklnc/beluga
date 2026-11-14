@@ -520,6 +520,7 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'session.react': 'covered',
   'host.cancelSteer': 'covered',
   'remote.canHandOff': 'covered',
+  'remote.handoffNote': { refused: 'The person sharing asks for a handoff note from the Share sheet; an outside agent can write its own' },
   'workspaces.rename': 'covered',
   'workspaces.regenerateTitle': 'covered',
   'workspaces.deletePlan': 'covered',

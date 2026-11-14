@@ -19,7 +19,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/run` | `session.submit` → `runCommand` | typed in the composer · Toolbar Run (shows the terminal, keeps the keyboard in the message box) · the panel's Terminal tab ▶ · person sheet “Run a command…” |
 | `/terminal` | `session.submit` → `runCommand` | typed in the composer · the right panel's Terminal tab (⌥⌘3) or the drawer under the chat (⌘J, Settings › Terminal picks which) · Go › Terminal (⌘6) |
 | `/setup` | `session.submit` → `runCommand` | typed in the composer · the panel terminal's Commands… |
-| `/handoff` | `session.submit` → `runCommand` | typed in the composer · Toolbar ⋯ › Hand off |
+| `/handoff` | `session.submit` → `runCommand` | typed in the composer · Toolbar ⋯ › Share… › Can take it over · ⌘K “Share So Someone Takes It Over…” (Hand off lives in Share, BLG-967) |
 | `/model` | `session.submit` → `runCommand` | typed in the composer (`/model codex:gpt-5` picks another agent: a live conversation is handed off) · Composer agent picker (runtimes as groups, BLG-446) |
 | `/search` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Search · ⌘⇧F |
 | `/usage` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Usage (⌘5) |
@@ -117,7 +117,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `project` | sheet and right-click menu |
 | `archived` | sheet and right-click menu |
 | `agents` | sheet |
-| `ws_share` | Share sheet: everyone in the room with an access popup (Can work here / Can follow / No access), Invite by Link… |
+| `ws_share` | Share sheet: everyone in the room with an access popup (Can work here / Can follow / No access), Invite by Link…; the add row's What they can do also offers Can take it over for a worktree (what Hand off was, BLG-967; `takeOver` opens on it), and Write a handoff note |
 | `shared` | sheet (Chat / Files / Changes, who's in it, Leave… with an alert; the people button on its toolbar) and right-click menu |
 | `clear` | sheet |
 | `invite_person` | sheet: workspaces with Invite buttons, Work here / Follow |
@@ -126,10 +126,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `pr` | sheet |
 | `scripts` | sheet |
 | `templates` | sheet |
-| `handoff` | sheet |
 | `remote_ws` | sheet |
 | `ws_more` | sheet |
-| `invite_link` | Invite People sheet (the room's own links: the room popover's Invite, the room panel, Hand Off's “invite someone”; `/invite` and File › Invite… add a friend instead): Invite to popup, They can (Watch / Prompt / Edit), link checkboxes, Copy Invite Link (Return, says Copied), how they join, people waiting, active links with Copy and Revoke |
+| `invite_link` | Invite People sheet (the room's own links: the room popover's Invite, the room panel; `/invite` and File › Invite… add a friend instead): Invite to popup, They can (Watch / Prompt / Edit), link checkboxes, Copy Invite Link (Return, says Copied), how they join, people waiting, active links with Copy and Revoke |
 | `guest_add` | the guest's card: Add ▾ beside the projects they're in |
 
 ## API methods
@@ -203,8 +202,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `invites.change` | ✓ |
 | `invites.remove` | ✓ |
 | `remote.requestWorktree` | ✓ |
-| `remote.handoff` | ✓ |
-| `remote.canHandOff` | ✓ the Hand Off sheet, as it opens: who can't take it and why |
+| `remote.handoff` | ✓ the Share sheet's Hand Over (Can take it over) |
+| `remote.canHandOff` | ✓ the Share sheet, when Can take it over and a friend are picked: who can't take it and why |
+| `remote.handoffNote` | ✓ the Share sheet's Write a handoff note: in the chat and as `.beluga/scratch/HANDOFF.md` |
 | `diff.load` | ✓ |
 | `diff.select` | ✓ |
 | `shell.run` | ✓ the search field over a shared workspace's Files (find + grep) |

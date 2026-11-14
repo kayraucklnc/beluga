@@ -33,7 +33,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'run', args: '[@name <command>]', desc: "start the project's run command in the Terminal tab, or run a command on a friend's computer (/run @bob npm test)" },
   { name: 'terminal', desc: "open this workspace's terminal (elsewhere: your own shell, the Terminal tab)" },
   { name: 'setup', desc: "run the project's setup command again in this workspace" },
-  { name: 'handoff', args: '<name>', desc: 'hand this workspace to someone; their agent continues it' },
+  { name: 'handoff', args: '<name>', desc: 'share this workspace so someone takes it over; their agent continues it' },
   { name: 'model', args: '[name | agent[:model]]', desc: 'pick the agent and model for this conversation (another agent hands the conversation off)' },
   { name: 'search', args: '<words>', desc: 'search every conversation' },
   { name: 'usage', desc: 'disk space and agent usage per workspace' },
